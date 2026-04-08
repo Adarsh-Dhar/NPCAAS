@@ -21,6 +21,13 @@ interface TerminalProps {
   characterId?: string
 }
 
+interface TransactionResult {
+  status: 'pending' | 'processing' | 'success' | 'failed'
+  txHash?: string
+  mode?: 'sponsored' | 'fallback'
+  error?: string
+}
+
 export default function Terminal({ characterId }: TerminalProps) {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([
@@ -35,7 +42,7 @@ export default function Terminal({ characterId }: TerminalProps) {
     'inactive' | 'pending' | 'active'
   >('inactive')
   const [transactionState, setTransactionState] = useState<{
-    [key: string]: 'pending' | 'signing' | 'success'
+    [key: string]: TransactionResult
   }>({})
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -95,7 +102,7 @@ export default function Terminal({ characterId }: TerminalProps) {
         if (data.tradeIntent) {
           setTransactionState((prev) => ({
             ...prev,
-            [agentId]: 'pending',
+            [agentId]: { status: 'pending' },
           }))
         }
       } else {
@@ -123,24 +130,73 @@ export default function Terminal({ characterId }: TerminalProps) {
     }
   }
 
-  const handleAcceptTrade = async (messageId: string) => {
+  const handleAcceptTrade = async (messageId: string, tradeIntent: TradeIntent) => {
+    if (!characterId) {
+      setTransactionState((prev) => ({
+        ...prev,
+        [messageId]: {
+          status: 'failed',
+          error: 'Deploy the NPC first before executing trades.',
+        },
+      }))
+      return
+    }
+
     setTransactionState((prev) => ({
       ...prev,
-      [messageId]: 'signing',
+      [messageId]: { status: 'processing' },
     }))
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      const response = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          characterId,
+          tradeIntent,
+        }),
+      })
+
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        const errorMessage =
+          typeof payload.error === 'string'
+            ? payload.error
+            : 'Trade execution failed.'
+        throw new Error(errorMessage)
+      }
+
+      if (payload.mode !== 'sponsored') {
+        setTransactionState((prev) => ({
+          ...prev,
+          [messageId]: {
+            status: 'failed',
+            mode: 'fallback',
+            txHash: typeof payload.txHash === 'string' ? payload.txHash : undefined,
+            error:
+              'Gas sponsorship unavailable. Fallback requires user-paid gas for this transaction.',
+          },
+        }))
+        return
+      }
 
       setTransactionState((prev) => ({
         ...prev,
-        [messageId]: 'success',
+        [messageId]: {
+          status: 'success',
+          mode: 'sponsored',
+          txHash: typeof payload.txHash === 'string' ? payload.txHash : undefined,
+        },
       }))
     } catch (error) {
       console.error('Trade error:', error)
       setTransactionState((prev) => ({
         ...prev,
-        [messageId]: 'pending',
+        [messageId]: {
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'Trade execution failed.',
+        },
       }))
     }
   }
@@ -182,24 +238,34 @@ export default function Terminal({ characterId }: TerminalProps) {
               <div className="mt-2 ml-2">
                 <RetroButton
                   variant={
-                    transactionState[msg.id] === 'success'
+                    transactionState[msg.id]?.status === 'success'
                       ? 'green'
                       : 'magenta'
                   }
                   size="sm"
-                  onClick={() => handleAcceptTrade(msg.id)}
+                  onClick={() => handleAcceptTrade(msg.id, msg.tradeIntent!)}
                   disabled={
-                    transactionState[msg.id] === 'signing' ||
-                    transactionState[msg.id] === 'success'
+                    transactionState[msg.id]?.status === 'processing' ||
+                    transactionState[msg.id]?.status === 'success'
                   }
                   className="text-xs"
                 >
-                  {transactionState[msg.id] === 'signing'
-                    ? 'Signing via paymaster...'
-                    : transactionState[msg.id] === 'success'
+                  {transactionState[msg.id]?.status === 'processing'
+                    ? 'Sponsoring transaction...'
+                    : transactionState[msg.id]?.status === 'success'
                       ? 'Trade accepted: item received'
                       : 'Accept trade'}
                 </RetroButton>
+                {transactionState[msg.id]?.status === 'success' && (
+                  <div className="mt-1 text-[10px] text-green-300">
+                    Sponsored tx: {transactionState[msg.id]?.txHash?.slice(0, 16)}...
+                  </div>
+                )}
+                {transactionState[msg.id]?.status === 'failed' && (
+                  <div className="mt-1 text-[10px] text-yellow-300">
+                    {transactionState[msg.id]?.error}
+                  </div>
+                )}
               </div>
             )}
           </div>

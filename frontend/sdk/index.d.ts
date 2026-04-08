@@ -15,6 +15,16 @@ export interface ChatResponse {
   projectId?: string
 }
 
+export interface ExecuteTransactionResponse {
+  success: boolean
+  mode: 'sponsored' | 'fallback'
+  sponsored: boolean
+  txHash: string
+  status: 'pending' | 'success'
+  message: string
+  sponsorError?: string
+}
+
 export declare class GuildCraftClient {
   private apiKey: string
   private baseUrl: string
@@ -22,4 +32,8 @@ export declare class GuildCraftClient {
   constructor(apiKey: string, baseUrl?: string)
 
   chat(characterId: string, message: string): Promise<ChatResponse>
+  executeTransaction(
+    characterId: string,
+    tradeIntent: TradeIntent
+  ): Promise<ExecuteTransactionResponse>
 }

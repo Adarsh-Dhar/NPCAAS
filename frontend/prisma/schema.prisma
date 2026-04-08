@@ -24,8 +24,17 @@ model Character {
   projectId String
   project   Project  @relation(fields: [projectId], references: [id])
   name      String
+  walletAddress String
+  aaChainId     Int @default(42161)
+  aaProvider    String @default("kite-aa")
+  smartAccountId String?
+  smartAccountStatus String @default("created")
+  isDeployedOnChain Boolean @default(true)
+  deploymentTxHash String?
   config    Json     // Stores the 5-layer configuration (Economic, Cognitive, Social, Agentic, Infrastructure)
+  adaptation Json?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([projectId])
 }

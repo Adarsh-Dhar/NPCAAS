@@ -85,8 +85,17 @@ export const CharacterScalarFieldEnum = {
   id: 'id',
   projectId: 'projectId',
   name: 'name',
+  walletAddress: 'walletAddress',
+  aaChainId: 'aaChainId',
+  aaProvider: 'aaProvider',
+  smartAccountId: 'smartAccountId',
+  smartAccountStatus: 'smartAccountStatus',
+  isDeployedOnChain: 'isDeployedOnChain',
+  deploymentTxHash: 'deploymentTxHash',
   config: 'config',
-  createdAt: 'createdAt'
+  adaptation: 'adaptation',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 } as const
 
 export type CharacterScalarFieldEnum = (typeof CharacterScalarFieldEnum)[keyof typeof CharacterScalarFieldEnum]
@@ -107,6 +116,14 @@ export const JsonNullValueInput = {
 export type JsonNullValueInput = (typeof JsonNullValueInput)[keyof typeof JsonNullValueInput]
 
 
+export const NullableJsonNullValueInput = {
+  DbNull: DbNull,
+  JsonNull: JsonNull
+} as const
+
+export type NullableJsonNullValueInput = (typeof NullableJsonNullValueInput)[keyof typeof NullableJsonNullValueInput]
+
+
 export const QueryMode = {
   default: 'default',
   insensitive: 'insensitive'
@@ -122,4 +139,12 @@ export const JsonNullValueFilter = {
 } as const
 
 export type JsonNullValueFilter = (typeof JsonNullValueFilter)[keyof typeof JsonNullValueFilter]
+
+
+export const NullsOrder = {
+  first: 'first',
+  last: 'last'
+} as const
+
+export type NullsOrder = (typeof NullsOrder)[keyof typeof NullsOrder]
 

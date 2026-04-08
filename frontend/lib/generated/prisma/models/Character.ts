@@ -20,54 +20,122 @@ export type CharacterModel = runtime.Types.Result.DefaultSelection<Prisma.$Chara
 
 export type AggregateCharacter = {
   _count: CharacterCountAggregateOutputType | null
+  _avg: CharacterAvgAggregateOutputType | null
+  _sum: CharacterSumAggregateOutputType | null
   _min: CharacterMinAggregateOutputType | null
   _max: CharacterMaxAggregateOutputType | null
+}
+
+export type CharacterAvgAggregateOutputType = {
+  aaChainId: number | null
+}
+
+export type CharacterSumAggregateOutputType = {
+  aaChainId: number | null
 }
 
 export type CharacterMinAggregateOutputType = {
   id: string | null
   projectId: string | null
   name: string | null
+  walletAddress: string | null
+  aaChainId: number | null
+  aaProvider: string | null
+  smartAccountId: string | null
+  smartAccountStatus: string | null
+  isDeployedOnChain: boolean | null
+  deploymentTxHash: string | null
   createdAt: Date | null
+  updatedAt: Date | null
 }
 
 export type CharacterMaxAggregateOutputType = {
   id: string | null
   projectId: string | null
   name: string | null
+  walletAddress: string | null
+  aaChainId: number | null
+  aaProvider: string | null
+  smartAccountId: string | null
+  smartAccountStatus: string | null
+  isDeployedOnChain: boolean | null
+  deploymentTxHash: string | null
   createdAt: Date | null
+  updatedAt: Date | null
 }
 
 export type CharacterCountAggregateOutputType = {
   id: number
   projectId: number
   name: number
+  walletAddress: number
+  aaChainId: number
+  aaProvider: number
+  smartAccountId: number
+  smartAccountStatus: number
+  isDeployedOnChain: number
+  deploymentTxHash: number
   config: number
+  adaptation: number
   createdAt: number
+  updatedAt: number
   _all: number
 }
 
+
+export type CharacterAvgAggregateInputType = {
+  aaChainId?: true
+}
+
+export type CharacterSumAggregateInputType = {
+  aaChainId?: true
+}
 
 export type CharacterMinAggregateInputType = {
   id?: true
   projectId?: true
   name?: true
+  walletAddress?: true
+  aaChainId?: true
+  aaProvider?: true
+  smartAccountId?: true
+  smartAccountStatus?: true
+  isDeployedOnChain?: true
+  deploymentTxHash?: true
   createdAt?: true
+  updatedAt?: true
 }
 
 export type CharacterMaxAggregateInputType = {
   id?: true
   projectId?: true
   name?: true
+  walletAddress?: true
+  aaChainId?: true
+  aaProvider?: true
+  smartAccountId?: true
+  smartAccountStatus?: true
+  isDeployedOnChain?: true
+  deploymentTxHash?: true
   createdAt?: true
+  updatedAt?: true
 }
 
 export type CharacterCountAggregateInputType = {
   id?: true
   projectId?: true
   name?: true
+  walletAddress?: true
+  aaChainId?: true
+  aaProvider?: true
+  smartAccountId?: true
+  smartAccountStatus?: true
+  isDeployedOnChain?: true
+  deploymentTxHash?: true
   config?: true
+  adaptation?: true
   createdAt?: true
+  updatedAt?: true
   _all?: true
 }
 
@@ -109,6 +177,18 @@ export type CharacterAggregateArgs<ExtArgs extends runtime.Types.Extensions.Inte
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
    * 
+   * Select which fields to average
+  **/
+  _avg?: CharacterAvgAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
+   * Select which fields to sum
+  **/
+  _sum?: CharacterSumAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
    * Select which fields to find the minimum value
   **/
   _min?: CharacterMinAggregateInputType
@@ -139,6 +219,8 @@ export type CharacterGroupByArgs<ExtArgs extends runtime.Types.Extensions.Intern
   take?: number
   skip?: number
   _count?: CharacterCountAggregateInputType | true
+  _avg?: CharacterAvgAggregateInputType
+  _sum?: CharacterSumAggregateInputType
   _min?: CharacterMinAggregateInputType
   _max?: CharacterMaxAggregateInputType
 }
@@ -147,9 +229,20 @@ export type CharacterGroupByOutputType = {
   id: string
   projectId: string
   name: string
+  walletAddress: string
+  aaChainId: number
+  aaProvider: string
+  smartAccountId: string | null
+  smartAccountStatus: string
+  isDeployedOnChain: boolean
+  deploymentTxHash: string | null
   config: runtime.JsonValue
+  adaptation: runtime.JsonValue | null
   createdAt: Date
+  updatedAt: Date
   _count: CharacterCountAggregateOutputType | null
+  _avg: CharacterAvgAggregateOutputType | null
+  _sum: CharacterSumAggregateOutputType | null
   _min: CharacterMinAggregateOutputType | null
   _max: CharacterMaxAggregateOutputType | null
 }
@@ -176,8 +269,17 @@ export type CharacterWhereInput = {
   id?: Prisma.StringFilter<"Character"> | string
   projectId?: Prisma.StringFilter<"Character"> | string
   name?: Prisma.StringFilter<"Character"> | string
+  walletAddress?: Prisma.StringFilter<"Character"> | string
+  aaChainId?: Prisma.IntFilter<"Character"> | number
+  aaProvider?: Prisma.StringFilter<"Character"> | string
+  smartAccountId?: Prisma.StringNullableFilter<"Character"> | string | null
+  smartAccountStatus?: Prisma.StringFilter<"Character"> | string
+  isDeployedOnChain?: Prisma.BoolFilter<"Character"> | boolean
+  deploymentTxHash?: Prisma.StringNullableFilter<"Character"> | string | null
   config?: Prisma.JsonFilter<"Character">
+  adaptation?: Prisma.JsonNullableFilter<"Character">
   createdAt?: Prisma.DateTimeFilter<"Character"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"Character"> | Date | string
   project?: Prisma.XOR<Prisma.ProjectScalarRelationFilter, Prisma.ProjectWhereInput>
 }
 
@@ -185,8 +287,17 @@ export type CharacterOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   projectId?: Prisma.SortOrder
   name?: Prisma.SortOrder
+  walletAddress?: Prisma.SortOrder
+  aaChainId?: Prisma.SortOrder
+  aaProvider?: Prisma.SortOrder
+  smartAccountId?: Prisma.SortOrderInput | Prisma.SortOrder
+  smartAccountStatus?: Prisma.SortOrder
+  isDeployedOnChain?: Prisma.SortOrder
+  deploymentTxHash?: Prisma.SortOrderInput | Prisma.SortOrder
   config?: Prisma.SortOrder
+  adaptation?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
   project?: Prisma.ProjectOrderByWithRelationInput
 }
 
@@ -197,8 +308,17 @@ export type CharacterWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.CharacterWhereInput | Prisma.CharacterWhereInput[]
   projectId?: Prisma.StringFilter<"Character"> | string
   name?: Prisma.StringFilter<"Character"> | string
+  walletAddress?: Prisma.StringFilter<"Character"> | string
+  aaChainId?: Prisma.IntFilter<"Character"> | number
+  aaProvider?: Prisma.StringFilter<"Character"> | string
+  smartAccountId?: Prisma.StringNullableFilter<"Character"> | string | null
+  smartAccountStatus?: Prisma.StringFilter<"Character"> | string
+  isDeployedOnChain?: Prisma.BoolFilter<"Character"> | boolean
+  deploymentTxHash?: Prisma.StringNullableFilter<"Character"> | string | null
   config?: Prisma.JsonFilter<"Character">
+  adaptation?: Prisma.JsonNullableFilter<"Character">
   createdAt?: Prisma.DateTimeFilter<"Character"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"Character"> | Date | string
   project?: Prisma.XOR<Prisma.ProjectScalarRelationFilter, Prisma.ProjectWhereInput>
 }, "id">
 
@@ -206,11 +326,22 @@ export type CharacterOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   projectId?: Prisma.SortOrder
   name?: Prisma.SortOrder
+  walletAddress?: Prisma.SortOrder
+  aaChainId?: Prisma.SortOrder
+  aaProvider?: Prisma.SortOrder
+  smartAccountId?: Prisma.SortOrderInput | Prisma.SortOrder
+  smartAccountStatus?: Prisma.SortOrder
+  isDeployedOnChain?: Prisma.SortOrder
+  deploymentTxHash?: Prisma.SortOrderInput | Prisma.SortOrder
   config?: Prisma.SortOrder
+  adaptation?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
   _count?: Prisma.CharacterCountOrderByAggregateInput
+  _avg?: Prisma.CharacterAvgOrderByAggregateInput
   _max?: Prisma.CharacterMaxOrderByAggregateInput
   _min?: Prisma.CharacterMinOrderByAggregateInput
+  _sum?: Prisma.CharacterSumOrderByAggregateInput
 }
 
 export type CharacterScalarWhereWithAggregatesInput = {
@@ -220,15 +351,33 @@ export type CharacterScalarWhereWithAggregatesInput = {
   id?: Prisma.StringWithAggregatesFilter<"Character"> | string
   projectId?: Prisma.StringWithAggregatesFilter<"Character"> | string
   name?: Prisma.StringWithAggregatesFilter<"Character"> | string
+  walletAddress?: Prisma.StringWithAggregatesFilter<"Character"> | string
+  aaChainId?: Prisma.IntWithAggregatesFilter<"Character"> | number
+  aaProvider?: Prisma.StringWithAggregatesFilter<"Character"> | string
+  smartAccountId?: Prisma.StringNullableWithAggregatesFilter<"Character"> | string | null
+  smartAccountStatus?: Prisma.StringWithAggregatesFilter<"Character"> | string
+  isDeployedOnChain?: Prisma.BoolWithAggregatesFilter<"Character"> | boolean
+  deploymentTxHash?: Prisma.StringNullableWithAggregatesFilter<"Character"> | string | null
   config?: Prisma.JsonWithAggregatesFilter<"Character">
+  adaptation?: Prisma.JsonNullableWithAggregatesFilter<"Character">
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Character"> | Date | string
+  updatedAt?: Prisma.DateTimeWithAggregatesFilter<"Character"> | Date | string
 }
 
 export type CharacterCreateInput = {
   id?: string
   name: string
+  walletAddress: string
+  aaChainId?: number
+  aaProvider?: string
+  smartAccountId?: string | null
+  smartAccountStatus?: string
+  isDeployedOnChain?: boolean
+  deploymentTxHash?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
+  updatedAt?: Date | string
   project: Prisma.ProjectCreateNestedOneWithoutCharactersInput
 }
 
@@ -236,15 +385,33 @@ export type CharacterUncheckedCreateInput = {
   id?: string
   projectId: string
   name: string
+  walletAddress: string
+  aaChainId?: number
+  aaProvider?: string
+  smartAccountId?: string | null
+  smartAccountStatus?: string
+  isDeployedOnChain?: boolean
+  deploymentTxHash?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type CharacterUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
+  walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
+  aaChainId?: Prisma.IntFieldUpdateOperationsInput | number
+  aaProvider?: Prisma.StringFieldUpdateOperationsInput | string
+  smartAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   project?: Prisma.ProjectUpdateOneRequiredWithoutCharactersNestedInput
 }
 
@@ -252,31 +419,67 @@ export type CharacterUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   projectId?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
+  walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
+  aaChainId?: Prisma.IntFieldUpdateOperationsInput | number
+  aaProvider?: Prisma.StringFieldUpdateOperationsInput | string
+  smartAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type CharacterCreateManyInput = {
   id?: string
   projectId: string
   name: string
+  walletAddress: string
+  aaChainId?: number
+  aaProvider?: string
+  smartAccountId?: string | null
+  smartAccountStatus?: string
+  isDeployedOnChain?: boolean
+  deploymentTxHash?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type CharacterUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
+  walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
+  aaChainId?: Prisma.IntFieldUpdateOperationsInput | number
+  aaProvider?: Prisma.StringFieldUpdateOperationsInput | string
+  smartAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type CharacterUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   projectId?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
+  walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
+  aaChainId?: Prisma.IntFieldUpdateOperationsInput | number
+  aaProvider?: Prisma.StringFieldUpdateOperationsInput | string
+  smartAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type CharacterListRelationFilter = {
@@ -293,22 +496,55 @@ export type CharacterCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   projectId?: Prisma.SortOrder
   name?: Prisma.SortOrder
+  walletAddress?: Prisma.SortOrder
+  aaChainId?: Prisma.SortOrder
+  aaProvider?: Prisma.SortOrder
+  smartAccountId?: Prisma.SortOrder
+  smartAccountStatus?: Prisma.SortOrder
+  isDeployedOnChain?: Prisma.SortOrder
+  deploymentTxHash?: Prisma.SortOrder
   config?: Prisma.SortOrder
+  adaptation?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
+}
+
+export type CharacterAvgOrderByAggregateInput = {
+  aaChainId?: Prisma.SortOrder
 }
 
 export type CharacterMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   projectId?: Prisma.SortOrder
   name?: Prisma.SortOrder
+  walletAddress?: Prisma.SortOrder
+  aaChainId?: Prisma.SortOrder
+  aaProvider?: Prisma.SortOrder
+  smartAccountId?: Prisma.SortOrder
+  smartAccountStatus?: Prisma.SortOrder
+  isDeployedOnChain?: Prisma.SortOrder
+  deploymentTxHash?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type CharacterMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   projectId?: Prisma.SortOrder
   name?: Prisma.SortOrder
+  walletAddress?: Prisma.SortOrder
+  aaChainId?: Prisma.SortOrder
+  aaProvider?: Prisma.SortOrder
+  smartAccountId?: Prisma.SortOrder
+  smartAccountStatus?: Prisma.SortOrder
+  isDeployedOnChain?: Prisma.SortOrder
+  deploymentTxHash?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
+}
+
+export type CharacterSumOrderByAggregateInput = {
+  aaChainId?: Prisma.SortOrder
 }
 
 export type CharacterCreateNestedManyWithoutProjectInput = {
@@ -353,18 +589,52 @@ export type CharacterUncheckedUpdateManyWithoutProjectNestedInput = {
   deleteMany?: Prisma.CharacterScalarWhereInput | Prisma.CharacterScalarWhereInput[]
 }
 
+export type IntFieldUpdateOperationsInput = {
+  set?: number
+  increment?: number
+  decrement?: number
+  multiply?: number
+  divide?: number
+}
+
+export type NullableStringFieldUpdateOperationsInput = {
+  set?: string | null
+}
+
+export type BoolFieldUpdateOperationsInput = {
+  set?: boolean
+}
+
 export type CharacterCreateWithoutProjectInput = {
   id?: string
   name: string
+  walletAddress: string
+  aaChainId?: number
+  aaProvider?: string
+  smartAccountId?: string | null
+  smartAccountStatus?: string
+  isDeployedOnChain?: boolean
+  deploymentTxHash?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type CharacterUncheckedCreateWithoutProjectInput = {
   id?: string
   name: string
+  walletAddress: string
+  aaChainId?: number
+  aaProvider?: string
+  smartAccountId?: string | null
+  smartAccountStatus?: string
+  isDeployedOnChain?: boolean
+  deploymentTxHash?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type CharacterCreateOrConnectWithoutProjectInput = {
@@ -400,36 +670,81 @@ export type CharacterScalarWhereInput = {
   id?: Prisma.StringFilter<"Character"> | string
   projectId?: Prisma.StringFilter<"Character"> | string
   name?: Prisma.StringFilter<"Character"> | string
+  walletAddress?: Prisma.StringFilter<"Character"> | string
+  aaChainId?: Prisma.IntFilter<"Character"> | number
+  aaProvider?: Prisma.StringFilter<"Character"> | string
+  smartAccountId?: Prisma.StringNullableFilter<"Character"> | string | null
+  smartAccountStatus?: Prisma.StringFilter<"Character"> | string
+  isDeployedOnChain?: Prisma.BoolFilter<"Character"> | boolean
+  deploymentTxHash?: Prisma.StringNullableFilter<"Character"> | string | null
   config?: Prisma.JsonFilter<"Character">
+  adaptation?: Prisma.JsonNullableFilter<"Character">
   createdAt?: Prisma.DateTimeFilter<"Character"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"Character"> | Date | string
 }
 
 export type CharacterCreateManyProjectInput = {
   id?: string
   name: string
+  walletAddress: string
+  aaChainId?: number
+  aaProvider?: string
+  smartAccountId?: string | null
+  smartAccountStatus?: string
+  isDeployedOnChain?: boolean
+  deploymentTxHash?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type CharacterUpdateWithoutProjectInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
+  walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
+  aaChainId?: Prisma.IntFieldUpdateOperationsInput | number
+  aaProvider?: Prisma.StringFieldUpdateOperationsInput | string
+  smartAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type CharacterUncheckedUpdateWithoutProjectInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
+  walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
+  aaChainId?: Prisma.IntFieldUpdateOperationsInput | number
+  aaProvider?: Prisma.StringFieldUpdateOperationsInput | string
+  smartAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type CharacterUncheckedUpdateManyWithoutProjectInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
+  walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
+  aaChainId?: Prisma.IntFieldUpdateOperationsInput | number
+  aaProvider?: Prisma.StringFieldUpdateOperationsInput | string
+  smartAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 
@@ -438,8 +753,17 @@ export type CharacterSelect<ExtArgs extends runtime.Types.Extensions.InternalArg
   id?: boolean
   projectId?: boolean
   name?: boolean
+  walletAddress?: boolean
+  aaChainId?: boolean
+  aaProvider?: boolean
+  smartAccountId?: boolean
+  smartAccountStatus?: boolean
+  isDeployedOnChain?: boolean
+  deploymentTxHash?: boolean
   config?: boolean
+  adaptation?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
   project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["character"]>
 
@@ -447,8 +771,17 @@ export type CharacterSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Ext
   id?: boolean
   projectId?: boolean
   name?: boolean
+  walletAddress?: boolean
+  aaChainId?: boolean
+  aaProvider?: boolean
+  smartAccountId?: boolean
+  smartAccountStatus?: boolean
+  isDeployedOnChain?: boolean
+  deploymentTxHash?: boolean
   config?: boolean
+  adaptation?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
   project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["character"]>
 
@@ -456,8 +789,17 @@ export type CharacterSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Ext
   id?: boolean
   projectId?: boolean
   name?: boolean
+  walletAddress?: boolean
+  aaChainId?: boolean
+  aaProvider?: boolean
+  smartAccountId?: boolean
+  smartAccountStatus?: boolean
+  isDeployedOnChain?: boolean
+  deploymentTxHash?: boolean
   config?: boolean
+  adaptation?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
   project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["character"]>
 
@@ -465,11 +807,20 @@ export type CharacterSelectScalar = {
   id?: boolean
   projectId?: boolean
   name?: boolean
+  walletAddress?: boolean
+  aaChainId?: boolean
+  aaProvider?: boolean
+  smartAccountId?: boolean
+  smartAccountStatus?: boolean
+  isDeployedOnChain?: boolean
+  deploymentTxHash?: boolean
   config?: boolean
+  adaptation?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
 }
 
-export type CharacterOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "projectId" | "name" | "config" | "createdAt", ExtArgs["result"]["character"]>
+export type CharacterOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "projectId" | "name" | "walletAddress" | "aaChainId" | "aaProvider" | "smartAccountId" | "smartAccountStatus" | "isDeployedOnChain" | "deploymentTxHash" | "config" | "adaptation" | "createdAt" | "updatedAt", ExtArgs["result"]["character"]>
 export type CharacterInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
 }
@@ -489,8 +840,17 @@ export type $CharacterPayload<ExtArgs extends runtime.Types.Extensions.InternalA
     id: string
     projectId: string
     name: string
+    walletAddress: string
+    aaChainId: number
+    aaProvider: string
+    smartAccountId: string | null
+    smartAccountStatus: string
+    isDeployedOnChain: boolean
+    deploymentTxHash: string | null
     config: runtime.JsonValue
+    adaptation: runtime.JsonValue | null
     createdAt: Date
+    updatedAt: Date
   }, ExtArgs["result"]["character"]>
   composites: {}
 }
@@ -918,8 +1278,17 @@ export interface CharacterFieldRefs {
   readonly id: Prisma.FieldRef<"Character", 'String'>
   readonly projectId: Prisma.FieldRef<"Character", 'String'>
   readonly name: Prisma.FieldRef<"Character", 'String'>
+  readonly walletAddress: Prisma.FieldRef<"Character", 'String'>
+  readonly aaChainId: Prisma.FieldRef<"Character", 'Int'>
+  readonly aaProvider: Prisma.FieldRef<"Character", 'String'>
+  readonly smartAccountId: Prisma.FieldRef<"Character", 'String'>
+  readonly smartAccountStatus: Prisma.FieldRef<"Character", 'String'>
+  readonly isDeployedOnChain: Prisma.FieldRef<"Character", 'Boolean'>
+  readonly deploymentTxHash: Prisma.FieldRef<"Character", 'String'>
   readonly config: Prisma.FieldRef<"Character", 'Json'>
+  readonly adaptation: Prisma.FieldRef<"Character", 'Json'>
   readonly createdAt: Prisma.FieldRef<"Character", 'DateTime'>
+  readonly updatedAt: Prisma.FieldRef<"Character", 'DateTime'>
 }
     
 

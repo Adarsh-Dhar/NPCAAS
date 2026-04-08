@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kiteAgentClient } from '@/lib/kite-sdk'
 import { validateApiKey } from '@/lib/api-key-store'
-import { readCharacters, writeCharacters } from '@/app/api/characters/route'
+import { prisma } from '@/lib/prisma'
+import type { Prisma } from '@/lib/generated/prisma/client'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -44,8 +45,56 @@ interface StoredCharacter {
   id: string
   projectId: string
   name: string
-  config: CharacterConfig
-  adaptation?: AdaptationMemory
+  config: unknown
+  adaptation: unknown
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+function toCharacterConfig(value: unknown): CharacterConfig {
+  const payload = asRecord(value)
+
+  return {
+    systemPrompt:
+      typeof payload.systemPrompt === 'string' ? payload.systemPrompt : undefined,
+    openness:
+      typeof payload.openness === 'number' ? payload.openness : undefined,
+    canTrade:
+      typeof payload.canTrade === 'boolean' ? payload.canTrade : undefined,
+  }
+}
+
+function toAdaptationMemory(value: unknown): AdaptationMemory {
+  const payload = asRecord(value)
+
+  const pendingSection2 = asRecord(payload.pendingSection2)
+  const hasPendingSection2 =
+    typeof pendingSection2.systemPrompt === 'string' &&
+    typeof pendingSection2.openness === 'number'
+
+  return {
+    specializationActive: Boolean(payload.specializationActive),
+    turnCount: typeof payload.turnCount === 'number' ? payload.turnCount : 0,
+    preferences: Array.isArray(payload.preferences)
+      ? payload.preferences.filter((item): item is string => typeof item === 'string')
+      : [],
+    summary:
+      typeof payload.summary === 'string' && payload.summary.trim()
+        ? payload.summary
+        : 'No adaptation history yet.',
+    pendingSection2: hasPendingSection2
+      ? {
+          systemPrompt: pendingSection2.systemPrompt as string,
+          openness: pendingSection2.openness as number,
+        }
+      : undefined,
+    lastUpdatedAt:
+      typeof payload.lastUpdatedAt === 'string'
+        ? payload.lastUpdatedAt
+        : new Date().toISOString(),
+  }
 }
 
 function parseSection2Definition(message: string): Section2Profile | null {
@@ -200,8 +249,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const characters = readCharacters() as Record<string, StoredCharacter>
-    const character = characters[characterId]
+    const character = (await prisma.character.findUnique({
+      where: { id: characterId },
+    })) as unknown as StoredCharacter | null
 
     if (!character) {
       return NextResponse.json(
@@ -217,25 +267,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const config = character.config || {}
-    const adaptation: AdaptationMemory =
-      character.adaptation || {
-        specializationActive: false,
-        turnCount: 0,
-        preferences: [],
-        summary: 'No adaptation history yet.',
-        lastUpdatedAt: new Date().toISOString(),
-      }
+    const config = toCharacterConfig(character.config)
+    const adaptation = toAdaptationMemory(character.adaptation)
 
     const section2Profile = parseSection2Definition(message)
     if (section2Profile) {
-      character.adaptation = {
+      const nextAdaptation = {
         ...adaptation,
         pendingSection2: section2Profile,
         lastUpdatedAt: new Date().toISOString(),
       }
-      characters[characterId] = character
-      writeCharacters(characters)
+      await prisma.character.update({
+        where: { id: characterId },
+        data: {
+          adaptation: nextAdaptation as unknown as Prisma.InputJsonValue,
+        },
+      })
 
       return NextResponse.json(
         {
@@ -254,13 +301,13 @@ export async function POST(request: NextRequest) {
 
     if (isActivationMessage(message) && adaptation.pendingSection2) {
       const appliedProfile = adaptation.pendingSection2
-      character.config = {
+      const nextConfig = {
         ...config,
         systemPrompt: appliedProfile.systemPrompt,
         openness: appliedProfile.openness,
       }
 
-      character.adaptation = {
+      const nextAdaptation = {
         ...adaptation,
         specializationActive: true,
         pendingSection2: undefined,
@@ -268,8 +315,13 @@ export async function POST(request: NextRequest) {
         lastUpdatedAt: new Date().toISOString(),
       }
 
-      characters[characterId] = character
-      writeCharacters(characters)
+      await prisma.character.update({
+        where: { id: characterId },
+        data: {
+          config: nextConfig as unknown as Prisma.InputJsonValue,
+          adaptation: nextAdaptation as unknown as Prisma.InputJsonValue,
+        },
+      })
 
       return NextResponse.json(
         {
@@ -327,9 +379,13 @@ export async function POST(request: NextRequest) {
         ),
         lastUpdatedAt: new Date().toISOString(),
       }
-      character.adaptation = updatedAdaptation
-      characters[characterId] = character
-      writeCharacters(characters)
+
+      await prisma.character.update({
+        where: { id: characterId },
+        data: {
+          adaptation: updatedAdaptation as unknown as Prisma.InputJsonValue,
+        },
+      })
     }
 
     // Step 3: Call agent.chat() with the user's message

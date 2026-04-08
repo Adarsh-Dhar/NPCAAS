@@ -32,6 +32,16 @@ export interface ChatResponse {
   timestamp: string
 }
 
+export interface ExecuteTransactionResponse {
+  success: boolean
+  mode: 'sponsored' | 'fallback'
+  sponsored: boolean
+  txHash: string
+  status: 'pending' | 'success'
+  message: string
+  sponsorError?: string
+}
+
 export class GuildCraftClient {
   private apiKey: string
   private baseUrl: string
@@ -93,5 +103,34 @@ export class GuildCraftClient {
     }
 
     return response.json() as Promise<ChatResponse>
+  }
+
+  /**
+   * Execute a write transaction for a character.
+   * Sponsor-first: the backend attempts gasless execution via Kite AA.
+   */
+  async executeTransaction(
+    characterId: string,
+    tradeIntent: TradeIntent
+  ): Promise<ExecuteTransactionResponse> {
+    const response = await fetch(`${this.baseUrl}/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({ characterId, tradeIntent }),
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}))
+      throw new Error(
+        `GuildCraft API error ${response.status}: ${
+          (errorBody as { error?: string }).error ?? response.statusText
+        }`
+      )
+    }
+
+    return response.json() as Promise<ExecuteTransactionResponse>
   }
 }

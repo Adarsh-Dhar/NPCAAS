@@ -34,6 +34,33 @@ class GuildCraftClient {
 
     return response.json()
   }
+
+  async executeTransaction(characterId, tradeIntent) {
+    if (!characterId) {
+      throw new Error('characterId is required')
+    }
+    if (!tradeIntent || typeof tradeIntent !== 'object') {
+      throw new Error('tradeIntent is required')
+    }
+
+    const response = await fetch(`${this.baseUrl}/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({ characterId, tradeIntent }),
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}))
+      throw new Error(
+        `GuildCraft API error ${response.status}: ${errorBody.error || response.statusText}`
+      )
+    }
+
+    return response.json()
+  }
 }
 
 module.exports = {

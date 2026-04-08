@@ -24,6 +24,8 @@ async function onPlayerTalkToNpc(input) {
 
   if (reply.tradeIntent) {
     console.log('Trade intent:', reply.tradeIntent)
+    const tx = await client.executeTransaction('char_kermit_123', reply.tradeIntent)
+    console.log('Gas mode:', tx.mode, 'txHash:', tx.txHash)
   }
 }
 ```
@@ -45,3 +47,11 @@ Sends a chat request and returns:
 - `tradeIntent` (optional)
 - `timestamp`
 - `projectId` (optional)
+
+### executeTransaction(characterId, tradeIntent)
+
+Executes a write transaction for the NPC interaction.
+
+- Attempts gas sponsorship first using Kite AA.
+- Returns `mode: sponsored` when gasless succeeds.
+- Returns `mode: fallback` when sponsorship fails and fallback is enabled.
