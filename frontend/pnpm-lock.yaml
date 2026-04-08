@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@adarsh23/guildcraft-sdk':
+        specifier: ^1.0.0
+        version: 1.0.0
       '@hookform/resolvers':
         specifier: ^3.9.1
         version: 3.10.0(react-hook-form@7.71.1(react@19.2.4))
@@ -191,6 +194,10 @@ importers:
         version: 5.7.3
 
 packages:
+
+  '@adarsh23/guildcraft-sdk@1.0.0':
+    resolution: {integrity: sha512-fc37LzkN/Bhx7m1rng1ahVjrJLljjPnYfBwUfJKy8DQCKqnt0kNoSU1u1awCqmDyjHzDb47qWzr1zhlROwPryw==}
+    engines: {node: '>=18'}
 
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -2143,6 +2150,8 @@ packages:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
 snapshots:
+
+  '@adarsh23/guildcraft-sdk@1.0.0': {}
 
   '@alloc/quick-lru@5.2.0': {}
 

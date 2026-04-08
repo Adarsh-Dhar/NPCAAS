@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kiteAAProvider } from '@/lib/kite-sdk'
+import { validateApiKey } from '@/lib/api-key-store'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -110,22 +111,37 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/characters
- * Fetch characters by project ID
+ * Fetch characters by API key (Bearer token authentication)
  */
 export async function GET(request: NextRequest) {
   try {
-    const projectId = request.nextUrl.searchParams.get('projectId')
-    const characters = readCharacters()
+    // --- Authenticate via API Key ---
+    const authHeader = request.headers.get('Authorization')
 
-    if (projectId) {
-      const chars = Object.values(characters).filter(
-        (c: any) => c.projectId === projectId
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json(
+        { error: 'Missing or malformed Authorization header. Use: Bearer gc_live_...' },
+        { status: 401 }
       )
-      return NextResponse.json(chars)
     }
 
-    const charactersList = Object.values(characters)
-    return NextResponse.json(charactersList)
+    const apiKey = authHeader.replace('Bearer ', '').trim()
+    const project = await validateApiKey(apiKey)
+
+    if (!project) {
+      return NextResponse.json(
+        { error: 'Invalid API key' },
+        { status: 401 }
+      )
+    }
+
+    // --- Fetch characters for this project ---
+    const characters = readCharacters()
+    const chars = Object.values(characters).filter(
+      (c: any) => c.projectId === project.id
+    )
+
+    return NextResponse.json(chars)
   } catch (error) {
     console.error('[API] Character fetch error:', error)
     return NextResponse.json(

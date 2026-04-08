@@ -1,0 +1,31 @@
+{
+  "name": "@adarsh23/guildcraft-sdk",
+  "version": "1.0.0",
+  "description": "GuildCraft JavaScript SDK for NPC chat and trade interactions",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT",
+  "keywords": [
+    "guildcraft",
+    "game",
+    "sdk",
+    "npc",
+    "ai"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adarsh23/kite-ai.git"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
