@@ -44,6 +44,22 @@ const writeCharacters = (characters: Record<string, any>) => {
   }
 }
 
+const normalizeAdaptation = (config: any, existing: any = {}) => ({
+  specializationActive: Boolean(existing.specializationActive),
+  turnCount: typeof existing.turnCount === 'number' ? existing.turnCount : 0,
+  preferences: Array.isArray(existing.preferences) ? existing.preferences : [],
+  summary:
+    typeof existing.summary === 'string' && existing.summary.trim()
+      ? existing.summary
+      : 'No adaptation history yet.',
+  lastUpdatedAt: new Date().toISOString(),
+  pendingSection2: existing.pendingSection2,
+  configSnapshot: {
+    systemPrompt: typeof config?.systemPrompt === 'string' ? config.systemPrompt : '',
+    openness: typeof config?.openness === 'number' ? config.openness : 50,
+  },
+})
+
 /**
  * POST /api/characters
  * Deploys a new NPC to Kite Chain using Kite AA
@@ -82,6 +98,13 @@ export async function POST(request: NextRequest) {
       name,
       walletAddress,
       config,
+      adaptation: {
+        specializationActive: false,
+        turnCount: 0,
+        preferences: [],
+        summary: 'No adaptation history yet.',
+        lastUpdatedAt: new Date().toISOString(),
+      },
       isDeployedOnChain: true,
       deploymentTxHash: sponsorResult.txHash,
       createdAt: new Date().toISOString(),
@@ -104,6 +127,86 @@ export async function POST(request: NextRequest) {
     console.error('[API] Character deployment error:', error)
     return NextResponse.json(
       { error: 'Failed to deploy character' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PATCH /api/characters
+ * Updates an existing deployed NPC configuration
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const authHeader = request.headers.get('Authorization')
+    let project: { id: string } | null = null
+
+    if (authHeader) {
+      if (!authHeader.startsWith('Bearer ')) {
+        return NextResponse.json(
+          { error: 'Missing or malformed Authorization header. Use: Bearer gc_live_...' },
+          { status: 401 }
+        )
+      }
+
+      const apiKey = authHeader.replace('Bearer ', '').trim()
+      project = await validateApiKey(apiKey)
+
+      if (!project) {
+        return NextResponse.json(
+          { error: 'Invalid API key' },
+          { status: 401 }
+        )
+      }
+    }
+
+    const body = await request.json()
+    const { projectId, characterId, config } = body
+
+    if (!projectId || !characterId || !config) {
+      return NextResponse.json(
+        { error: 'projectId, characterId, and config are required' },
+        { status: 400 }
+      )
+    }
+
+    if (project && project.id !== projectId) {
+      return NextResponse.json(
+        { error: 'Character project does not match API key project' },
+        { status: 403 }
+      )
+    }
+
+    const characters = readCharacters()
+    const character = characters[characterId]
+
+    if (!character) {
+      return NextResponse.json(
+        { error: 'Character not found' },
+        { status: 404 }
+      )
+    }
+
+    if (character.projectId !== projectId) {
+      return NextResponse.json(
+        { error: 'Character not accessible for this project' },
+        { status: 403 }
+      )
+    }
+
+    character.config = config
+    character.adaptation = normalizeAdaptation(config, character.adaptation)
+    characters[characterId] = character
+    writeCharacters(characters)
+
+    return NextResponse.json({
+      message: `Updated ${character.name} configuration`,
+      character,
+    })
+  } catch (error) {
+    console.error('[API] Character update error:', error)
+    return NextResponse.json(
+      { error: 'Failed to update character' },
       { status: 500 }
     )
   }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import RetroButton from '@/components/ui/RetroButton'
 import RetroInput from '@/components/ui/RetroInput'
 import RetroTextarea from '@/components/ui/RetroTextarea'
@@ -10,13 +10,31 @@ import FormSection from '@/components/creator/FormSection'
 interface ConfigurationFormProps {
   projectId?: string
   characterName?: string
+  characterId?: string | null
+  initialConfig?: Partial<{
+    capital: string
+    pricingAlgorithm: string
+    systemPrompt: string
+    openness: number
+    factions: string
+    hostility: string
+    canTrade: boolean
+    canMove: boolean
+    canCraft: boolean
+    teeExecution: string
+    computeBudget: string
+  }>
   onDeploySuccess?: (characterId: string) => void
+  onSaveSuccess?: () => void
 }
 
 export default function ConfigurationForm({
   projectId,
   characterName = 'KERMIT_NPC_01',
+  characterId,
+  initialConfig,
   onDeploySuccess,
+  onSaveSuccess,
 }: ConfigurationFormProps) {
   const [formData, setFormData] = useState({
     capital: '1000',
@@ -34,6 +52,29 @@ export default function ConfigurationForm({
   })
   const [deploying, setDeploying] = useState(false)
   const [deployError, setDeployError] = useState('')
+
+  useEffect(() => {
+    if (!initialConfig) {
+      return
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      ...initialConfig,
+      capital: initialConfig.capital ?? prev.capital,
+      pricingAlgorithm:
+        initialConfig.pricingAlgorithm ?? prev.pricingAlgorithm,
+      systemPrompt: initialConfig.systemPrompt ?? prev.systemPrompt,
+      openness: initialConfig.openness ?? prev.openness,
+      factions: initialConfig.factions ?? prev.factions,
+      hostility: initialConfig.hostility ?? prev.hostility,
+      canTrade: initialConfig.canTrade ?? prev.canTrade,
+      canMove: initialConfig.canMove ?? prev.canMove,
+      canCraft: initialConfig.canCraft ?? prev.canCraft,
+      teeExecution: initialConfig.teeExecution ?? prev.teeExecution,
+      computeBudget: initialConfig.computeBudget ?? prev.computeBudget,
+    }))
+  }, [initialConfig, characterId])
 
   const handleInputChange = (field: string, value: string | number | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
@@ -71,6 +112,47 @@ export default function ConfigurationForm({
         error instanceof Error ? error.message : 'Deployment failed'
       setDeployError(message)
       console.error('Deploy error:', error)
+    } finally {
+      setDeploying(false)
+    }
+  }
+
+  const handleSave = async () => {
+    if (!projectId) {
+      setDeployError('Please create a game first')
+      return
+    }
+
+    if (!characterId) {
+      await handleDeploy()
+      return
+    }
+
+    setDeploying(true)
+    setDeployError('')
+
+    try {
+      const response = await fetch('/api/characters', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          characterId,
+          config: formData,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to save character configuration')
+      }
+
+      onSaveSuccess?.()
+      alert('✓ Character configuration saved')
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Save failed'
+      setDeployError(message)
+      console.error('Save error:', error)
     } finally {
       setDeploying(false)
     }
@@ -127,6 +209,28 @@ export default function ConfigurationForm({
           }
           placeholder="Define your NPC's behavior and personality..."
         />
+
+        <div className="flex flex-col gap-2">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-purple-300">
+            Save the Core System Prompt directly to the deployed character.
+          </p>
+          <div className="flex justify-end">
+            <RetroButton
+              variant="magenta"
+              size="sm"
+              type="button"
+              onClick={handleSave}
+              disabled={deploying || !projectId}
+              className="text-xs"
+            >
+              {deploying && characterId
+                ? 'SAVING PROMPT...'
+                : characterId
+                  ? 'SAVE CORE SYSTEM PROMPT'
+                  : 'DEPLOY AND SAVE PROMPT'}
+            </RetroButton>
+          </div>
+        </div>
 
         <RetroRangeSlider
           borderColor="purple"
@@ -283,11 +387,18 @@ export default function ConfigurationForm({
         <RetroButton
           variant={deploying ? 'magenta' : 'green'}
           size="lg"
-          onClick={handleDeploy}
+          onClick={characterId ? handleSave : handleDeploy}
           disabled={deploying || !projectId}
+          type="button"
           className="w-full"
         >
-          {deploying ? 'DEPLOYING...' : 'DEPLOY TO KITE CHAIN'}
+          {deploying
+            ? characterId
+              ? 'SAVING...'
+              : 'DEPLOYING...'
+            : characterId
+              ? 'SAVE CHARACTER CHANGES'
+              : 'DEPLOY TO KITE CHAIN'}
         </RetroButton>
       </div>
     </form>

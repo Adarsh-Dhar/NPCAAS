@@ -9,6 +9,8 @@ export interface ChatResponse {
   response: string
   characterId: string
   tradeIntent?: TradeIntent
+  specializationActive?: boolean
+  pendingSpecialization?: boolean
   timestamp: string
   projectId?: string
 }

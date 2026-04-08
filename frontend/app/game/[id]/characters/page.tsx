@@ -44,7 +44,11 @@ export default function GameCharactersPage() {
         setProject(currentProject)
 
         // Fetch characters for this project
-        const charsRes = await fetch(`/api/characters?projectId=${projectId}`)
+        const charsRes = await fetch(`/api/characters`, {
+          headers: {
+            Authorization: `Bearer ${currentProject.apiKey}`,
+          },
+        })
         if (!charsRes.ok) throw new Error('Failed to fetch characters')
         const projectCharacters = await charsRes.json()
         setCharacters(Array.isArray(projectCharacters) ? projectCharacters : [])

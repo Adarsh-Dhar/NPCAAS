@@ -9,11 +9,24 @@ import ProjectModal from '@/components/creator/ProjectModal'
 import RetroButton from '@/components/ui/RetroButton'
 import { useProject } from '@/hooks/useProject'
 
+interface CharacterRecord {
+  id: string
+  projectId: string
+  name: string
+  walletAddress: string
+  config: Record<string, any>
+  createdAt: string
+  isDeployedOnChain?: boolean
+  deploymentTxHash?: string
+  adaptation?: Record<string, any>
+}
+
 export default function CreatorPage() {
   const searchParams = useSearchParams()
   const { currentProject, setCurrentProject, createProject, loading } = useProject()
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [currentCharacterId, setCurrentCharacterId] = useState<string | null>(null)
+  const [currentCharacter, setCurrentCharacter] = useState<CharacterRecord | null>(null)
 
   // Read projectId from URL params and fetch that project
   useEffect(() => {
@@ -39,12 +52,58 @@ export default function CreatorPage() {
     }
   }, [searchParams, currentProject, setCurrentProject])
 
+  useEffect(() => {
+    const loadCharacters = async () => {
+      if (!currentProject?.apiKey) {
+        return
+      }
+
+      try {
+        const response = await fetch('/api/characters', {
+          headers: {
+            Authorization: `Bearer ${currentProject.apiKey}`,
+          },
+        })
+
+        if (!response.ok) {
+          return
+        }
+
+        const projectCharacters = (await response.json()) as CharacterRecord[]
+        const scopedCharacters = Array.isArray(projectCharacters)
+          ? projectCharacters.filter(
+              (character) => character.projectId === currentProject.id
+            )
+          : []
+
+        if (scopedCharacters.length === 0) {
+          setCurrentCharacterId(null)
+          setCurrentCharacter(null)
+          return
+        }
+
+        const latestCharacter = [...scopedCharacters].sort(
+          (left, right) =>
+            new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+        )[0]
+
+        setCurrentCharacterId(latestCharacter.id)
+        setCurrentCharacter(latestCharacter)
+      } catch (error) {
+        console.error('Failed to load existing characters:', error)
+      }
+    }
+
+    loadCharacters()
+  }, [currentProject])
+
   const handleProjectCreated = () => {
     setShowProjectModal(false)
   }
 
   const handleDeploySuccess = (characterId: string) => {
     setCurrentCharacterId(characterId)
+    setCurrentCharacter(null)
   }
 
   return (
@@ -98,6 +157,8 @@ export default function CreatorPage() {
               <ConfigurationForm
                 projectId={currentProject.id}
                 characterName="KERMIT_NPC_01"
+                characterId={currentCharacterId}
+                initialConfig={currentCharacter?.config}
                 onDeploySuccess={handleDeploySuccess}
               />
             )}
