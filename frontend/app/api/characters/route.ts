@@ -1,8 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kiteAAProvider } from '@/lib/kite-sdk'
+import * as fs from 'fs'
+import * as path from 'path'
 
-// Mock database for characters
-const mockCharacters: Map<string, any> = new Map()
+// Get characters storage file path
+const getStoragePath = () => {
+  const storagePath = path.join(process.cwd(), 'tmp', 'characters.json')
+  return storagePath
+}
+
+// Ensure tmp directory exists
+const ensureStorageDir = () => {
+  const dir = path.join(process.cwd(), 'tmp')
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+}
+
+// Read characters from storage
+const readCharacters = (): Record<string, any> => {
+  try {
+    ensureStorageDir()
+    const storagePath = getStoragePath()
+    if (fs.existsSync(storagePath)) {
+      const data = fs.readFileSync(storagePath, 'utf-8')
+      return JSON.parse(data)
+    }
+  } catch (error) {
+    console.error('[API] Failed to read characters:', error)
+  }
+  return {}
+}
+
+// Write characters to storage
+const writeCharacters = (characters: Record<string, any>) => {
+  try {
+    ensureStorageDir()
+    const storagePath = getStoragePath()
+    fs.writeFileSync(storagePath, JSON.stringify(characters, null, 2), 'utf-8')
+  } catch (error) {
+    console.error('[API] Failed to write characters:', error)
+  }
+}
 
 /**
  * POST /api/characters
@@ -47,7 +86,9 @@ export async function POST(request: NextRequest) {
       createdAt: new Date().toISOString(),
     }
 
-    mockCharacters.set(characterId, character)
+    const characters = readCharacters()
+    characters[characterId] = character
+    writeCharacters(characters)
 
     return NextResponse.json(
       {
@@ -74,16 +115,17 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const projectId = request.nextUrl.searchParams.get('projectId')
+    const characters = readCharacters()
 
     if (projectId) {
-      const chars = Array.from(mockCharacters.values()).filter(
-        (c) => c.projectId === projectId
+      const chars = Object.values(characters).filter(
+        (c: any) => c.projectId === projectId
       )
-      return NextResponse.json({ characters: chars, count: chars.length })
+      return NextResponse.json(chars)
     }
 
-    const characters = Array.from(mockCharacters.values())
-    return NextResponse.json({ characters, count: characters.length })
+    const charactersList = Object.values(characters)
+    return NextResponse.json(charactersList)
   } catch (error) {
     console.error('[API] Character fetch error:', error)
     return NextResponse.json(
@@ -92,3 +134,6 @@ export async function GET(request: NextRequest) {
     )
   }
 }
+
+// Export for use in other routes
+export { readCharacters, writeCharacters }

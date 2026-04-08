@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Navigation from '@/components/layout/Navigation'
 import LeftPanel from '@/components/creator/LeftPanel'
 import ConfigurationForm from '@/components/creator/ConfigurationForm'
@@ -9,16 +10,34 @@ import RetroButton from '@/components/ui/RetroButton'
 import { useProject } from '@/hooks/useProject'
 
 export default function CreatorPage() {
-  const { currentProject, createProject, loading } = useProject()
+  const searchParams = useSearchParams()
+  const { currentProject, setCurrentProject, createProject, loading } = useProject()
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [currentCharacterId, setCurrentCharacterId] = useState<string | null>(null)
 
-  // Show modal if no project is created yet
+  // Read projectId from URL params and fetch that project
   useEffect(() => {
-    if (!currentProject && !showProjectModal) {
+    const projectId = searchParams.get('projectId')
+    
+    if (projectId && !currentProject) {
+      // Fetch the specific project
+      const fetchProject = async () => {
+        try {
+          const response = await fetch(`/api/projects/${projectId}`)
+          if (response.ok) {
+            const project = await response.json()
+            setCurrentProject(project)
+          }
+        } catch (err) {
+          console.error('Failed to fetch project:', err)
+        }
+      }
+      fetchProject()
+    } else if (!projectId && !currentProject) {
+      // Show modal if no project ID in URL and no current project
       setShowProjectModal(true)
     }
-  }, [currentProject, showProjectModal])
+  }, [searchParams, currentProject, setCurrentProject])
 
   const handleProjectCreated = () => {
     setShowProjectModal(false)
@@ -75,11 +94,13 @@ export default function CreatorPage() {
             </div>
 
             {/* Form */}
-            <ConfigurationForm
-              projectId={currentProject?.id}
-              characterName="KERMIT_NPC_01"
-              onDeploySuccess={handleDeploySuccess}
-            />
+            {currentProject && (
+              <ConfigurationForm
+                projectId={currentProject.id}
+                characterName="KERMIT_NPC_01"
+                onDeploySuccess={handleDeploySuccess}
+              />
+            )}
 
             {/* Footer spacing */}
             <div className="mt-12" />
