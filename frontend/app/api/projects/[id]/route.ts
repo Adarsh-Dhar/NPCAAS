@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readProjects } from '../route'
+import { prisma } from '@/lib/prisma'
 
 export async function GET(
   request: NextRequest,
@@ -8,9 +8,9 @@ export async function GET(
   try {
     const { id } = await params
 
-    // Check if project exists in persisted storage
-    const projects = readProjects()
-    const project = projects[id]
+    const project = await prisma.project.findUnique({
+      where: { id },
+    })
 
     if (!project) {
       return NextResponse.json(
@@ -19,7 +19,12 @@ export async function GET(
       )
     }
 
-    return NextResponse.json(project)
+    return NextResponse.json({
+      id: project.id,
+      name: project.name,
+      apiKey: project.apiKey,
+      createdAt: project.createdAt.toISOString(),
+    })
   } catch (error) {
     console.error('[API] Project fetch error:', error)
     return NextResponse.json(

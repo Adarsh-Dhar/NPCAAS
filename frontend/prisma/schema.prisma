@@ -14,6 +14,7 @@ datasource db {
 model Project {
   id        String     @id @default(cuid())
   name      String
+  apiKey    String     @unique
   createdAt DateTime   @default(now())
   characters Character[]
 }

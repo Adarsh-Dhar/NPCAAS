@@ -5,6 +5,7 @@ import { useState, useCallback } from 'react'
 export interface Project {
   id: string
   name: string
+  apiKey: string
   createdAt: string
 }
 
