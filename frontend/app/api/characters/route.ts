@@ -232,8 +232,12 @@ export async function POST(request: NextRequest) {
     )
   } catch (error) {
     console.error('[API] Character deployment error:', error)
+    const message =
+      error instanceof Error && error.message.trim()
+        ? error.message
+        : 'Failed to deploy character'
     return NextResponse.json(
-      { error: 'Failed to deploy character' },
+      { error: message },
       { status: 500 }
     )
   }

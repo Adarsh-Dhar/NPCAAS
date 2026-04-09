@@ -26,6 +26,22 @@ interface ConfigurationFormProps {
   }>
   onDeploySuccess?: (characterId: string) => void
   onSaveSuccess?: () => void
+  onRequireProject?: () => void
+}
+
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const payload = await response.json()
+    if (payload && typeof payload.error === 'string' && payload.error.trim()) {
+      return payload.error
+    }
+    if (payload && typeof payload.message === 'string' && payload.message.trim()) {
+      return payload.message
+    }
+  } catch {
+    // Ignore parse failures and use fallback.
+  }
+  return fallback
 }
 
 export default function ConfigurationForm({
@@ -35,6 +51,7 @@ export default function ConfigurationForm({
   initialConfig,
   onDeploySuccess,
   onSaveSuccess,
+  onRequireProject,
 }: ConfigurationFormProps) {
   const [formData, setFormData] = useState({
     capital: '1000',
@@ -82,7 +99,7 @@ export default function ConfigurationForm({
 
   const handleDeploy = async () => {
     if (!projectId) {
-      setDeployError('Please create a game first')
+      onRequireProject?.()
       return
     }
 
@@ -101,7 +118,8 @@ export default function ConfigurationForm({
       })
 
       if (!response.ok) {
-        throw new Error('Failed to deploy character')
+        const apiError = await readErrorMessage(response, 'Failed to deploy character')
+        throw new Error(apiError)
       }
 
       const data = await response.json()
@@ -118,13 +136,13 @@ export default function ConfigurationForm({
   }
 
   const handleSave = async () => {
-    if (!projectId) {
-      setDeployError('Please create a game first')
+    if (!characterId) {
+      await handleDeploy()
       return
     }
 
-    if (!characterId) {
-      await handleDeploy()
+    if (!projectId) {
+      onRequireProject?.()
       return
     }
 
@@ -143,7 +161,8 @@ export default function ConfigurationForm({
       })
 
       if (!response.ok) {
-        throw new Error('Failed to save character configuration')
+        const apiError = await readErrorMessage(response, 'Failed to save character configuration')
+        throw new Error(apiError)
       }
 
       onSaveSuccess?.()
@@ -220,7 +239,7 @@ export default function ConfigurationForm({
               size="sm"
               type="button"
               onClick={handleSave}
-              disabled={deploying || !projectId}
+              disabled={deploying}
               className="text-xs"
             >
               {deploying && characterId
@@ -388,7 +407,7 @@ export default function ConfigurationForm({
           variant={deploying ? 'magenta' : 'green'}
           size="lg"
           onClick={characterId ? handleSave : handleDeploy}
-          disabled={deploying || !projectId}
+          disabled={deploying}
           type="button"
           className="w-full"
         >
@@ -398,7 +417,9 @@ export default function ConfigurationForm({
               : 'DEPLOYING...'
             : characterId
               ? 'SAVE CHARACTER CHANGES'
-              : 'DEPLOY TO KITE CHAIN'}
+              : projectId
+                ? 'DEPLOY TO KITE CHAIN'
+                : 'SELECT GAME TO DEPLOY'}
         </RetroButton>
       </div>
     </form>
