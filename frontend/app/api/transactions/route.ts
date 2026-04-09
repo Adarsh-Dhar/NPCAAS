@@ -1,3 +1,11 @@
+/**
+ * app/api/transactions/route.ts  (full replacement)
+ *
+ * KEY CHANGE from the original:
+ *   executeWriteTransaction() now requires ownerId so the AA provider can
+ *   derive the NPC's signing key. We read it from character.smartAccountId,
+ *   which is where we stored it during character creation.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
@@ -22,142 +30,113 @@ interface DirectWriteTransaction {
 }
 
 function getCorsHeaders(origin: string | null) {
-  const allowedOrigin =
-    origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
-
+  const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
   return {
-    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   }
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
 }
 
-function toTradeIntent(value: unknown): TradeIntent | null {
-  const payload = asRecord(value)
-
-  if (
-    typeof payload.item !== 'string' ||
-    typeof payload.price !== 'number' ||
-    typeof payload.currency !== 'string'
-  ) {
-    return null
-  }
-
-  return {
-    item: payload.item,
-    price: payload.price,
-    currency: payload.currency,
-  }
+function toTradeIntent(v: unknown): TradeIntent | null {
+  const p = asRecord(v)
+  if (typeof p.item !== 'string' || typeof p.price !== 'number' || typeof p.currency !== 'string') return null
+  return { item: p.item, price: p.price, currency: p.currency }
 }
 
-function toDirectWriteTransaction(value: unknown): DirectWriteTransaction | null {
-  const payload = asRecord(value)
-
-  if (typeof payload.to !== 'string' || typeof payload.value !== 'string') {
-    return null
-  }
-
-  if (payload.data !== undefined && typeof payload.data !== 'string') {
-    return null
-  }
-
-  return {
-    to: payload.to,
-    value: payload.value,
-    data: typeof payload.data === 'string' ? payload.data : undefined,
-  }
+function toDirectTx(v: unknown): DirectWriteTransaction | null {
+  const p = asRecord(v)
+  if (typeof p.to !== 'string' || typeof p.value !== 'string') return null
+  if (p.data !== undefined && typeof p.data !== 'string') return null
+  return { to: p.to, value: p.value, data: typeof p.data === 'string' ? p.data : undefined }
 }
 
-function encodeTradeData(tradeIntent: TradeIntent): string {
+function encodeTradeData(t: TradeIntent): string {
   const payload = JSON.stringify({
     action: 'accept_trade',
-    item: tradeIntent.item,
-    price: tradeIntent.price,
-    currency: tradeIntent.currency,
+    item: t.item,
+    price: t.price,
+    currency: t.currency,
     timestamp: new Date().toISOString(),
   })
-
   return `0x${Buffer.from(payload, 'utf-8').toString('hex')}`
 }
 
 export async function OPTIONS(request: NextRequest) {
-  const origin = request.headers.get('origin')
-
   return new NextResponse(null, {
     status: 204,
-    headers: getCorsHeaders(origin),
+    headers: getCorsHeaders(request.headers.get('origin')),
   })
 }
 
-/**
- * POST /api/transactions
- * Universal write-transaction pipeline: sponsor first, then fallback to user gas.
- */
 export async function POST(request: NextRequest) {
   const origin = request.headers.get('origin')
-  const corsHeaders = getCorsHeaders(origin)
+  const cors = getCorsHeaders(origin)
 
   try {
+    // -- Auth (optional) --------------------------------------------------
     const authHeader = request.headers.get('Authorization')
     let authorizedProjectId: string | null = null
 
     if (authHeader) {
       if (!authHeader.startsWith('Bearer ')) {
         return NextResponse.json(
-          { error: 'Missing or malformed Authorization header. Use: Bearer gc_live_...' },
-          { status: 401, headers: corsHeaders }
+          { error: 'Malformed Authorization header. Use: Bearer gc_live_...' },
+          { status: 401, headers: cors }
         )
       }
-
-      const apiKey = authHeader.replace('Bearer ', '').trim()
-      const project = await validateApiKey(apiKey)
-
+      const project = await validateApiKey(authHeader.replace('Bearer ', '').trim())
       if (!project) {
-        return NextResponse.json({ error: 'Invalid API key' }, { status: 401, headers: corsHeaders })
+        return NextResponse.json({ error: 'Invalid API key' }, { status: 401, headers: cors })
       }
-
       authorizedProjectId = project.id
     }
 
+    // -- Parse body --------------------------------------------------------
     const body = await request.json()
     const characterId = typeof body.characterId === 'string' ? body.characterId : ''
     const tradeIntent = toTradeIntent(body.tradeIntent)
-    const directTx = toDirectWriteTransaction(body.transaction)
+    const directTx = toDirectTx(body.transaction)
 
     if (!characterId || (!tradeIntent && !directTx)) {
       return NextResponse.json(
-        {
-          error:
-            'characterId is required and provide one of: tradeIntent or transaction { to, value, data? }',
-        },
-        { status: 400, headers: corsHeaders }
+        { error: 'characterId is required; provide tradeIntent or transaction' },
+        { status: 400, headers: cors }
       )
     }
 
+    // -- Load character ----------------------------------------------------
     const character = await prisma.character.findUnique({ where: { id: characterId } })
-
     if (!character) {
-      return NextResponse.json({ error: 'Character not found' }, { status: 404, headers: corsHeaders })
+      return NextResponse.json({ error: 'Character not found' }, { status: 404, headers: cors })
     }
-
     if (authorizedProjectId && character.projectId !== authorizedProjectId) {
       return NextResponse.json(
         { error: 'Character not accessible with this API key' },
-        { status: 403, headers: corsHeaders }
+        { status: 403, headers: cors }
       )
     }
 
+    // -- Resolve ownerId ---------------------------------------------------
+    // smartAccountId stores the ownerId string (set during character creation)
+    const ownerId = character.smartAccountId ?? `${character.projectId}:${character.name}`
+
+    // -- Build tx input ----------------------------------------------------
     const txInput = directTx ?? {
       to: character.walletAddress,
       value: String(Math.max(0, Math.floor(tradeIntent!.price))),
       data: encodeTradeData(tradeIntent!),
     }
 
-    const execution = await executeWriteTransaction(txInput)
+    // -- Execute via real Kite AA ------------------------------------------
+    const execution = await executeWriteTransaction({
+      ...txInput,
+      ownerId,
+    })
 
     return NextResponse.json(
       {
@@ -165,6 +144,7 @@ export async function POST(request: NextRequest) {
         mode: execution.mode,
         sponsored: execution.sponsored,
         txHash: execution.txHash,
+        userOpHash: execution.userOpHash,
         status: execution.status,
         sponsorError: execution.sponsorError,
         characterId,
@@ -173,18 +153,17 @@ export async function POST(request: NextRequest) {
         message:
           execution.mode === 'sponsored'
             ? tradeIntent
-              ? 'Trade accepted with gas sponsored by Kite.'
-              : 'Transaction sent with gas sponsored by Kite.'
-            : 'Sponsorship unavailable. Returned fallback transaction for user-paid gas flow.',
+              ? 'Trade accepted — gas sponsored by Kite.'
+              : 'Transaction sent — gas sponsored by Kite.'
+            : 'Sponsorship unavailable. Fallback requires user-paid gas.',
       },
-      { status: 200, headers: corsHeaders }
+      { status: 200, headers: cors }
     )
   } catch (error) {
     console.error('[API] Transaction execution error:', error)
-
     return NextResponse.json(
       { error: 'Failed to execute transaction' },
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: getCorsHeaders(origin) }
     )
   }
 }

@@ -1,231 +1,197 @@
-import crypto from 'crypto'
+/**
+ * lib/aa-sdk.ts
+ *
+ * Production Account Abstraction integration using the real gokite-aa-sdk.
+ *
+ * Install before using:
+ *   pnpm add gokite-aa-sdk ethers
+ *
+ * Required env vars:
+ *   KITE_SIGNER_SECRET   — random 32-byte hex secret; used to derive per-NPC private keys
+ *   KITE_AA_NETWORK      — "kite_testnet" (default) | "kite_mainnet" when live
+ *   KITE_AA_RPC_URL      — https://rpc-testnet.gokite.ai  (default)
+ *   KITE_AA_BUNDLER_URL  — https://bundler-service.staging.gokite.ai/rpc/ (default)
+ *   KITE_AA_CHAIN_ID     — 2368 (kite testnet, default)
+ */
 
-interface CreateSmartAccountInput {
-	ownerId?: string
-	metadata?: Record<string, unknown>
+import { GokiteAASDK } from 'gokite-aa-sdk'
+import type {
+  UserOperationRequest,
+  UserOperationStatus,
+} from 'gokite-aa-sdk'
+import { ethers } from 'ethers'
+
+// ---------------------------------------------------------------------------
+// Config helpers
+// ---------------------------------------------------------------------------
+
+function getEnv(key: string, fallback: string): string {
+  return process.env[key] ?? fallback
 }
+
+const NETWORK    = getEnv('KITE_AA_NETWORK',     'kite_testnet')
+const RPC_URL    = getEnv('KITE_AA_RPC_URL',     'https://rpc-testnet.gokite.ai')
+const BUNDLER    = getEnv('KITE_AA_BUNDLER_URL', 'https://bundler-service.staging.gokite.ai/rpc/')
+const CHAIN_ID   = Number(getEnv('KITE_AA_CHAIN_ID', '2368'))
+const PROVIDER   = 'gokite-aa-sdk'
+
+// ---------------------------------------------------------------------------
+// Deterministic per-NPC signer derivation
+//
+// Each NPC gets its own Ethereum private key derived from:
+//   keccak256("guildcraft:" + KITE_SIGNER_SECRET + ":" + ownerId)
+//
+// KITE_SIGNER_SECRET must be a stable, secret value stored in your env.
+// Losing it means losing access to all NPC wallets.
+// ---------------------------------------------------------------------------
+
+function deriveSignerForOwner(ownerId: string): ethers.Wallet {
+  const secret = process.env.KITE_SIGNER_SECRET
+  if (!secret || secret.length < 16) {
+    throw new Error(
+      'KITE_SIGNER_SECRET is not set or too short. ' +
+      'Generate one with: openssl rand -hex 32'
+    )
+  }
+  const privateKey = ethers.keccak256(
+    ethers.toUtf8Bytes(`guildcraft:${secret}:${ownerId}`)
+  )
+  return new ethers.Wallet(privateKey)
+}
+
+// ---------------------------------------------------------------------------
+// Shared SDK instance (lazy, singleton per process)
+// ---------------------------------------------------------------------------
+
+let _sdk: GokiteAASDK | null = null
+
+function getSDK(): GokiteAASDK {
+  if (!_sdk) {
+    _sdk = new GokiteAASDK(NETWORK, RPC_URL, BUNDLER)
+  }
+  return _sdk
+}
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
 
 export interface SmartAccount {
-	address: string
-	chainId: number
-	smartAccountId?: string
-	provider: 'kite-aa-sdk' | 'kite-aa-http' | 'kite-aa-local'
+  address: string          // AA wallet address (the on-chain contract wallet)
+  signerAddress: string   // EOA signer address (derived from private key)
+  chainId: number
+  smartAccountId: string
+  provider: string
 }
 
-interface SponsorTransactionInput {
-	to: string
-	value: string
-	data?: string
+export interface SponsoredTx {
+  txHash: string
+  userOpHash: string
+  status: UserOperationStatus['status']
 }
 
-interface SponsoredTx {
-	txHash: string
-	status: 'pending' | 'success'
+export interface CreateSmartAccountInput {
+  ownerId?: string
+  metadata?: Record<string, unknown>
 }
 
-type UnknownRecord = Record<string, unknown>
-
-function asRecord(value: unknown): UnknownRecord {
-	return value && typeof value === 'object' ? (value as UnknownRecord) : {}
+export interface SponsorTransactionInput {
+  to: string
+  value: string     // decimal string, e.g. "1000000000000000000"
+  data?: string     // hex calldata
+  ownerId: string  // must match the NPC's ownerId used during creation
 }
 
-function asAddress(value: unknown): string | null {
-	if (typeof value !== 'string') {
-		return null
-	}
-
-	const trimmed = value.trim()
-	if (!/^0x[a-fA-F0-9]{40}$/.test(trimmed)) {
-		return null
-	}
-
-	return trimmed
-}
-
-function asTxHash(value: unknown): string | null {
-	if (typeof value !== 'string') {
-		return null
-	}
-
-	const trimmed = value.trim()
-	if (!/^0x[a-fA-F0-9]{64}$/.test(trimmed)) {
-		return null
-	}
-
-	return trimmed
-}
+// ---------------------------------------------------------------------------
+// KiteAAProvider — wraps the real GokiteAASDK
+// ---------------------------------------------------------------------------
 
 export class KiteAAProvider {
-	private readonly chainId = Number(process.env.KITE_AA_CHAIN_ID ?? 2368)
-	private readonly networkName = process.env.KITE_AA_NETWORK ?? 'kite_testnet'
-	private readonly rpcUrl = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
-	private readonly bundlerRpcUrl =
-		process.env.KITE_AA_BUNDLER_RPC_URL ?? 'https://bundler-service.staging.gokite.ai/rpc/'
-	private readonly sdkModuleName = process.env.KITE_AA_SDK_MODULE ?? 'gokite-aa-sdk'
-	private readonly localSeedNamespace = process.env.KITE_AA_LOCAL_SEED ?? 'kite-npc'
+  private readonly chainId = CHAIN_ID
 
-	async createSmartAccount(input: CreateSmartAccountInput = {}): Promise<SmartAccount> {
-		const sdkResult = await this.tryCreateWithSdk(input)
-		if (sdkResult) {
-			return sdkResult
-		}
+  /**
+   * Create (or derive) the smart-account wallet for an NPC.
+   * This is deterministic — calling it twice with the same ownerId returns
+   * the same address without any on-chain transaction.
+   */
+  async createSmartAccount(input: CreateSmartAccountInput = {}): Promise<SmartAccount> {
+    const ownerId = input.ownerId ?? 'anonymous'
+    const sdk = getSDK()
+    const signer = deriveSignerForOwner(ownerId)
 
-		return this.createWithLocalFallback(input)
-	}
+    // getAccountAddress is synchronous — returns the counterfactual AA address
+    const address = sdk.getAccountAddress(signer.address)
 
-	async sponsorTransaction(input: SponsorTransactionInput): Promise<SponsoredTx> {
-		const sdkResult = await this.trySponsorWithSdk(input)
-		if (sdkResult) {
-			return sdkResult
-		}
+    return {
+      address,
+      signerAddress: signer.address,
+      chainId: this.chainId,
+      smartAccountId: `kite-aa:${signer.address}`,
+      provider: PROVIDER,
+    }
+  }
 
-		return this.sponsorWithHttp(input)
-	}
+  /**
+   * Sponsor a write transaction for an NPC.
+   * Submits via the Kite bundler; falls back gracefully if sponsorship fails.
+   *
+   * The NPC's derived signer signs the UserOperation; the paymaster covers gas.
+   */
+  async sponsorTransaction(input: SponsorTransactionInput): Promise<SponsoredTx> {
+    const sdk = getSDK()
+    const signer = deriveSignerForOwner(input.ownerId)
 
-	private async tryCreateWithSdk(input: CreateSmartAccountInput): Promise<SmartAccount | null> {
-		try {
-			const sdkModule = (await import(this.sdkModuleName)) as UnknownRecord
-			const ProviderCtor =
-				(sdkModule.GokiteAASDK as new (...args: unknown[]) => UnknownRecord) ||
-				(sdkModule.default as new (...args: unknown[]) => UnknownRecord) ||
-				(sdkModule.KiteAAProvider as new (...args: unknown[]) => UnknownRecord) ||
-				(sdkModule.AAProvider as new (...args: unknown[]) => UnknownRecord) ||
-				null
+    const request: UserOperationRequest = {
+      target: input.to,
+      value: input.value ? BigInt(input.value) : BigInt(0),
+      callData: input.data ?? '0x',
+    }
 
-			if (!ProviderCtor) {
-				return null
-			}
+    const signFn = async (userOpHash: string): Promise<string> => {
+      // EIP-4337 requires signing over raw bytes (not eth_sign prefixed)
+      return signer.signMessage(ethers.getBytes(userOpHash))
+    }
 
-			const providerInstance =
-				ProviderCtor.length >= 3
-					? new ProviderCtor(this.networkName, this.rpcUrl, this.bundlerRpcUrl)
-					: (new ProviderCtor({
-						network: this.networkName,
-						rpcUrl: this.rpcUrl,
-						bundlerRpcUrl: this.bundlerRpcUrl,
-					}) as UnknownRecord)
+    const { userOpHash, status } = await sdk.sendUserOperationAndWait(
+      signer.address,
+      request,
+      signFn,
+      undefined, // salt — use default (0n)
+      undefined, // paymasterAddress — SDK fetches from bundler
+      {
+        interval: 2000,
+        timeout: 60_000,
+        maxRetries: 30,
+      }
+    )
 
-			const getAccountAddress = providerInstance.getAccountAddress
-			if (typeof getAccountAddress !== 'function') {
-				return null
-			}
+    const txHash = status.transactionHash ?? userOpHash
 
-			const signerAddress = this.deriveSignerAddress(input.ownerId, input.metadata)
-			const raw = await getAccountAddress.call(providerInstance, signerAddress)
-			const address = asAddress(raw)
+    return {
+      txHash,
+      userOpHash,
+      status: status.status,
+    }
+  }
 
-			if (!address) {
-				throw new Error('AA SDK did not return a valid smart account address')
-			}
+  /**
+   * Estimate gas and sponsorship availability for a transaction.
+   * Useful to check before executing.
+   */
+  async estimateTransaction(input: SponsorTransactionInput) {
+    const sdk = getSDK()
+    const signer = deriveSignerForOwner(input.ownerId)
 
-			return {
-				address,
-				chainId: this.chainId,
-				smartAccountId: `aa:${signerAddress}`,
-				provider: 'kite-aa-sdk',
-			}
-		} catch (error) {
-			if (process.env.KITE_AA_REQUIRE_SDK === 'true') {
-				const reason = error instanceof Error ? error.message : 'Unknown SDK error'
-				throw new Error(`Failed to create smart account via SDK: ${reason}`)
-			}
-
-			return null
-		}
-	}
-
-	private deriveSignerAddress(
-		ownerId?: string,
-		metadata?: Record<string, unknown>
-	): string {
-		const seed = JSON.stringify({
-			namespace: this.localSeedNamespace,
-			ownerId: ownerId ?? 'unknown-owner',
-			metadata: metadata ?? {},
-		})
-
-		return this.deriveAddress(seed)
-	}
-
-	private deriveAddress(seed: string): string {
-		return `0x${crypto.createHash('sha256').update(seed).digest('hex').slice(0, 40)}`
-	}
-
-	private deriveTxHash(seed: string): string {
-		return `0x${crypto.createHash('sha256').update(seed).digest('hex')}`
-	}
-
-	private createWithLocalFallback(input: CreateSmartAccountInput): SmartAccount {
-		const signerAddress = this.deriveSignerAddress(input.ownerId, input.metadata)
-
-		return {
-			address: this.deriveAddress(`${signerAddress}:aa-wallet`),
-			chainId: this.chainId,
-			smartAccountId: `local:${signerAddress}`,
-			provider: 'kite-aa-local',
-		}
-	}
-
-	private async trySponsorWithSdk(
-		input: SponsorTransactionInput
-	): Promise<SponsoredTx | null> {
-		try {
-			const sdkModule = (await import(this.sdkModuleName)) as UnknownRecord
-			const ProviderCtor =
-				(sdkModule.KiteAAProvider as new (...args: unknown[]) => UnknownRecord) ||
-				(sdkModule.AAProvider as new (...args: unknown[]) => UnknownRecord) ||
-				null
-
-			if (!ProviderCtor) {
-				return null
-			}
-
-			const providerInstance = new ProviderCtor({
-				network: this.networkName,
-				rpcUrl: this.rpcUrl,
-				bundlerRpcUrl: this.bundlerRpcUrl,
-				chainId: this.chainId,
-			}) as UnknownRecord
-
-			const sponsor = providerInstance.sponsorTransaction
-			if (typeof sponsor !== 'function') {
-				return null
-			}
-
-			const raw = await sponsor.call(providerInstance, input)
-			const payload = asRecord(raw)
-			const txHash =
-				asTxHash(payload.txHash) ||
-				asTxHash(asRecord(payload.tx).hash) ||
-				asTxHash(asRecord(payload.transaction).hash)
-
-			if (!txHash) {
-				throw new Error('AA SDK did not return a valid sponsored transaction hash')
-			}
-
-			return {
-				txHash,
-				status: 'success',
-			}
-		} catch (error) {
-			if (process.env.KITE_AA_REQUIRE_SDK === 'true') {
-				const reason = error instanceof Error ? error.message : 'Unknown SDK error'
-				throw new Error(`Failed to sponsor transaction via SDK: ${reason}`)
-			}
-
-			return null
-		}
-	}
-
-	private async createWithHttp(input: CreateSmartAccountInput): Promise<SmartAccount> {
-		return this.createWithLocalFallback(input)
-	}
-
-	private async sponsorWithHttp(input: SponsorTransactionInput): Promise<SponsoredTx> {
-		throw new Error(
-			`AA sponsorship requires Kite SDK or sponsor service configuration for ${input.to}`
-		)
-	}
+    return sdk.estimateUserOperation(signer.address, {
+      target: input.to,
+      value: input.value ? BigInt(input.value) : BigInt(0),
+      callData: input.data ?? '0x',
+    })
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Singleton export — used throughout the app
+// ---------------------------------------------------------------------------
 
 export const kiteAAProvider = new KiteAAProvider()

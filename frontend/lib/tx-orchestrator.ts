@@ -1,50 +1,94 @@
-import crypto from 'crypto'
+/**
+ * lib/tx-orchestrator.ts
+ *
+ * Production write-transaction pipeline using the real gokite-aa-sdk.
+ *
+ * Flow:
+ *   1. Attempt sponsored execution via the Kite bundler (gasless for the user)
+ *   2. If the bundler rejects (no sponsorship quota, network error, etc.)
+ *      AND KITE_AA_ALLOW_USER_GAS_FALLBACK !== 'false', return a fallback
+ *      payload the client can use for a user-paid flow.
+ *
+ * The NPC's ownerId is required for signing — it must match the value used
+ * when the NPC was deployed (stored in character.smartAccountId or derivable
+ * from projectId + characterName).
+ */
+
 import { kiteAAProvider } from '@/lib/aa-sdk'
+import type { SponsoredTx } from '@/lib/aa-sdk'
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
 
 export interface WriteTransactionInput {
   to: string
-  value: string
-  data?: string
+  value: string    // decimal string, e.g. "1000000"
+  data?: string    // hex calldata; defaults to '0x'
+  ownerId: string  // NPC owner string used at creation time
 }
 
+export type ExecutionMode = 'sponsored' | 'fallback'
+
 export interface SponsoredExecutionResult {
-  mode: 'sponsored' | 'fallback'
+  mode: ExecutionMode
   txHash: string
-  status: 'pending' | 'success'
+  userOpHash?: string
+  status: SponsoredTx['status'] | 'pending'
   sponsored: boolean
   sponsorError?: string
 }
 
-function createSyntheticTxHash(): string {
-  return `0x${crypto.randomBytes(32).toString('hex')}`
-}
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
 
-function allowFallbackToUserGas(): boolean {
+function allowFallback(): boolean {
   return process.env.KITE_AA_ALLOW_USER_GAS_FALLBACK !== 'false'
 }
+
+// ---------------------------------------------------------------------------
+// executeWriteTransaction
+// ---------------------------------------------------------------------------
 
 export async function executeWriteTransaction(
   input: WriteTransactionInput
 ): Promise<SponsoredExecutionResult> {
   try {
-    const sponsored = await kiteAAProvider.sponsorTransaction(input)
+    const result = await kiteAAProvider.sponsorTransaction({
+      to: input.to,
+      value: input.value,
+      data: input.data,
+      ownerId: input.ownerId,
+    })
+
+    // Map bundler statuses to our result type
+    if (result.status === 'failed' || result.status === 'reverted') {
+      throw new Error(`UserOperation ${result.status}: ${result.userOpHash}`)
+    }
 
     return {
       mode: 'sponsored',
-      txHash: sponsored.txHash,
-      status: sponsored.status,
+      txHash: result.txHash,
+      userOpHash: result.userOpHash,
+      status: result.status,
       sponsored: true,
     }
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : 'Unknown sponsor error'
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'Unknown sponsorship error'
 
-    if (!allowFallbackToUserGas()) {
+    if (!allowFallback()) {
       throw new Error(`Gas sponsorship failed and fallback is disabled: ${reason}`)
     }
 
+    // Fallback: return a synthetic result so the UI can handle it gracefully.
+    // In a real game client, this would prompt the player to sign the tx themselves.
+    console.warn('[tx-orchestrator] Sponsored execution failed, using fallback:', reason)
+
     return {
       mode: 'fallback',
-      txHash: createSyntheticTxHash(),
+      txHash: '0x' + '0'.repeat(64), // placeholder — no real tx
+      userOpHash: undefined,
       status: 'pending',
       sponsored: false,
       sponsorError: reason,
