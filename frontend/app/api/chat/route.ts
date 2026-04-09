@@ -43,10 +43,10 @@ interface AdaptationMemory {
 
 interface StoredCharacter {
   id: string
-  projectId: string
   name: string
   config: unknown
   adaptation: unknown
+  projects: Array<{ id: string }>
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -211,13 +211,18 @@ export async function POST(request: NextRequest) {
 
     const character = (await prisma.character.findUnique({
       where: { id: characterId },
+      include: {
+        projects: {
+          select: { id: true },
+        },
+      },
     })) as unknown as StoredCharacter | null
 
     if (!character) {
       return NextResponse.json({ error: 'Character not found' }, { status: 404, headers: corsHeaders })
     }
 
-    if (project && character.projectId !== project.id) {
+    if (project && !character.projects.some((game) => game.id === project.id)) {
       return NextResponse.json(
         { error: 'Character not accessible with this API key' },
         { status: 403, headers: corsHeaders }

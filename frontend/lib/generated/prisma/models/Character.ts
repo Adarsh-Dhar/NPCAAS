@@ -36,7 +36,6 @@ export type CharacterSumAggregateOutputType = {
 
 export type CharacterMinAggregateOutputType = {
   id: string | null
-  projectId: string | null
   name: string | null
   walletAddress: string | null
   aaChainId: number | null
@@ -51,7 +50,6 @@ export type CharacterMinAggregateOutputType = {
 
 export type CharacterMaxAggregateOutputType = {
   id: string | null
-  projectId: string | null
   name: string | null
   walletAddress: string | null
   aaChainId: number | null
@@ -66,7 +64,6 @@ export type CharacterMaxAggregateOutputType = {
 
 export type CharacterCountAggregateOutputType = {
   id: number
-  projectId: number
   name: number
   walletAddress: number
   aaChainId: number
@@ -93,7 +90,6 @@ export type CharacterSumAggregateInputType = {
 
 export type CharacterMinAggregateInputType = {
   id?: true
-  projectId?: true
   name?: true
   walletAddress?: true
   aaChainId?: true
@@ -108,7 +104,6 @@ export type CharacterMinAggregateInputType = {
 
 export type CharacterMaxAggregateInputType = {
   id?: true
-  projectId?: true
   name?: true
   walletAddress?: true
   aaChainId?: true
@@ -123,7 +118,6 @@ export type CharacterMaxAggregateInputType = {
 
 export type CharacterCountAggregateInputType = {
   id?: true
-  projectId?: true
   name?: true
   walletAddress?: true
   aaChainId?: true
@@ -227,7 +221,6 @@ export type CharacterGroupByArgs<ExtArgs extends runtime.Types.Extensions.Intern
 
 export type CharacterGroupByOutputType = {
   id: string
-  projectId: string
   name: string
   walletAddress: string
   aaChainId: number
@@ -267,7 +260,6 @@ export type CharacterWhereInput = {
   OR?: Prisma.CharacterWhereInput[]
   NOT?: Prisma.CharacterWhereInput | Prisma.CharacterWhereInput[]
   id?: Prisma.StringFilter<"Character"> | string
-  projectId?: Prisma.StringFilter<"Character"> | string
   name?: Prisma.StringFilter<"Character"> | string
   walletAddress?: Prisma.StringFilter<"Character"> | string
   aaChainId?: Prisma.IntFilter<"Character"> | number
@@ -280,12 +272,11 @@ export type CharacterWhereInput = {
   adaptation?: Prisma.JsonNullableFilter<"Character">
   createdAt?: Prisma.DateTimeFilter<"Character"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Character"> | Date | string
-  project?: Prisma.XOR<Prisma.ProjectScalarRelationFilter, Prisma.ProjectWhereInput>
+  projects?: Prisma.ProjectListRelationFilter
 }
 
 export type CharacterOrderByWithRelationInput = {
   id?: Prisma.SortOrder
-  projectId?: Prisma.SortOrder
   name?: Prisma.SortOrder
   walletAddress?: Prisma.SortOrder
   aaChainId?: Prisma.SortOrder
@@ -298,7 +289,7 @@ export type CharacterOrderByWithRelationInput = {
   adaptation?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
-  project?: Prisma.ProjectOrderByWithRelationInput
+  projects?: Prisma.ProjectOrderByRelationAggregateInput
 }
 
 export type CharacterWhereUniqueInput = Prisma.AtLeast<{
@@ -306,7 +297,6 @@ export type CharacterWhereUniqueInput = Prisma.AtLeast<{
   AND?: Prisma.CharacterWhereInput | Prisma.CharacterWhereInput[]
   OR?: Prisma.CharacterWhereInput[]
   NOT?: Prisma.CharacterWhereInput | Prisma.CharacterWhereInput[]
-  projectId?: Prisma.StringFilter<"Character"> | string
   name?: Prisma.StringFilter<"Character"> | string
   walletAddress?: Prisma.StringFilter<"Character"> | string
   aaChainId?: Prisma.IntFilter<"Character"> | number
@@ -319,12 +309,11 @@ export type CharacterWhereUniqueInput = Prisma.AtLeast<{
   adaptation?: Prisma.JsonNullableFilter<"Character">
   createdAt?: Prisma.DateTimeFilter<"Character"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Character"> | Date | string
-  project?: Prisma.XOR<Prisma.ProjectScalarRelationFilter, Prisma.ProjectWhereInput>
+  projects?: Prisma.ProjectListRelationFilter
 }, "id">
 
 export type CharacterOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
-  projectId?: Prisma.SortOrder
   name?: Prisma.SortOrder
   walletAddress?: Prisma.SortOrder
   aaChainId?: Prisma.SortOrder
@@ -349,7 +338,6 @@ export type CharacterScalarWhereWithAggregatesInput = {
   OR?: Prisma.CharacterScalarWhereWithAggregatesInput[]
   NOT?: Prisma.CharacterScalarWhereWithAggregatesInput | Prisma.CharacterScalarWhereWithAggregatesInput[]
   id?: Prisma.StringWithAggregatesFilter<"Character"> | string
-  projectId?: Prisma.StringWithAggregatesFilter<"Character"> | string
   name?: Prisma.StringWithAggregatesFilter<"Character"> | string
   walletAddress?: Prisma.StringWithAggregatesFilter<"Character"> | string
   aaChainId?: Prisma.IntWithAggregatesFilter<"Character"> | number
@@ -378,12 +366,11 @@ export type CharacterCreateInput = {
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
   updatedAt?: Date | string
-  project: Prisma.ProjectCreateNestedOneWithoutCharactersInput
+  projects?: Prisma.ProjectCreateNestedManyWithoutCharactersInput
 }
 
 export type CharacterUncheckedCreateInput = {
   id?: string
-  projectId: string
   name: string
   walletAddress: string
   aaChainId?: number
@@ -396,6 +383,7 @@ export type CharacterUncheckedCreateInput = {
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
   updatedAt?: Date | string
+  projects?: Prisma.ProjectUncheckedCreateNestedManyWithoutCharactersInput
 }
 
 export type CharacterUpdateInput = {
@@ -412,12 +400,11 @@ export type CharacterUpdateInput = {
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  project?: Prisma.ProjectUpdateOneRequiredWithoutCharactersNestedInput
+  projects?: Prisma.ProjectUpdateManyWithoutCharactersNestedInput
 }
 
 export type CharacterUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  projectId?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
   aaChainId?: Prisma.IntFieldUpdateOperationsInput | number
@@ -430,11 +417,11 @@ export type CharacterUncheckedUpdateInput = {
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  projects?: Prisma.ProjectUncheckedUpdateManyWithoutCharactersNestedInput
 }
 
 export type CharacterCreateManyInput = {
   id?: string
-  projectId: string
   name: string
   walletAddress: string
   aaChainId?: number
@@ -467,7 +454,6 @@ export type CharacterUpdateManyMutationInput = {
 
 export type CharacterUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  projectId?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
   aaChainId?: Prisma.IntFieldUpdateOperationsInput | number
@@ -494,7 +480,6 @@ export type CharacterOrderByRelationAggregateInput = {
 
 export type CharacterCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
-  projectId?: Prisma.SortOrder
   name?: Prisma.SortOrder
   walletAddress?: Prisma.SortOrder
   aaChainId?: Prisma.SortOrder
@@ -515,7 +500,6 @@ export type CharacterAvgOrderByAggregateInput = {
 
 export type CharacterMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
-  projectId?: Prisma.SortOrder
   name?: Prisma.SortOrder
   walletAddress?: Prisma.SortOrder
   aaChainId?: Prisma.SortOrder
@@ -530,7 +514,6 @@ export type CharacterMaxOrderByAggregateInput = {
 
 export type CharacterMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
-  projectId?: Prisma.SortOrder
   name?: Prisma.SortOrder
   walletAddress?: Prisma.SortOrder
   aaChainId?: Prisma.SortOrder
@@ -547,45 +530,41 @@ export type CharacterSumOrderByAggregateInput = {
   aaChainId?: Prisma.SortOrder
 }
 
-export type CharacterCreateNestedManyWithoutProjectInput = {
-  create?: Prisma.XOR<Prisma.CharacterCreateWithoutProjectInput, Prisma.CharacterUncheckedCreateWithoutProjectInput> | Prisma.CharacterCreateWithoutProjectInput[] | Prisma.CharacterUncheckedCreateWithoutProjectInput[]
-  connectOrCreate?: Prisma.CharacterCreateOrConnectWithoutProjectInput | Prisma.CharacterCreateOrConnectWithoutProjectInput[]
-  createMany?: Prisma.CharacterCreateManyProjectInputEnvelope
+export type CharacterCreateNestedManyWithoutProjectsInput = {
+  create?: Prisma.XOR<Prisma.CharacterCreateWithoutProjectsInput, Prisma.CharacterUncheckedCreateWithoutProjectsInput> | Prisma.CharacterCreateWithoutProjectsInput[] | Prisma.CharacterUncheckedCreateWithoutProjectsInput[]
+  connectOrCreate?: Prisma.CharacterCreateOrConnectWithoutProjectsInput | Prisma.CharacterCreateOrConnectWithoutProjectsInput[]
   connect?: Prisma.CharacterWhereUniqueInput | Prisma.CharacterWhereUniqueInput[]
 }
 
-export type CharacterUncheckedCreateNestedManyWithoutProjectInput = {
-  create?: Prisma.XOR<Prisma.CharacterCreateWithoutProjectInput, Prisma.CharacterUncheckedCreateWithoutProjectInput> | Prisma.CharacterCreateWithoutProjectInput[] | Prisma.CharacterUncheckedCreateWithoutProjectInput[]
-  connectOrCreate?: Prisma.CharacterCreateOrConnectWithoutProjectInput | Prisma.CharacterCreateOrConnectWithoutProjectInput[]
-  createMany?: Prisma.CharacterCreateManyProjectInputEnvelope
+export type CharacterUncheckedCreateNestedManyWithoutProjectsInput = {
+  create?: Prisma.XOR<Prisma.CharacterCreateWithoutProjectsInput, Prisma.CharacterUncheckedCreateWithoutProjectsInput> | Prisma.CharacterCreateWithoutProjectsInput[] | Prisma.CharacterUncheckedCreateWithoutProjectsInput[]
+  connectOrCreate?: Prisma.CharacterCreateOrConnectWithoutProjectsInput | Prisma.CharacterCreateOrConnectWithoutProjectsInput[]
   connect?: Prisma.CharacterWhereUniqueInput | Prisma.CharacterWhereUniqueInput[]
 }
 
-export type CharacterUpdateManyWithoutProjectNestedInput = {
-  create?: Prisma.XOR<Prisma.CharacterCreateWithoutProjectInput, Prisma.CharacterUncheckedCreateWithoutProjectInput> | Prisma.CharacterCreateWithoutProjectInput[] | Prisma.CharacterUncheckedCreateWithoutProjectInput[]
-  connectOrCreate?: Prisma.CharacterCreateOrConnectWithoutProjectInput | Prisma.CharacterCreateOrConnectWithoutProjectInput[]
-  upsert?: Prisma.CharacterUpsertWithWhereUniqueWithoutProjectInput | Prisma.CharacterUpsertWithWhereUniqueWithoutProjectInput[]
-  createMany?: Prisma.CharacterCreateManyProjectInputEnvelope
+export type CharacterUpdateManyWithoutProjectsNestedInput = {
+  create?: Prisma.XOR<Prisma.CharacterCreateWithoutProjectsInput, Prisma.CharacterUncheckedCreateWithoutProjectsInput> | Prisma.CharacterCreateWithoutProjectsInput[] | Prisma.CharacterUncheckedCreateWithoutProjectsInput[]
+  connectOrCreate?: Prisma.CharacterCreateOrConnectWithoutProjectsInput | Prisma.CharacterCreateOrConnectWithoutProjectsInput[]
+  upsert?: Prisma.CharacterUpsertWithWhereUniqueWithoutProjectsInput | Prisma.CharacterUpsertWithWhereUniqueWithoutProjectsInput[]
   set?: Prisma.CharacterWhereUniqueInput | Prisma.CharacterWhereUniqueInput[]
   disconnect?: Prisma.CharacterWhereUniqueInput | Prisma.CharacterWhereUniqueInput[]
   delete?: Prisma.CharacterWhereUniqueInput | Prisma.CharacterWhereUniqueInput[]
   connect?: Prisma.CharacterWhereUniqueInput | Prisma.CharacterWhereUniqueInput[]
-  update?: Prisma.CharacterUpdateWithWhereUniqueWithoutProjectInput | Prisma.CharacterUpdateWithWhereUniqueWithoutProjectInput[]
-  updateMany?: Prisma.CharacterUpdateManyWithWhereWithoutProjectInput | Prisma.CharacterUpdateManyWithWhereWithoutProjectInput[]
+  update?: Prisma.CharacterUpdateWithWhereUniqueWithoutProjectsInput | Prisma.CharacterUpdateWithWhereUniqueWithoutProjectsInput[]
+  updateMany?: Prisma.CharacterUpdateManyWithWhereWithoutProjectsInput | Prisma.CharacterUpdateManyWithWhereWithoutProjectsInput[]
   deleteMany?: Prisma.CharacterScalarWhereInput | Prisma.CharacterScalarWhereInput[]
 }
 
-export type CharacterUncheckedUpdateManyWithoutProjectNestedInput = {
-  create?: Prisma.XOR<Prisma.CharacterCreateWithoutProjectInput, Prisma.CharacterUncheckedCreateWithoutProjectInput> | Prisma.CharacterCreateWithoutProjectInput[] | Prisma.CharacterUncheckedCreateWithoutProjectInput[]
-  connectOrCreate?: Prisma.CharacterCreateOrConnectWithoutProjectInput | Prisma.CharacterCreateOrConnectWithoutProjectInput[]
-  upsert?: Prisma.CharacterUpsertWithWhereUniqueWithoutProjectInput | Prisma.CharacterUpsertWithWhereUniqueWithoutProjectInput[]
-  createMany?: Prisma.CharacterCreateManyProjectInputEnvelope
+export type CharacterUncheckedUpdateManyWithoutProjectsNestedInput = {
+  create?: Prisma.XOR<Prisma.CharacterCreateWithoutProjectsInput, Prisma.CharacterUncheckedCreateWithoutProjectsInput> | Prisma.CharacterCreateWithoutProjectsInput[] | Prisma.CharacterUncheckedCreateWithoutProjectsInput[]
+  connectOrCreate?: Prisma.CharacterCreateOrConnectWithoutProjectsInput | Prisma.CharacterCreateOrConnectWithoutProjectsInput[]
+  upsert?: Prisma.CharacterUpsertWithWhereUniqueWithoutProjectsInput | Prisma.CharacterUpsertWithWhereUniqueWithoutProjectsInput[]
   set?: Prisma.CharacterWhereUniqueInput | Prisma.CharacterWhereUniqueInput[]
   disconnect?: Prisma.CharacterWhereUniqueInput | Prisma.CharacterWhereUniqueInput[]
   delete?: Prisma.CharacterWhereUniqueInput | Prisma.CharacterWhereUniqueInput[]
   connect?: Prisma.CharacterWhereUniqueInput | Prisma.CharacterWhereUniqueInput[]
-  update?: Prisma.CharacterUpdateWithWhereUniqueWithoutProjectInput | Prisma.CharacterUpdateWithWhereUniqueWithoutProjectInput[]
-  updateMany?: Prisma.CharacterUpdateManyWithWhereWithoutProjectInput | Prisma.CharacterUpdateManyWithWhereWithoutProjectInput[]
+  update?: Prisma.CharacterUpdateWithWhereUniqueWithoutProjectsInput | Prisma.CharacterUpdateWithWhereUniqueWithoutProjectsInput[]
+  updateMany?: Prisma.CharacterUpdateManyWithWhereWithoutProjectsInput | Prisma.CharacterUpdateManyWithWhereWithoutProjectsInput[]
   deleteMany?: Prisma.CharacterScalarWhereInput | Prisma.CharacterScalarWhereInput[]
 }
 
@@ -605,7 +584,7 @@ export type BoolFieldUpdateOperationsInput = {
   set?: boolean
 }
 
-export type CharacterCreateWithoutProjectInput = {
+export type CharacterCreateWithoutProjectsInput = {
   id?: string
   name: string
   walletAddress: string
@@ -621,7 +600,7 @@ export type CharacterCreateWithoutProjectInput = {
   updatedAt?: Date | string
 }
 
-export type CharacterUncheckedCreateWithoutProjectInput = {
+export type CharacterUncheckedCreateWithoutProjectsInput = {
   id?: string
   name: string
   walletAddress: string
@@ -637,30 +616,25 @@ export type CharacterUncheckedCreateWithoutProjectInput = {
   updatedAt?: Date | string
 }
 
-export type CharacterCreateOrConnectWithoutProjectInput = {
+export type CharacterCreateOrConnectWithoutProjectsInput = {
   where: Prisma.CharacterWhereUniqueInput
-  create: Prisma.XOR<Prisma.CharacterCreateWithoutProjectInput, Prisma.CharacterUncheckedCreateWithoutProjectInput>
+  create: Prisma.XOR<Prisma.CharacterCreateWithoutProjectsInput, Prisma.CharacterUncheckedCreateWithoutProjectsInput>
 }
 
-export type CharacterCreateManyProjectInputEnvelope = {
-  data: Prisma.CharacterCreateManyProjectInput | Prisma.CharacterCreateManyProjectInput[]
-  skipDuplicates?: boolean
-}
-
-export type CharacterUpsertWithWhereUniqueWithoutProjectInput = {
+export type CharacterUpsertWithWhereUniqueWithoutProjectsInput = {
   where: Prisma.CharacterWhereUniqueInput
-  update: Prisma.XOR<Prisma.CharacterUpdateWithoutProjectInput, Prisma.CharacterUncheckedUpdateWithoutProjectInput>
-  create: Prisma.XOR<Prisma.CharacterCreateWithoutProjectInput, Prisma.CharacterUncheckedCreateWithoutProjectInput>
+  update: Prisma.XOR<Prisma.CharacterUpdateWithoutProjectsInput, Prisma.CharacterUncheckedUpdateWithoutProjectsInput>
+  create: Prisma.XOR<Prisma.CharacterCreateWithoutProjectsInput, Prisma.CharacterUncheckedCreateWithoutProjectsInput>
 }
 
-export type CharacterUpdateWithWhereUniqueWithoutProjectInput = {
+export type CharacterUpdateWithWhereUniqueWithoutProjectsInput = {
   where: Prisma.CharacterWhereUniqueInput
-  data: Prisma.XOR<Prisma.CharacterUpdateWithoutProjectInput, Prisma.CharacterUncheckedUpdateWithoutProjectInput>
+  data: Prisma.XOR<Prisma.CharacterUpdateWithoutProjectsInput, Prisma.CharacterUncheckedUpdateWithoutProjectsInput>
 }
 
-export type CharacterUpdateManyWithWhereWithoutProjectInput = {
+export type CharacterUpdateManyWithWhereWithoutProjectsInput = {
   where: Prisma.CharacterScalarWhereInput
-  data: Prisma.XOR<Prisma.CharacterUpdateManyMutationInput, Prisma.CharacterUncheckedUpdateManyWithoutProjectInput>
+  data: Prisma.XOR<Prisma.CharacterUpdateManyMutationInput, Prisma.CharacterUncheckedUpdateManyWithoutProjectsInput>
 }
 
 export type CharacterScalarWhereInput = {
@@ -668,7 +642,6 @@ export type CharacterScalarWhereInput = {
   OR?: Prisma.CharacterScalarWhereInput[]
   NOT?: Prisma.CharacterScalarWhereInput | Prisma.CharacterScalarWhereInput[]
   id?: Prisma.StringFilter<"Character"> | string
-  projectId?: Prisma.StringFilter<"Character"> | string
   name?: Prisma.StringFilter<"Character"> | string
   walletAddress?: Prisma.StringFilter<"Character"> | string
   aaChainId?: Prisma.IntFilter<"Character"> | number
@@ -683,23 +656,7 @@ export type CharacterScalarWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"Character"> | Date | string
 }
 
-export type CharacterCreateManyProjectInput = {
-  id?: string
-  name: string
-  walletAddress: string
-  aaChainId?: number
-  aaProvider?: string
-  smartAccountId?: string | null
-  smartAccountStatus?: string
-  isDeployedOnChain?: boolean
-  deploymentTxHash?: string | null
-  config: Prisma.JsonNullValueInput | runtime.InputJsonValue
-  adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
-  createdAt?: Date | string
-  updatedAt?: Date | string
-}
-
-export type CharacterUpdateWithoutProjectInput = {
+export type CharacterUpdateWithoutProjectsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
@@ -715,7 +672,7 @@ export type CharacterUpdateWithoutProjectInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
-export type CharacterUncheckedUpdateWithoutProjectInput = {
+export type CharacterUncheckedUpdateWithoutProjectsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
@@ -731,7 +688,7 @@ export type CharacterUncheckedUpdateWithoutProjectInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
-export type CharacterUncheckedUpdateManyWithoutProjectInput = {
+export type CharacterUncheckedUpdateManyWithoutProjectsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   walletAddress?: Prisma.StringFieldUpdateOperationsInput | string
@@ -747,11 +704,39 @@ export type CharacterUncheckedUpdateManyWithoutProjectInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
+
+/**
+ * Count Type CharacterCountOutputType
+ */
+
+export type CharacterCountOutputType = {
+  projects: number
+}
+
+export type CharacterCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  projects?: boolean | CharacterCountOutputTypeCountProjectsArgs
+}
+
+/**
+ * CharacterCountOutputType without action
+ */
+export type CharacterCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the CharacterCountOutputType
+   */
+  select?: Prisma.CharacterCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * CharacterCountOutputType without action
+ */
+export type CharacterCountOutputTypeCountProjectsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ProjectWhereInput
+}
 
 
 export type CharacterSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
-  projectId?: boolean
   name?: boolean
   walletAddress?: boolean
   aaChainId?: boolean
@@ -764,12 +749,12 @@ export type CharacterSelect<ExtArgs extends runtime.Types.Extensions.InternalArg
   adaptation?: boolean
   createdAt?: boolean
   updatedAt?: boolean
-  project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
+  projects?: boolean | Prisma.Character$projectsArgs<ExtArgs>
+  _count?: boolean | Prisma.CharacterCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["character"]>
 
 export type CharacterSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
-  projectId?: boolean
   name?: boolean
   walletAddress?: boolean
   aaChainId?: boolean
@@ -782,12 +767,10 @@ export type CharacterSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Ext
   adaptation?: boolean
   createdAt?: boolean
   updatedAt?: boolean
-  project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["character"]>
 
 export type CharacterSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
-  projectId?: boolean
   name?: boolean
   walletAddress?: boolean
   aaChainId?: boolean
@@ -800,12 +783,10 @@ export type CharacterSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Ext
   adaptation?: boolean
   createdAt?: boolean
   updatedAt?: boolean
-  project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["character"]>
 
 export type CharacterSelectScalar = {
   id?: boolean
-  projectId?: boolean
   name?: boolean
   walletAddress?: boolean
   aaChainId?: boolean
@@ -820,25 +801,21 @@ export type CharacterSelectScalar = {
   updatedAt?: boolean
 }
 
-export type CharacterOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "projectId" | "name" | "walletAddress" | "aaChainId" | "aaProvider" | "smartAccountId" | "smartAccountStatus" | "isDeployedOnChain" | "deploymentTxHash" | "config" | "adaptation" | "createdAt" | "updatedAt", ExtArgs["result"]["character"]>
+export type CharacterOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "walletAddress" | "aaChainId" | "aaProvider" | "smartAccountId" | "smartAccountStatus" | "isDeployedOnChain" | "deploymentTxHash" | "config" | "adaptation" | "createdAt" | "updatedAt", ExtArgs["result"]["character"]>
 export type CharacterInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
+  projects?: boolean | Prisma.Character$projectsArgs<ExtArgs>
+  _count?: boolean | Prisma.CharacterCountOutputTypeDefaultArgs<ExtArgs>
 }
-export type CharacterIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
-}
-export type CharacterIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
-}
+export type CharacterIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
+export type CharacterIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
 
 export type $CharacterPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "Character"
   objects: {
-    project: Prisma.$ProjectPayload<ExtArgs>
+    projects: Prisma.$ProjectPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
-    projectId: string
     name: string
     walletAddress: string
     aaChainId: number
@@ -1245,7 +1222,7 @@ readonly fields: CharacterFieldRefs;
  */
 export interface Prisma__CharacterClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
-  project<T extends Prisma.ProjectDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ProjectDefaultArgs<ExtArgs>>): Prisma.Prisma__ProjectClient<runtime.Types.Result.GetResult<Prisma.$ProjectPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+  projects<T extends Prisma.Character$projectsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Character$projectsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ProjectPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1276,7 +1253,6 @@ export interface Prisma__CharacterClient<T, Null = never, ExtArgs extends runtim
  */
 export interface CharacterFieldRefs {
   readonly id: Prisma.FieldRef<"Character", 'String'>
-  readonly projectId: Prisma.FieldRef<"Character", 'String'>
   readonly name: Prisma.FieldRef<"Character", 'String'>
   readonly walletAddress: Prisma.FieldRef<"Character", 'String'>
   readonly aaChainId: Prisma.FieldRef<"Character", 'Int'>
@@ -1543,10 +1519,6 @@ export type CharacterCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Exten
    */
   data: Prisma.CharacterCreateManyInput | Prisma.CharacterCreateManyInput[]
   skipDuplicates?: boolean
-  /**
-   * Choose, which related nodes to fetch as well
-   */
-  include?: Prisma.CharacterIncludeCreateManyAndReturn<ExtArgs> | null
 }
 
 /**
@@ -1617,10 +1589,6 @@ export type CharacterUpdateManyAndReturnArgs<ExtArgs extends runtime.Types.Exten
    * Limit how many Characters to update.
    */
   limit?: number
-  /**
-   * Choose, which related nodes to fetch as well
-   */
-  include?: Prisma.CharacterIncludeUpdateManyAndReturn<ExtArgs> | null
 }
 
 /**
@@ -1687,6 +1655,30 @@ export type CharacterDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.Int
    * Limit how many Characters to delete.
    */
   limit?: number
+}
+
+/**
+ * Character.projects
+ */
+export type Character$projectsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Project
+   */
+  select?: Prisma.ProjectSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Project
+   */
+  omit?: Prisma.ProjectOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ProjectInclude<ExtArgs> | null
+  where?: Prisma.ProjectWhereInput
+  orderBy?: Prisma.ProjectOrderByWithRelationInput | Prisma.ProjectOrderByWithRelationInput[]
+  cursor?: Prisma.ProjectWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ProjectScalarFieldEnum | Prisma.ProjectScalarFieldEnum[]
 }
 
 /**

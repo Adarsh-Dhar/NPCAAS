@@ -19,7 +19,7 @@ export function useProject() {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch('/api/projects', {
+      const response = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -46,7 +46,7 @@ export function useProject() {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch('/api/projects')
+      const response = await fetch('/api/games')
       if (!response.ok) {
         throw new Error('Failed to fetch projects')
       }

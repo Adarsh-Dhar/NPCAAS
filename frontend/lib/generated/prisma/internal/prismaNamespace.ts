@@ -604,7 +604,6 @@ export type ProjectScalarFieldEnum = (typeof ProjectScalarFieldEnum)[keyof typeo
 
 export const CharacterScalarFieldEnum = {
   id: 'id',
-  projectId: 'projectId',
   name: 'name',
   walletAddress: 'walletAddress',
   aaChainId: 'aaChainId',

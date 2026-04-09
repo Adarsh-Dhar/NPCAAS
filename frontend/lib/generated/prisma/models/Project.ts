@@ -221,7 +221,7 @@ export type ProjectCreateInput = {
   name: string
   apiKey: string
   createdAt?: Date | string
-  characters?: Prisma.CharacterCreateNestedManyWithoutProjectInput
+  characters?: Prisma.CharacterCreateNestedManyWithoutProjectsInput
 }
 
 export type ProjectUncheckedCreateInput = {
@@ -229,7 +229,7 @@ export type ProjectUncheckedCreateInput = {
   name: string
   apiKey: string
   createdAt?: Date | string
-  characters?: Prisma.CharacterUncheckedCreateNestedManyWithoutProjectInput
+  characters?: Prisma.CharacterUncheckedCreateNestedManyWithoutProjectsInput
 }
 
 export type ProjectUpdateInput = {
@@ -237,7 +237,7 @@ export type ProjectUpdateInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   apiKey?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  characters?: Prisma.CharacterUpdateManyWithoutProjectNestedInput
+  characters?: Prisma.CharacterUpdateManyWithoutProjectsNestedInput
 }
 
 export type ProjectUncheckedUpdateInput = {
@@ -245,7 +245,7 @@ export type ProjectUncheckedUpdateInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   apiKey?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  characters?: Prisma.CharacterUncheckedUpdateManyWithoutProjectNestedInput
+  characters?: Prisma.CharacterUncheckedUpdateManyWithoutProjectsNestedInput
 }
 
 export type ProjectCreateManyInput = {
@@ -290,9 +290,14 @@ export type ProjectMinOrderByAggregateInput = {
   createdAt?: Prisma.SortOrder
 }
 
-export type ProjectScalarRelationFilter = {
-  is?: Prisma.ProjectWhereInput
-  isNot?: Prisma.ProjectWhereInput
+export type ProjectListRelationFilter = {
+  every?: Prisma.ProjectWhereInput
+  some?: Prisma.ProjectWhereInput
+  none?: Prisma.ProjectWhereInput
+}
+
+export type ProjectOrderByRelationAggregateInput = {
+  _count?: Prisma.SortOrder
 }
 
 export type StringFieldUpdateOperationsInput = {
@@ -303,18 +308,42 @@ export type DateTimeFieldUpdateOperationsInput = {
   set?: Date | string
 }
 
-export type ProjectCreateNestedOneWithoutCharactersInput = {
-  create?: Prisma.XOR<Prisma.ProjectCreateWithoutCharactersInput, Prisma.ProjectUncheckedCreateWithoutCharactersInput>
-  connectOrCreate?: Prisma.ProjectCreateOrConnectWithoutCharactersInput
-  connect?: Prisma.ProjectWhereUniqueInput
+export type ProjectCreateNestedManyWithoutCharactersInput = {
+  create?: Prisma.XOR<Prisma.ProjectCreateWithoutCharactersInput, Prisma.ProjectUncheckedCreateWithoutCharactersInput> | Prisma.ProjectCreateWithoutCharactersInput[] | Prisma.ProjectUncheckedCreateWithoutCharactersInput[]
+  connectOrCreate?: Prisma.ProjectCreateOrConnectWithoutCharactersInput | Prisma.ProjectCreateOrConnectWithoutCharactersInput[]
+  connect?: Prisma.ProjectWhereUniqueInput | Prisma.ProjectWhereUniqueInput[]
 }
 
-export type ProjectUpdateOneRequiredWithoutCharactersNestedInput = {
-  create?: Prisma.XOR<Prisma.ProjectCreateWithoutCharactersInput, Prisma.ProjectUncheckedCreateWithoutCharactersInput>
-  connectOrCreate?: Prisma.ProjectCreateOrConnectWithoutCharactersInput
-  upsert?: Prisma.ProjectUpsertWithoutCharactersInput
-  connect?: Prisma.ProjectWhereUniqueInput
-  update?: Prisma.XOR<Prisma.XOR<Prisma.ProjectUpdateToOneWithWhereWithoutCharactersInput, Prisma.ProjectUpdateWithoutCharactersInput>, Prisma.ProjectUncheckedUpdateWithoutCharactersInput>
+export type ProjectUncheckedCreateNestedManyWithoutCharactersInput = {
+  create?: Prisma.XOR<Prisma.ProjectCreateWithoutCharactersInput, Prisma.ProjectUncheckedCreateWithoutCharactersInput> | Prisma.ProjectCreateWithoutCharactersInput[] | Prisma.ProjectUncheckedCreateWithoutCharactersInput[]
+  connectOrCreate?: Prisma.ProjectCreateOrConnectWithoutCharactersInput | Prisma.ProjectCreateOrConnectWithoutCharactersInput[]
+  connect?: Prisma.ProjectWhereUniqueInput | Prisma.ProjectWhereUniqueInput[]
+}
+
+export type ProjectUpdateManyWithoutCharactersNestedInput = {
+  create?: Prisma.XOR<Prisma.ProjectCreateWithoutCharactersInput, Prisma.ProjectUncheckedCreateWithoutCharactersInput> | Prisma.ProjectCreateWithoutCharactersInput[] | Prisma.ProjectUncheckedCreateWithoutCharactersInput[]
+  connectOrCreate?: Prisma.ProjectCreateOrConnectWithoutCharactersInput | Prisma.ProjectCreateOrConnectWithoutCharactersInput[]
+  upsert?: Prisma.ProjectUpsertWithWhereUniqueWithoutCharactersInput | Prisma.ProjectUpsertWithWhereUniqueWithoutCharactersInput[]
+  set?: Prisma.ProjectWhereUniqueInput | Prisma.ProjectWhereUniqueInput[]
+  disconnect?: Prisma.ProjectWhereUniqueInput | Prisma.ProjectWhereUniqueInput[]
+  delete?: Prisma.ProjectWhereUniqueInput | Prisma.ProjectWhereUniqueInput[]
+  connect?: Prisma.ProjectWhereUniqueInput | Prisma.ProjectWhereUniqueInput[]
+  update?: Prisma.ProjectUpdateWithWhereUniqueWithoutCharactersInput | Prisma.ProjectUpdateWithWhereUniqueWithoutCharactersInput[]
+  updateMany?: Prisma.ProjectUpdateManyWithWhereWithoutCharactersInput | Prisma.ProjectUpdateManyWithWhereWithoutCharactersInput[]
+  deleteMany?: Prisma.ProjectScalarWhereInput | Prisma.ProjectScalarWhereInput[]
+}
+
+export type ProjectUncheckedUpdateManyWithoutCharactersNestedInput = {
+  create?: Prisma.XOR<Prisma.ProjectCreateWithoutCharactersInput, Prisma.ProjectUncheckedCreateWithoutCharactersInput> | Prisma.ProjectCreateWithoutCharactersInput[] | Prisma.ProjectUncheckedCreateWithoutCharactersInput[]
+  connectOrCreate?: Prisma.ProjectCreateOrConnectWithoutCharactersInput | Prisma.ProjectCreateOrConnectWithoutCharactersInput[]
+  upsert?: Prisma.ProjectUpsertWithWhereUniqueWithoutCharactersInput | Prisma.ProjectUpsertWithWhereUniqueWithoutCharactersInput[]
+  set?: Prisma.ProjectWhereUniqueInput | Prisma.ProjectWhereUniqueInput[]
+  disconnect?: Prisma.ProjectWhereUniqueInput | Prisma.ProjectWhereUniqueInput[]
+  delete?: Prisma.ProjectWhereUniqueInput | Prisma.ProjectWhereUniqueInput[]
+  connect?: Prisma.ProjectWhereUniqueInput | Prisma.ProjectWhereUniqueInput[]
+  update?: Prisma.ProjectUpdateWithWhereUniqueWithoutCharactersInput | Prisma.ProjectUpdateWithWhereUniqueWithoutCharactersInput[]
+  updateMany?: Prisma.ProjectUpdateManyWithWhereWithoutCharactersInput | Prisma.ProjectUpdateManyWithWhereWithoutCharactersInput[]
+  deleteMany?: Prisma.ProjectScalarWhereInput | Prisma.ProjectScalarWhereInput[]
 }
 
 export type ProjectCreateWithoutCharactersInput = {
@@ -336,15 +365,30 @@ export type ProjectCreateOrConnectWithoutCharactersInput = {
   create: Prisma.XOR<Prisma.ProjectCreateWithoutCharactersInput, Prisma.ProjectUncheckedCreateWithoutCharactersInput>
 }
 
-export type ProjectUpsertWithoutCharactersInput = {
+export type ProjectUpsertWithWhereUniqueWithoutCharactersInput = {
+  where: Prisma.ProjectWhereUniqueInput
   update: Prisma.XOR<Prisma.ProjectUpdateWithoutCharactersInput, Prisma.ProjectUncheckedUpdateWithoutCharactersInput>
   create: Prisma.XOR<Prisma.ProjectCreateWithoutCharactersInput, Prisma.ProjectUncheckedCreateWithoutCharactersInput>
-  where?: Prisma.ProjectWhereInput
 }
 
-export type ProjectUpdateToOneWithWhereWithoutCharactersInput = {
-  where?: Prisma.ProjectWhereInput
+export type ProjectUpdateWithWhereUniqueWithoutCharactersInput = {
+  where: Prisma.ProjectWhereUniqueInput
   data: Prisma.XOR<Prisma.ProjectUpdateWithoutCharactersInput, Prisma.ProjectUncheckedUpdateWithoutCharactersInput>
+}
+
+export type ProjectUpdateManyWithWhereWithoutCharactersInput = {
+  where: Prisma.ProjectScalarWhereInput
+  data: Prisma.XOR<Prisma.ProjectUpdateManyMutationInput, Prisma.ProjectUncheckedUpdateManyWithoutCharactersInput>
+}
+
+export type ProjectScalarWhereInput = {
+  AND?: Prisma.ProjectScalarWhereInput | Prisma.ProjectScalarWhereInput[]
+  OR?: Prisma.ProjectScalarWhereInput[]
+  NOT?: Prisma.ProjectScalarWhereInput | Prisma.ProjectScalarWhereInput[]
+  id?: Prisma.StringFilter<"Project"> | string
+  name?: Prisma.StringFilter<"Project"> | string
+  apiKey?: Prisma.StringFilter<"Project"> | string
+  createdAt?: Prisma.DateTimeFilter<"Project"> | Date | string
 }
 
 export type ProjectUpdateWithoutCharactersInput = {
@@ -355,6 +399,13 @@ export type ProjectUpdateWithoutCharactersInput = {
 }
 
 export type ProjectUncheckedUpdateWithoutCharactersInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  apiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ProjectUncheckedUpdateManyWithoutCharactersInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   apiKey?: Prisma.StringFieldUpdateOperationsInput | string

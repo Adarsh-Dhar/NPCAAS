@@ -98,11 +98,6 @@ export default function ConfigurationForm({
   }
 
   const handleDeploy = async () => {
-    if (!projectId) {
-      onRequireProject?.()
-      return
-    }
-
     setDeploying(true)
     setDeployError('')
 
@@ -111,7 +106,7 @@ export default function ConfigurationForm({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectId,
+          gameIds: projectId ? [projectId] : undefined,
           name: characterName,
           config: formData,
         }),
@@ -141,11 +136,6 @@ export default function ConfigurationForm({
       return
     }
 
-    if (!projectId) {
-      onRequireProject?.()
-      return
-    }
-
     setDeploying(true)
     setDeployError('')
 
@@ -154,7 +144,6 @@ export default function ConfigurationForm({
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectId,
           characterId,
           config: formData,
         }),
@@ -417,9 +406,7 @@ export default function ConfigurationForm({
               : 'DEPLOYING...'
             : characterId
               ? 'SAVE CHARACTER CHANGES'
-              : projectId
-                ? 'DEPLOY TO KITE CHAIN'
-                : 'SELECT GAME TO DEPLOY'}
+              : 'DEPLOY AGENT TO CHAIN'}
         </RetroButton>
       </div>
     </form>

@@ -110,11 +110,17 @@ export async function POST(request: NextRequest) {
     }
 
     // -- Load character ----------------------------------------------------
-    const character = await prisma.character.findUnique({ where: { id: characterId } })
+    const character = await prisma.character.findUnique({
+      where: { id: characterId },
+      include: { projects: { select: { id: true } } },
+    })
     if (!character) {
       return NextResponse.json({ error: 'Character not found' }, { status: 404, headers: cors })
     }
-    if (authorizedProjectId && character.projectId !== authorizedProjectId) {
+    if (
+      authorizedProjectId &&
+      !character.projects.some((project) => project.id === authorizedProjectId)
+    ) {
       return NextResponse.json(
         { error: 'Character not accessible with this API key' },
         { status: 403, headers: cors }
@@ -123,7 +129,7 @@ export async function POST(request: NextRequest) {
 
     // -- Resolve ownerId ---------------------------------------------------
     // smartAccountId stores the ownerId string (set during character creation)
-    const ownerId = character.smartAccountId ?? `${character.projectId}:${character.name}`
+    const ownerId = character.smartAccountId ?? `character:${character.id}`
 
     // -- Build tx input ----------------------------------------------------
     const txInput = directTx ?? {

@@ -1,16 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { kiteAAProvider } from '@/lib/aa-sdk'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@/lib/generated/prisma/client'
-import * as fs from 'fs'
-import * as path from 'path'
 
-type UnknownRecord = Record<string, unknown>
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
 
-interface StoredCharacter {
+function toInputJson(value: unknown): Prisma.InputJsonValue {
+  return asRecord(value) as Prisma.InputJsonValue
+}
+
+function normalizeAdaptation(config: unknown, existing: unknown = {}) {
+  const safeConfig = asRecord(config)
+  const safeExisting = asRecord(existing)
+
+  return {
+    specializationActive: Boolean(safeExisting.specializationActive),
+    turnCount: typeof safeExisting.turnCount === 'number' ? safeExisting.turnCount : 0,
+    preferences: Array.isArray(safeExisting.preferences) ? safeExisting.preferences : [],
+    summary:
+      typeof safeExisting.summary === 'string' && safeExisting.summary.trim()
+        ? safeExisting.summary
+        : 'No adaptation history yet.',
+    lastUpdatedAt: new Date().toISOString(),
+    pendingSection2: safeExisting.pendingSection2,
+    configSnapshot: {
+      systemPrompt: typeof safeConfig.systemPrompt === 'string' ? safeConfig.systemPrompt : '',
+      openness: typeof safeConfig.openness === 'number' ? safeConfig.openness : 50,
+    },
+  }
+}
+
+function toApiCharacter(character: {
   id: string
-  projectId: string
   name: string
   walletAddress: string
   aaChainId: number
@@ -22,63 +47,10 @@ interface StoredCharacter {
   isDeployedOnChain: boolean
   deploymentTxHash: string | null
   createdAt: Date
-}
-
-const getLegacyStoragePath = () => path.join(process.cwd(), 'tmp', 'characters.json')
-
-function asRecord(value: unknown): UnknownRecord {
-  return value && typeof value === 'object' ? (value as UnknownRecord) : {}
-}
-
-function toInputJson(value: unknown): Prisma.InputJsonValue {
-  return asRecord(value) as Prisma.InputJsonValue
-}
-
-function normalizeLegacyCharacter(row: unknown): StoredCharacter | null {
-  const payload = asRecord(row)
-  if (
-    typeof payload.id !== 'string' ||
-    typeof payload.projectId !== 'string' ||
-    typeof payload.name !== 'string' ||
-    typeof payload.walletAddress !== 'string'
-  ) {
-    return null
-  }
-
-  return {
-    id: payload.id,
-    projectId: payload.projectId,
-    name: payload.name,
-    walletAddress: payload.walletAddress,
-    aaChainId:
-      typeof payload.aaChainId === 'number'
-        ? payload.aaChainId
-        : Number(process.env.KITE_AA_CHAIN_ID ?? 42161),
-    aaProvider:
-      typeof payload.aaProvider === 'string' && payload.aaProvider
-        ? payload.aaProvider
-        : 'legacy-json',
-    smartAccountId:
-      typeof payload.smartAccountId === 'string' ? payload.smartAccountId : null,
-    smartAccountStatus:
-      typeof payload.smartAccountStatus === 'string' && payload.smartAccountStatus
-        ? payload.smartAccountStatus
-        : 'created',
-    config: asRecord(payload.config),
-    adaptation: asRecord(payload.adaptation),
-    isDeployedOnChain:
-      typeof payload.isDeployedOnChain === 'boolean' ? payload.isDeployedOnChain : true,
-    deploymentTxHash:
-      typeof payload.deploymentTxHash === 'string' ? payload.deploymentTxHash : null,
-    createdAt:
-      typeof payload.createdAt === 'string' ? new Date(payload.createdAt) : new Date(),
-  }
-}
-
-function toApiCharacter(character: StoredCharacter) {
+  projects: Array<{ id: string }>
+}) {
   return {
     id: character.id,
-    projectId: character.projectId,
     name: character.name,
     walletAddress: character.walletAddress,
     aaChainId: character.aaChainId,
@@ -89,126 +61,108 @@ function toApiCharacter(character: StoredCharacter) {
     adaptation: asRecord(character.adaptation),
     isDeployedOnChain: character.isDeployedOnChain,
     deploymentTxHash: character.deploymentTxHash ?? undefined,
+    projectIds: character.projects.map((project) => project.id),
     createdAt: character.createdAt.toISOString(),
   }
 }
 
-async function backfillLegacyCharacters(projectId: string): Promise<void> {
-  try {
-    const legacyPath = getLegacyStoragePath()
-    if (!fs.existsSync(legacyPath)) {
-      return
-    }
-
-    const raw = fs.readFileSync(legacyPath, 'utf-8')
-    const parsed = JSON.parse(raw) as UnknownRecord
-    const values = Object.values(parsed)
-      .map(normalizeLegacyCharacter)
-      .filter((character): character is StoredCharacter => Boolean(character))
-      .filter((character) => character.projectId === projectId)
-
-    if (values.length === 0) {
-      return
-    }
-
-    for (const character of values) {
-      await prisma.character.upsert({
-        where: { id: character.id },
-        update: {
-          name: character.name,
-          walletAddress: character.walletAddress,
-          aaChainId: character.aaChainId,
-          aaProvider: character.aaProvider,
-          smartAccountId: character.smartAccountId,
-          smartAccountStatus: character.smartAccountStatus,
-          config: toInputJson(character.config),
-          adaptation: toInputJson(character.adaptation),
-          isDeployedOnChain: character.isDeployedOnChain,
-          deploymentTxHash: character.deploymentTxHash,
-        },
-        create: {
-          id: character.id,
-          projectId: character.projectId,
-          name: character.name,
-          walletAddress: character.walletAddress,
-          aaChainId: character.aaChainId,
-          aaProvider: character.aaProvider,
-          smartAccountId: character.smartAccountId,
-          smartAccountStatus: character.smartAccountStatus,
-          config: toInputJson(character.config),
-          adaptation: toInputJson(character.adaptation),
-          isDeployedOnChain: character.isDeployedOnChain,
-          deploymentTxHash: character.deploymentTxHash,
-          createdAt: character.createdAt,
-        },
-      })
-    }
-  } catch (error) {
-    console.error('[API] Legacy character backfill skipped due to error:', error)
-  }
+function isProjectsRelationRuntimeError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const message = error.message.toLowerCase()
+  return (
+    message.includes('unknown argument `projects`') ||
+    message.includes('unknown field `projects`') ||
+    message.includes('_charactertoproject') ||
+    message.includes('table') && message.includes('does not exist')
+  )
 }
 
-const normalizeAdaptation = (config: any, existing: any = {}) => ({
-  specializationActive: Boolean(existing.specializationActive),
-  turnCount: typeof existing.turnCount === 'number' ? existing.turnCount : 0,
-  preferences: Array.isArray(existing.preferences) ? existing.preferences : [],
-  summary:
-    typeof existing.summary === 'string' && existing.summary.trim()
-      ? existing.summary
-      : 'No adaptation history yet.',
-  lastUpdatedAt: new Date().toISOString(),
-  pendingSection2: existing.pendingSection2,
-  configSnapshot: {
-    systemPrompt: typeof config?.systemPrompt === 'string' ? config.systemPrompt : '',
-    openness: typeof config?.openness === 'number' ? config.openness : 50,
-  },
-})
+const createCharacterSchema = z
+  .object({
+    name: z.string().trim().min(1),
+    config: z.record(z.string(), z.unknown()),
+    gameIds: z.array(z.string().trim().min(1)).optional(),
+    projectId: z.string().trim().min(1).optional(),
+  })
+  .strict()
 
-/**
- * POST /api/characters
- * Deploys a new NPC to Kite Chain using Kite AA
- */
+const updateCharacterSchema = z
+  .object({
+    characterId: z.string().trim().min(1),
+    config: z.record(z.string(), z.unknown()),
+  })
+  .strict()
+
+async function resolveAuthorizedProject(request: NextRequest) {
+  const authHeader = request.headers.get('Authorization')
+  if (!authHeader) {
+    return null
+  }
+
+  if (!authHeader.startsWith('Bearer ')) {
+    return NextResponse.json(
+      { error: 'Missing or malformed Authorization header. Use: Bearer gc_live_...' },
+      { status: 401 }
+    )
+  }
+
+  const apiKey = authHeader.replace('Bearer ', '').trim()
+  const project = await validateApiKey(apiKey)
+
+  if (!project) {
+    return NextResponse.json({ error: 'Invalid API key' }, { status: 401 })
+  }
+
+  return project
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { projectId, name, config } = body
-
-    if (!projectId || !name || !config) {
+    const parsed = createCharacterSchema.safeParse(await request.json())
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'projectId, name, and config are required' },
+        { error: parsed.error.issues[0]?.message ?? 'Invalid payload' },
         { status: 400 }
       )
     }
 
-    const project = await prisma.project.findUnique({ where: { id: projectId } })
-    if (!project) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    const { name, config, gameIds, projectId } = parsed.data
+    const candidateGameIds = Array.from(new Set([...(gameIds ?? []), ...(projectId ? [projectId] : [])]))
+
+    const games = candidateGameIds.length
+      ? await prisma.project.findMany({
+          where: { id: { in: candidateGameIds } },
+          select: { id: true },
+        })
+      : []
+
+    if (games.length !== candidateGameIds.length) {
+      const foundIds = new Set(games.map((game) => game.id))
+      const missingIds = candidateGameIds.filter((id) => !foundIds.has(id))
+      return NextResponse.json(
+        { error: `Game(s) not found: ${missingIds.join(', ')}` },
+        { status: 404 }
+      )
     }
 
-    // Step 1: Instantiate KiteAAProvider
-    const aaProvider = kiteAAProvider
-
-    // Step 2: Create smart account (wallet) for the NPC
-    const smartAccount = await aaProvider.createSmartAccount({
-      ownerId: `${projectId}:${name}`,
+    const ownerId = `character:${name}:${Date.now()}`
+    const smartAccount = await kiteAAProvider.createSmartAccount({
+      ownerId,
       metadata: {
-        projectId,
         npcName: name,
+        gameIds: candidateGameIds,
       },
     })
-    const walletAddress = smartAccount.address
 
-    // Step 3: Build and store character
     const character = await prisma.character.create({
       data: {
-        projectId,
         name,
-        walletAddress,
+        walletAddress: smartAccount.address,
         aaChainId: smartAccount.chainId,
         aaProvider: smartAccount.provider,
         smartAccountId: smartAccount.smartAccountId,
         smartAccountStatus: 'created',
-        config,
+        config: toInputJson(config),
         adaptation: {
           specializationActive: false,
           turnCount: 0,
@@ -217,91 +171,65 @@ export async function POST(request: NextRequest) {
           lastUpdatedAt: new Date().toISOString(),
         },
         isDeployedOnChain: true,
+        projects: games.length
+          ? {
+              connect: games.map((game) => ({ id: game.id })),
+            }
+          : undefined,
+      },
+      include: {
+        projects: { select: { id: true } },
       },
     })
 
-    const apiCharacter = toApiCharacter(character as unknown as StoredCharacter)
-
     return NextResponse.json(
       {
-        message: `Deployed ${name} to Kite Chain with wallet ${walletAddress.slice(0, 6)}...`,
-        character: apiCharacter,
-        walletAddress,
+        message: `Deployed ${name} to Kite Chain with wallet ${smartAccount.address.slice(0, 6)}...`,
+        character: toApiCharacter(character),
+        walletAddress: smartAccount.address,
       },
       { status: 201 }
     )
   } catch (error) {
     console.error('[API] Character deployment error:', error)
     const message =
-      error instanceof Error && error.message.trim()
-        ? error.message
-        : 'Failed to deploy character'
-    return NextResponse.json(
-      { error: message },
-      { status: 500 }
-    )
+      error instanceof Error && error.message.trim() ? error.message : 'Failed to deploy character'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 
-/**
- * PATCH /api/characters
- * Updates an existing deployed NPC configuration
- */
 export async function PATCH(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('Authorization')
-    let project: { id: string } | null = null
-
-    if (authHeader) {
-      if (!authHeader.startsWith('Bearer ')) {
-        return NextResponse.json(
-          { error: 'Missing or malformed Authorization header. Use: Bearer gc_live_...' },
-          { status: 401 }
-        )
-      }
-
-      const apiKey = authHeader.replace('Bearer ', '').trim()
-      project = await validateApiKey(apiKey)
-
-      if (!project) {
-        return NextResponse.json(
-          { error: 'Invalid API key' },
-          { status: 401 }
-        )
-      }
+    const authorizedProject = await resolveAuthorizedProject(request)
+    if (authorizedProject instanceof NextResponse) {
+      return authorizedProject
     }
 
-    const body = await request.json()
-    const { projectId, characterId, config } = body
-
-    if (!projectId || !characterId || !config) {
+    const parsed = updateCharacterSchema.safeParse(await request.json())
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'projectId, characterId, and config are required' },
+        { error: parsed.error.issues[0]?.message ?? 'Invalid payload' },
         { status: 400 }
       )
     }
 
-    if (project && project.id !== projectId) {
-      return NextResponse.json(
-        { error: 'Character project does not match API key project' },
-        { status: 403 }
-      )
-    }
+    const { characterId, config } = parsed.data
 
     const character = await prisma.character.findUnique({
       where: { id: characterId },
+      include: { projects: { select: { id: true } } },
     })
 
     if (!character) {
-      return NextResponse.json(
-        { error: 'Character not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Character not found' }, { status: 404 })
     }
 
-    if (character.projectId !== projectId) {
+    if (
+      authorizedProject &&
+      !character.projects.some((project) => project.id === authorizedProject.id)
+    ) {
       return NextResponse.json(
-        { error: 'Character not accessible for this project' },
+        { error: 'Character not accessible with this API key' },
         { status: 403 }
       )
     }
@@ -309,65 +237,89 @@ export async function PATCH(request: NextRequest) {
     const updated = await prisma.character.update({
       where: { id: characterId },
       data: {
-        config,
-        adaptation: normalizeAdaptation(config, character.adaptation),
+        config: toInputJson(config),
+        adaptation: normalizeAdaptation(config, character.adaptation) as Prisma.InputJsonValue,
       },
+      include: { projects: { select: { id: true } } },
     })
 
     return NextResponse.json({
       message: `Updated ${character.name} configuration`,
-      character: toApiCharacter(updated as unknown as StoredCharacter),
+      character: toApiCharacter(updated),
     })
   } catch (error) {
     console.error('[API] Character update error:', error)
-    return NextResponse.json(
-      { error: 'Failed to update character' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to update character' }, { status: 500 })
   }
 }
 
-/**
- * GET /api/characters
- * Fetch characters by API key (Bearer token authentication)
- */
 export async function GET(request: NextRequest) {
   try {
-    // --- Authenticate via API Key ---
-    const authHeader = request.headers.get('Authorization')
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Missing or malformed Authorization header. Use: Bearer gc_live_...' },
-        { status: 401 }
-      )
+    const authorizedProject = await resolveAuthorizedProject(request)
+    if (authorizedProject instanceof NextResponse) {
+      return authorizedProject
     }
 
-    const apiKey = authHeader.replace('Bearer ', '').trim()
-    const project = await validateApiKey(apiKey)
+    try {
+      const characters = await prisma.character.findMany({
+        where: authorizedProject
+          ? {
+              projects: {
+                some: { id: authorizedProject.id },
+              },
+            }
+          : undefined,
+        include: { projects: { select: { id: true } } },
+        orderBy: { createdAt: 'desc' },
+      })
 
-    if (!project) {
+      return NextResponse.json(characters.map((character) => toApiCharacter(character)))
+    } catch (relationError) {
+      if (!isProjectsRelationRuntimeError(relationError)) {
+        throw relationError
+      }
+
+      const legacyPrisma = prisma as unknown as {
+        character: {
+          findMany: (args: {
+            where?: { projectId?: string }
+            orderBy: { createdAt: 'desc' }
+          }) => Promise<
+            Array<{
+              id: string
+              name: string
+              walletAddress: string
+              aaChainId: number
+              aaProvider: string
+              smartAccountId: string | null
+              smartAccountStatus: string
+              config: unknown
+              adaptation: unknown
+              isDeployedOnChain: boolean
+              deploymentTxHash: string | null
+              createdAt: Date
+              projectId: string
+            }>
+          >
+        }
+      }
+
+      const legacyCharacters = await legacyPrisma.character.findMany({
+        where: authorizedProject ? { projectId: authorizedProject.id } : undefined,
+        orderBy: { createdAt: 'desc' },
+      })
+
       return NextResponse.json(
-        { error: 'Invalid API key' },
-        { status: 401 }
+        legacyCharacters.map((character) =>
+          toApiCharacter({
+            ...character,
+            projects: character.projectId ? [{ id: character.projectId }] : [],
+          })
+        )
       )
     }
-
-    await backfillLegacyCharacters(project.id)
-
-    const chars = await prisma.character.findMany({
-      where: { projectId: project.id },
-      orderBy: { createdAt: 'desc' },
-    })
-
-    return NextResponse.json(
-      chars.map((character) => toApiCharacter(character as unknown as StoredCharacter))
-    )
   } catch (error) {
     console.error('[API] Character fetch error:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch characters' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch characters' }, { status: 500 })
   }
 }
