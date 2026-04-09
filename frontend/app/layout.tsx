@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Press_Start_2P, VT323 } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { WalletProvider } from '@/components/WalletContext'
 import './globals.css'
 
 const pressStart2P = Press_Start_2P({ 
@@ -46,7 +47,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${pressStart2P.variable} ${vt323.variable}`}>
       <body className="font-press-start-2p bg-black text-white antialiased">
-        {children}
+        <WalletProvider>
+          {children}
+        </WalletProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

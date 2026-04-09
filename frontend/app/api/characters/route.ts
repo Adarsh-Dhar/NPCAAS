@@ -73,8 +73,13 @@ function isProjectsRelationRuntimeError(error: unknown): boolean {
     message.includes('unknown argument `projects`') ||
     message.includes('unknown field `projects`') ||
     message.includes('_charactertoproject') ||
-    message.includes('table') && message.includes('does not exist')
+    (message.includes('table') && message.includes('does not exist'))
   )
+}
+
+function shouldFallbackToLegacyCreate(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return isProjectsRelationRuntimeError(error)
 }
 
 const createCharacterSchema = z
@@ -89,15 +94,14 @@ const createCharacterSchema = z
 const updateCharacterSchema = z
   .object({
     characterId: z.string().trim().min(1),
+    name: z.string().trim().min(1).optional(),
     config: z.record(z.string(), z.unknown()),
   })
   .strict()
 
 async function resolveAuthorizedProject(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
-  if (!authHeader) {
-    return null
-  }
+  if (!authHeader) return null
 
   if (!authHeader.startsWith('Bearer ')) {
     return NextResponse.json(
@@ -154,33 +158,134 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const character = await prisma.character.create({
-      data: {
-        name,
-        walletAddress: smartAccount.address,
-        aaChainId: smartAccount.chainId,
-        aaProvider: smartAccount.provider,
-        smartAccountId: smartAccount.smartAccountId,
-        smartAccountStatus: 'created',
-        config: toInputJson(config),
-        adaptation: {
-          specializationActive: false,
-          turnCount: 0,
-          preferences: [],
-          summary: 'No adaptation history yet.',
-          lastUpdatedAt: new Date().toISOString(),
+    const characterData = {
+      name,
+      walletAddress: smartAccount.address,
+      aaChainId: smartAccount.chainId,
+      aaProvider: smartAccount.provider,
+      smartAccountId: smartAccount.smartAccountId,
+      smartAccountStatus: 'created',
+      config: toInputJson(config),
+      adaptation: {
+        specializationActive: false,
+        turnCount: 0,
+        preferences: [],
+        summary: 'No adaptation history yet.',
+        lastUpdatedAt: new Date().toISOString(),
+      },
+      isDeployedOnChain: true,
+      projects: games.length
+        ? {
+            connect: games.map((game) => ({ id: game.id })),
+          }
+        : undefined,
+    }
+
+    let character:
+      | {
+          id: string
+          name: string
+          walletAddress: string
+          aaChainId: number
+          aaProvider: string
+          smartAccountId: string | null
+          smartAccountStatus: string
+          config: unknown
+          adaptation: unknown
+          isDeployedOnChain: boolean
+          deploymentTxHash: string | null
+          createdAt: Date
+          projects: Array<{ id: string }>
+        }
+      | null = null
+
+    try {
+      character = await prisma.character.create({
+        data: characterData,
+        include: {
+          projects: { select: { id: true } },
         },
-        isDeployedOnChain: true,
-        projects: games.length
-          ? {
-              connect: games.map((game) => ({ id: game.id })),
+      })
+    } catch (createError) {
+      if (!shouldFallbackToLegacyCreate(createError)) {
+        throw createError
+      }
+
+      const fallbackProjectId =
+        games[0]?.id ??
+        (
+          await prisma.project.findFirst({
+            select: { id: true },
+            orderBy: { createdAt: 'asc' },
+          })
+        )?.id
+
+      if (!fallbackProjectId) {
+        return NextResponse.json(
+          { error: 'No games available. Create a game before deploying a character.' },
+          { status: 409 }
+        )
+      }
+
+      const legacyPrisma = prisma as unknown as {
+        character: {
+          create: (args: {
+            data: {
+              name: string
+              walletAddress: string
+              aaChainId: number
+              aaProvider: string
+              smartAccountId: string | null
+              smartAccountStatus: string
+              config: Prisma.InputJsonValue
+              adaptation: Prisma.InputJsonValue
+              isDeployedOnChain: boolean
+              projectId: string
             }
-          : undefined,
-      },
-      include: {
-        projects: { select: { id: true } },
-      },
-    })
+          }) => Promise<{
+            id: string
+            name: string
+            walletAddress: string
+            aaChainId: number
+            aaProvider: string
+            smartAccountId: string | null
+            smartAccountStatus: string
+            config: unknown
+            adaptation: unknown
+            isDeployedOnChain: boolean
+            deploymentTxHash: string | null
+            createdAt: Date
+            projectId: string
+          }>
+        }
+      }
+
+      const legacyCharacter = await legacyPrisma.character.create({
+        data: {
+          name,
+          walletAddress: smartAccount.address,
+          aaChainId: smartAccount.chainId,
+          aaProvider: smartAccount.provider,
+          smartAccountId: smartAccount.smartAccountId,
+          smartAccountStatus: 'created',
+          config: toInputJson(config),
+          adaptation: {
+            specializationActive: false,
+            turnCount: 0,
+            preferences: [],
+            summary: 'No adaptation history yet.',
+            lastUpdatedAt: new Date().toISOString(),
+          } as Prisma.InputJsonValue,
+          isDeployedOnChain: true,
+          projectId: fallbackProjectId,
+        },
+      })
+
+      character = {
+        ...legacyCharacter,
+        projects: legacyCharacter.projectId ? [{ id: legacyCharacter.projectId }] : [],
+      }
+    }
 
     return NextResponse.json(
       {
@@ -213,7 +318,7 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    const { characterId, config } = parsed.data
+    const { characterId, name, config } = parsed.data
 
     const character = await prisma.character.findUnique({
       where: { id: characterId },
@@ -234,17 +339,28 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
+    // Build update data — only patch fields that have meaningful content
+    const hasConfigFields = Object.keys(config).length > 0
+
+    const updateData: Prisma.CharacterUpdateInput = {}
+
+    if (name) {
+      updateData.name = name
+    }
+
+    if (hasConfigFields) {
+      updateData.config = toInputJson(config)
+      updateData.adaptation = normalizeAdaptation(config, character.adaptation) as Prisma.InputJsonValue
+    }
+
     const updated = await prisma.character.update({
       where: { id: characterId },
-      data: {
-        config: toInputJson(config),
-        adaptation: normalizeAdaptation(config, character.adaptation) as Prisma.InputJsonValue,
-      },
+      data: updateData,
       include: { projects: { select: { id: true } } },
     })
 
     return NextResponse.json({
-      message: `Updated ${character.name} configuration`,
+      message: `Updated ${updated.name} configuration`,
       character: toApiCharacter(updated),
     })
   } catch (error) {

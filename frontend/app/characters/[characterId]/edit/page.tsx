@@ -6,6 +6,8 @@ import Link from 'next/link'
 import TopNav from '@/components/TopNav'
 import LeftPanel from '@/components/creator/LeftPanel'
 import ConfigurationForm from '@/components/creator/ConfigurationForm'
+import FundWalletModal from '@/components/FundWalletModal'
+import RetroButton from '@/components/ui/RetroButton'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -18,6 +20,7 @@ import {
 interface CharacterRecord {
   id: string
   name: string
+  walletAddress: string
   config: Record<string, unknown>
 }
 
@@ -44,12 +47,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function asString(value: unknown): string | undefined {
-  if (typeof value === 'string') {
-    return value
-  }
-  if (typeof value === 'number') {
-    return String(value)
-  }
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return String(value)
   return undefined
 }
 
@@ -62,9 +61,7 @@ function asNumber(value: unknown): number | undefined {
 }
 
 function normalizeInitialConfig(config?: Record<string, unknown> | null): FormConfigSnapshot | undefined {
-  if (!isRecord(config)) {
-    return undefined
-  }
+  if (!isRecord(config)) return undefined
 
   const snapshot = isRecord(config.configSnapshot) ? config.configSnapshot : null
   const isAdaptationShape =
@@ -101,6 +98,7 @@ export default function EditCharacterPage() {
   const [character, setCharacter] = useState<CharacterRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [showFundModal, setShowFundModal] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -110,32 +108,20 @@ export default function EditCharacterPage() {
       setError('')
       try {
         const response = await fetch(`/api/characters/${encodeURIComponent(characterId)}`)
-        if (!response.ok) {
-          throw new Error('Failed to load character')
-        }
+        if (!response.ok) throw new Error('Failed to load character')
         const payload = (await response.json()) as CharacterLookupResponse
-        if (!cancelled) {
-          setCharacter(payload.character)
-        }
+        if (!cancelled) setCharacter(payload.character)
       } catch (loadError) {
         if (!cancelled) {
-          const message = loadError instanceof Error ? loadError.message : 'Failed to load character'
-          setError(message)
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load character')
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
+        if (!cancelled) setLoading(false)
       }
     }
 
-    if (characterId) {
-      loadCharacter()
-    }
-
-    return () => {
-      cancelled = true
-    }
+    if (characterId) loadCharacter()
+    return () => { cancelled = true }
   }, [characterId])
 
   return (
@@ -171,13 +157,35 @@ export default function EditCharacterPage() {
 
         <div className="w-2/3 overflow-y-auto">
           <div className="p-8 bg-black">
-            <div className="mb-8">
-              <h1 className="gradient-text gradient-cyan-magenta text-4xl font-bold mb-2">
-                EDIT YOUR AGENT
-              </h1>
-              <p className="text-cyan-400 text-sm uppercase font-bold">
-                Update configuration and save changes.
-              </p>
+            <div className="mb-8 flex items-start justify-between">
+              <div>
+                <h1 className="gradient-text gradient-cyan-magenta text-4xl font-bold mb-2">
+                  EDIT YOUR AGENT
+                </h1>
+                <p className="text-cyan-400 text-sm uppercase font-bold">
+                  Update configuration and save changes.
+                </p>
+              </div>
+
+              {character && (
+                <div className="flex flex-col items-end gap-2">
+                  {/* Wallet info */}
+                  <div className="border-2 border-cyan-500/40 p-3 text-right">
+                    <p className="text-xs text-gray-400 uppercase font-bold mb-1">Wallet Address</p>
+                    <p className="text-xs font-mono text-cyan-300 max-w-48 break-all">
+                      {character.walletAddress}
+                    </p>
+                  </div>
+                  <RetroButton
+                    variant="yellow"
+                    size="sm"
+                    onClick={() => setShowFundModal(true)}
+                    className="text-xs"
+                  >
+                    💰 FUND WALLET
+                  </RetroButton>
+                </div>
+              )}
             </div>
 
             {loading ? (
@@ -196,6 +204,14 @@ export default function EditCharacterPage() {
           </div>
         </div>
       </div>
+
+      {showFundModal && character && (
+        <FundWalletModal
+          characterName={character.name}
+          walletAddress={character.walletAddress}
+          onClose={() => setShowFundModal(false)}
+        />
+      )}
     </main>
   )
 }

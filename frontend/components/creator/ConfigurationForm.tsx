@@ -24,9 +24,10 @@ interface ConfigurationFormProps {
     teeExecution: string
     computeBudget: string
   }>
-  onDeploySuccess?: (characterId: string) => void
+  onDeploySuccess?: (characterId: string, characterName: string) => void
   onSaveSuccess?: () => void
   onRequireProject?: () => void
+  onNameChange?: (name: string) => void
 }
 
 async function readErrorMessage(response: Response, fallback: string): Promise<string> {
@@ -46,18 +47,20 @@ async function readErrorMessage(response: Response, fallback: string): Promise<s
 
 export default function ConfigurationForm({
   projectId,
-  characterName = 'KERMIT_NPC_01',
+  characterName = 'MY_NPC',
   characterId,
   initialConfig,
   onDeploySuccess,
   onSaveSuccess,
   onRequireProject,
+  onNameChange,
 }: ConfigurationFormProps) {
   const [formData, setFormData] = useState({
+    name: characterName,
     capital: '1000',
     pricingAlgorithm: 'DYNAMIC_MARKET',
     systemPrompt:
-      'You are Kermit, an autonomous NPC. Negotiate fairly. Build reputation.',
+      'You are an autonomous NPC. Negotiate fairly. Build reputation.',
     openness: 50,
     factions: 'GUILD_OF_ARTISANS',
     hostility: 'LOW',
@@ -71,44 +74,57 @@ export default function ConfigurationForm({
   const [deployError, setDeployError] = useState('')
 
   useEffect(() => {
-    if (!initialConfig) {
+    if (!initialConfig && !characterName) {
       return
     }
 
     setFormData((prev) => ({
       ...prev,
-      ...initialConfig,
-      capital: initialConfig.capital ?? prev.capital,
-      pricingAlgorithm:
-        initialConfig.pricingAlgorithm ?? prev.pricingAlgorithm,
-      systemPrompt: initialConfig.systemPrompt ?? prev.systemPrompt,
-      openness: initialConfig.openness ?? prev.openness,
-      factions: initialConfig.factions ?? prev.factions,
-      hostility: initialConfig.hostility ?? prev.hostility,
-      canTrade: initialConfig.canTrade ?? prev.canTrade,
-      canMove: initialConfig.canMove ?? prev.canMove,
-      canCraft: initialConfig.canCraft ?? prev.canCraft,
-      teeExecution: initialConfig.teeExecution ?? prev.teeExecution,
-      computeBudget: initialConfig.computeBudget ?? prev.computeBudget,
+      name: characterName ?? prev.name,
+      ...(initialConfig ? {
+        capital: initialConfig.capital ?? prev.capital,
+        pricingAlgorithm: initialConfig.pricingAlgorithm ?? prev.pricingAlgorithm,
+        systemPrompt: initialConfig.systemPrompt ?? prev.systemPrompt,
+        openness: initialConfig.openness ?? prev.openness,
+        factions: initialConfig.factions ?? prev.factions,
+        hostility: initialConfig.hostility ?? prev.hostility,
+        canTrade: initialConfig.canTrade ?? prev.canTrade,
+        canMove: initialConfig.canMove ?? prev.canMove,
+        canCraft: initialConfig.canCraft ?? prev.canCraft,
+        teeExecution: initialConfig.teeExecution ?? prev.teeExecution,
+        computeBudget: initialConfig.computeBudget ?? prev.computeBudget,
+      } : {}),
     }))
-  }, [initialConfig, characterId])
+  }, [initialConfig, characterId, characterName])
 
   const handleInputChange = (field: string, value: string | number | boolean) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+    setFormData((prev) => {
+      const next = { ...prev, [field]: value }
+      if (field === 'name' && onNameChange) {
+        onNameChange(value as string)
+      }
+      return next
+    })
   }
 
   const handleDeploy = async () => {
+    if (!formData.name.trim()) {
+      setDeployError('Character name is required')
+      return
+    }
+
     setDeploying(true)
     setDeployError('')
 
     try {
+      const { name, ...config } = formData
       const response = await fetch('/api/characters', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           gameIds: projectId ? [projectId] : undefined,
-          name: characterName,
-          config: formData,
+          name: name.trim(),
+          config,
         }),
       })
 
@@ -119,10 +135,9 @@ export default function ConfigurationForm({
 
       const data = await response.json()
       alert(`✓ ${data.message}`)
-      onDeploySuccess?.(data.character.id)
+      onDeploySuccess?.(data.character.id, data.character.name)
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Deployment failed'
+      const message = error instanceof Error ? error.message : 'Deployment failed'
       setDeployError(message)
       console.error('Deploy error:', error)
     } finally {
@@ -140,12 +155,14 @@ export default function ConfigurationForm({
     setDeployError('')
 
     try {
+      const { name, ...config } = formData
       const response = await fetch('/api/characters', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           characterId,
-          config: formData,
+          name: name.trim() || undefined,
+          config,
         }),
       })
 
@@ -157,8 +174,7 @@ export default function ConfigurationForm({
       onSaveSuccess?.()
       alert('✓ Character configuration saved')
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Save failed'
+      const message = error instanceof Error ? error.message : 'Save failed'
       setDeployError(message)
       console.error('Save error:', error)
     } finally {
@@ -168,6 +184,23 @@ export default function ConfigurationForm({
 
   return (
     <form className="space-y-6">
+      {/* Character Name */}
+      <div className="border-4 border-white bg-black p-6">
+        <h3 className="text-sm font-bold uppercase text-white mb-4 pb-3 border-b-2 border-white">
+          AGENT IDENTITY
+        </h3>
+        <RetroInput
+          borderColor="cyan"
+          label="Character Name"
+          placeholder="e.g. KERMIT_NPC_01"
+          value={formData.name}
+          onChange={(e) => handleInputChange('name', e.target.value.toUpperCase().replace(/\s+/g, '_'))}
+        />
+        <p className="mt-2 text-xs text-gray-500 font-mono">
+          Name must be unique within each assigned game. Letters, numbers and underscores only.
+        </p>
+      </div>
+
       {/* Section 1: ECONOMIC LAYER */}
       <FormSection
         title="SECTION 1: ECONOMIC LAYER"
@@ -188,9 +221,7 @@ export default function ConfigurationForm({
           </label>
           <select
             value={formData.pricingAlgorithm}
-            onChange={(e) =>
-              handleInputChange('pricingAlgorithm', e.target.value)
-            }
+            onChange={(e) => handleInputChange('pricingAlgorithm', e.target.value)}
             className="w-full bg-gray-900 text-white border-4 border-orange-400 rounded-none px-3 py-2 focus:outline-none cursor-pointer"
           >
             <option>DYNAMIC_MARKET</option>
@@ -212,9 +243,7 @@ export default function ConfigurationForm({
           label="Core System Prompt"
           rows={6}
           value={formData.systemPrompt}
-          onChange={(e) =>
-            handleInputChange('systemPrompt', e.target.value)
-          }
+          onChange={(e) => handleInputChange('systemPrompt', e.target.value)}
           placeholder="Define your NPC's behavior and personality..."
         />
 
@@ -246,9 +275,7 @@ export default function ConfigurationForm({
           min={0}
           max={100}
           value={formData.openness}
-          onChange={(e) =>
-            handleInputChange('openness', parseInt(e.target.value))
-          }
+          onChange={(e) => handleInputChange('openness', parseInt(e.target.value))}
         />
       </FormSection>
 
@@ -262,9 +289,7 @@ export default function ConfigurationForm({
           borderColor="red"
           label="Faction Affiliations"
           value={formData.factions}
-          onChange={(e) =>
-            handleInputChange('factions', e.target.value)
-          }
+          onChange={(e) => handleInputChange('factions', e.target.value)}
           placeholder="GUILD_OF_ARTISANS, MERCHANT_UNION..."
         />
 
@@ -274,9 +299,7 @@ export default function ConfigurationForm({
           </label>
           <select
             value={formData.hostility}
-            onChange={(e) =>
-              handleInputChange('hostility', e.target.value)
-            }
+            onChange={(e) => handleInputChange('hostility', e.target.value)}
             className="w-full bg-gray-900 text-white border-4 border-red-400 rounded-none px-3 py-2 focus:outline-none cursor-pointer"
           >
             <option>LOW</option>
@@ -294,59 +317,24 @@ export default function ConfigurationForm({
         borderColor="yellow"
       >
         <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="canTrade"
-              checked={formData.canTrade}
-              onChange={(e) =>
-                handleInputChange('canTrade', e.target.checked)
-              }
-              className="w-5 h-5 cursor-pointer accent-yellow-400"
-            />
-            <label
-              htmlFor="canTrade"
-              className="text-xs font-bold uppercase text-white cursor-pointer"
-            >
-              Allow Trade Negotiations
-            </label>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="canMove"
-              checked={formData.canMove}
-              onChange={(e) =>
-                handleInputChange('canMove', e.target.checked)
-              }
-              className="w-5 h-5 cursor-pointer accent-yellow-400"
-            />
-            <label
-              htmlFor="canMove"
-              className="text-xs font-bold uppercase text-white cursor-pointer"
-            >
-              Allow Movement
-            </label>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="canCraft"
-              checked={formData.canCraft}
-              onChange={(e) =>
-                handleInputChange('canCraft', e.target.checked)
-              }
-              className="w-5 h-5 cursor-pointer accent-yellow-400"
-            />
-            <label
-              htmlFor="canCraft"
-              className="text-xs font-bold uppercase text-white cursor-pointer"
-            >
-              Allow Crafting
-            </label>
-          </div>
+          {([
+            { id: 'canTrade', label: 'Allow Trade Negotiations' },
+            { id: 'canMove', label: 'Allow Movement' },
+            { id: 'canCraft', label: 'Allow Crafting' },
+          ] as const).map(({ id, label }) => (
+            <div key={id} className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id={id}
+                checked={formData[id]}
+                onChange={(e) => handleInputChange(id, e.target.checked)}
+                className="w-5 h-5 cursor-pointer accent-yellow-400"
+              />
+              <label htmlFor={id} className="text-xs font-bold uppercase text-white cursor-pointer">
+                {label}
+              </label>
+            </div>
+          ))}
         </div>
       </FormSection>
 
@@ -357,14 +345,10 @@ export default function ConfigurationForm({
         borderColor="cyan"
       >
         <div className="flex flex-col gap-2">
-          <label className="text-xs font-bold uppercase text-white">
-            TEE Execution
-          </label>
+          <label className="text-xs font-bold uppercase text-white">TEE Execution</label>
           <select
             value={formData.teeExecution}
-            onChange={(e) =>
-              handleInputChange('teeExecution', e.target.value)
-            }
+            onChange={(e) => handleInputChange('teeExecution', e.target.value)}
             className="w-full bg-gray-900 text-white border-4 border-cyan-400 rounded-none px-3 py-2 focus:outline-none cursor-pointer"
           >
             <option>ENABLED</option>
@@ -377,9 +361,7 @@ export default function ConfigurationForm({
           label="Compute Budget (in CU)"
           type="number"
           value={formData.computeBudget}
-          onChange={(e) =>
-            handleInputChange('computeBudget', e.target.value)
-          }
+          onChange={(e) => handleInputChange('computeBudget', e.target.value)}
         />
       </FormSection>
 
@@ -390,7 +372,7 @@ export default function ConfigurationForm({
         </div>
       )}
 
-      {/* Deploy Button */}
+      {/* Deploy / Save Button */}
       <div className="pt-4">
         <RetroButton
           variant={deploying ? 'magenta' : 'green'}

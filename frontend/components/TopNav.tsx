@@ -1,20 +1,45 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
 import RetroButton from '@/components/ui/RetroButton'
+import { useWallet } from '@/components/WalletContext'
 
 export default function TopNav() {
-  const [isConnected, setIsConnected] = useState(false)
-  const mockAddress = '0x7F...4A2B'
+  const { address, connecting, onKiteNetwork, connect, disconnect, switchToKite } = useWallet()
 
-  const handleToggle = () => {
-    setIsConnected(!isConnected)
+  const shortAddress = address
+    ? `${address.slice(0, 6)}...${address.slice(-4)}`
+    : null
+
+  const handleClick = async () => {
+    if (address) {
+      // If connected but wrong network, switch
+      if (!onKiteNetwork) {
+        await switchToKite()
+      } else {
+        disconnect()
+      }
+    } else {
+      await connect()
+    }
+  }
+
+  const buttonLabel = () => {
+    if (connecting) return '[ CONNECTING... ]'
+    if (!address) return '[ CONNECT WALLET ]'
+    if (!onKiteNetwork) return '[ SWITCH TO KITE ]'
+    return `[ ${shortAddress} ]`
+  }
+
+  const buttonVariant = () => {
+    if (!address) return 'cyan' as const
+    if (!onKiteNetwork) return 'yellow' as const
+    return 'green' as const
   }
 
   return (
     <nav className="w-full bg-black border-b-4 border-white px-8 py-4 flex items-center justify-between sticky top-0 z-50">
-      {/* Left: Logo */}
+      {/* Left: Logo + Nav */}
       <div className="text-2xl font-bold flex items-center gap-8">
         <Link href="/" className="gradient-text gradient-cyan-magenta">
           GUILDCRAFT
@@ -29,15 +54,23 @@ export default function TopNav() {
         </div>
       </div>
 
-      {/* Right: Wallet Button */}
-      <RetroButton
-        variant={isConnected ? 'green' : 'cyan'}
-        size="md"
-        onClick={handleToggle}
-        className={isConnected ? 'border-4 border-green-400' : ''}
-      >
-        {isConnected ? `[ ${mockAddress} ]` : '[ CONNECT WALLET ]'}
-      </RetroButton>
+      {/* Right: Wallet */}
+      <div className="flex items-center gap-3">
+        {address && onKiteNetwork && (
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-green-400 text-xs font-mono">Kite Testnet</span>
+          </div>
+        )}
+        <RetroButton
+          variant={buttonVariant()}
+          size="md"
+          onClick={handleClick}
+          disabled={connecting}
+        >
+          {buttonLabel()}
+        </RetroButton>
+      </div>
     </nav>
   )
 }

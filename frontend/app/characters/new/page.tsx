@@ -22,10 +22,12 @@ export default function NewCharacterPage() {
   const initialGameId = searchParams.get('gameId') ?? undefined
 
   const [characterId, setCharacterId] = useState<string | null>(null)
+  const [characterName, setCharacterName] = useState('MY_NPC')
   const [showAssignment, setShowAssignment] = useState(false)
 
-  const handleDeploySuccess = (deployedCharacterId: string) => {
+  const handleDeploySuccess = (deployedCharacterId: string, deployedName: string) => {
     setCharacterId(deployedCharacterId)
+    setCharacterName(deployedName)
     setShowAssignment(true)
   }
 
@@ -72,9 +74,10 @@ export default function NewCharacterPage() {
             </div>
 
             <ConfigurationForm
-              characterName="KERMIT_NPC_01"
+              characterName={characterName}
               characterId={characterId}
               onDeploySuccess={handleDeploySuccess}
+              onNameChange={setCharacterName}
             />
 
             <div className="mt-12" />
@@ -85,6 +88,7 @@ export default function NewCharacterPage() {
       <AssignmentModal
         open={showAssignment}
         characterId={characterId}
+        characterName={characterName}
         initialSelectedGameId={initialGameId}
         onClose={() => setShowAssignment(false)}
         onFinished={() => router.push('/characters')}

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import TopNav from '@/components/TopNav'
 import RetroButton from '@/components/ui/RetroButton'
+import FundWalletModal from '@/components/FundWalletModal'
 
 interface CharacterItem {
   id: string
@@ -14,10 +15,16 @@ interface CharacterItem {
   createdAt: string
 }
 
+interface FundTarget {
+  name: string
+  walletAddress: string
+}
+
 export default function CharactersPage() {
   const [characters, setCharacters] = useState<CharacterItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [fundTarget, setFundTarget] = useState<FundTarget | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -27,32 +34,20 @@ export default function CharactersPage() {
       setError('')
       try {
         const response = await fetch('/api/characters')
-        if (!response.ok) {
-          throw new Error('Failed to load characters')
-        }
+        if (!response.ok) throw new Error('Failed to load characters')
         const payload = await response.json()
-        if (cancelled) {
-          return
-        }
-        setCharacters(Array.isArray(payload) ? payload : [])
+        if (!cancelled) setCharacters(Array.isArray(payload) ? payload : [])
       } catch (loadError) {
         if (!cancelled) {
-          const message =
-            loadError instanceof Error ? loadError.message : 'Failed to load characters'
-          setError(message)
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load characters')
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
+        if (!cancelled) setLoading(false)
       }
     }
 
     loadCharacters()
-
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [])
 
   return (
@@ -87,9 +82,7 @@ export default function CharactersPage() {
               Create your first autonomous character.
             </p>
             <Link href="/characters/new">
-              <RetroButton variant="yellow" size="lg">
-                CREATE AGENT
-              </RetroButton>
+              <RetroButton variant="yellow" size="lg">CREATE AGENT</RetroButton>
             </Link>
           </div>
         ) : (
@@ -97,7 +90,7 @@ export default function CharactersPage() {
             {characters.map((character) => (
               <div
                 key={character.id}
-                className="border-4 border-cyan-500 bg-black p-6 hover:border-magenta-500 transition-all"
+                className="border-4 border-cyan-500 bg-black p-6 hover:border-magenta-500 transition-all flex flex-col"
               >
                 <h3 className="text-xl font-bold text-white uppercase mb-2">{character.name}</h3>
                 <p className="text-xs text-gray-400 font-mono mb-3">
@@ -114,16 +107,35 @@ export default function CharactersPage() {
                   <p className="text-sm font-bold text-yellow-300">{character.projectIds?.length ?? 0}</p>
                 </div>
 
-                <Link href={`/characters/${character.id}/edit`}>
-                  <RetroButton variant="magenta" size="md" className="w-full text-xs">
-                    EDIT CHARACTER
-                  </RetroButton>
-                </Link>
+                <div className="mt-auto flex flex-col gap-2">
+                  <button
+                    onClick={() =>
+                      setFundTarget({ name: character.name, walletAddress: character.walletAddress })
+                    }
+                    className="w-full border-4 border-yellow-500 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 text-xs font-bold py-2 px-3 transition-all uppercase"
+                  >
+                    💰 FUND WALLET
+                  </button>
+
+                  <Link href={`/characters/${character.id}/edit`}>
+                    <RetroButton variant="magenta" size="md" className="w-full text-xs">
+                      EDIT CHARACTER
+                    </RetroButton>
+                  </Link>
+                </div>
               </div>
             ))}
           </div>
         )}
       </main>
+
+      {fundTarget && (
+        <FundWalletModal
+          characterName={fundTarget.name}
+          walletAddress={fundTarget.walletAddress}
+          onClose={() => setFundTarget(null)}
+        />
+      )}
     </div>
   )
 }
