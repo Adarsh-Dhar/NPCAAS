@@ -7,7 +7,7 @@ import LeftPanel from '@/components/creator/LeftPanel'
 import ConfigurationForm from '@/components/creator/ConfigurationForm'
 import ProjectModal from '@/components/creator/ProjectModal'
 import RetroButton from '@/components/ui/RetroButton'
-import { useProject } from '@/hooks/useProject'
+import { useProject, type Project } from '@/hooks/useProject'
 
 interface CharacterRecord {
   id: string
@@ -23,7 +23,14 @@ interface CharacterRecord {
 
 export default function CreatorPage() {
   const searchParams = useSearchParams()
-  const { currentProject, setCurrentProject, createProject, loading } = useProject()
+  const {
+    currentProject,
+    setCurrentProject,
+    projects,
+    createProject,
+    fetchProjects,
+    loading,
+  } = useProject()
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [currentCharacterId, setCurrentCharacterId] = useState<string | null>(null)
   const [currentCharacter, setCurrentCharacter] = useState<CharacterRecord | null>(null)
@@ -31,26 +38,41 @@ export default function CreatorPage() {
   // Read projectId from URL params and fetch that project
   useEffect(() => {
     const projectId = searchParams.get('projectId')
-    
-    if (projectId && !currentProject) {
-      // Fetch the specific project
-      const fetchProject = async () => {
+
+    const initializeProject = async () => {
+      if (projectId && currentProject?.id !== projectId) {
         try {
           const response = await fetch(`/api/projects/${projectId}`)
           if (response.ok) {
             const project = await response.json()
             setCurrentProject(project)
+            setShowProjectModal(false)
           }
+          return
         } catch (err) {
           console.error('Failed to fetch project:', err)
+          return
         }
       }
-      fetchProject()
-    } else if (!projectId && !currentProject) {
-      // Show modal if no project ID in URL and no current project
-      setShowProjectModal(true)
+
+      if (!projectId && !currentProject) {
+        try {
+          const existingProjects = await fetchProjects()
+          if (Array.isArray(existingProjects) && existingProjects.length > 0) {
+            setCurrentProject(existingProjects[0])
+            setShowProjectModal(false)
+          } else {
+            setShowProjectModal(true)
+          }
+        } catch (error) {
+          console.error('Failed to fetch projects:', error)
+          setShowProjectModal(true)
+        }
+      }
     }
-  }, [searchParams, currentProject, setCurrentProject])
+
+    initializeProject()
+  }, [searchParams, currentProject, setCurrentProject, fetchProjects])
 
   useEffect(() => {
     const loadCharacters = async () => {
@@ -101,6 +123,22 @@ export default function CreatorPage() {
     setShowProjectModal(false)
   }
 
+  const handleProjectSelected = (project: Project) => {
+    setCurrentProject(project)
+    setCurrentCharacterId(null)
+    setCurrentCharacter(null)
+    setShowProjectModal(false)
+  }
+
+  const openProjectModal = async () => {
+    try {
+      await fetchProjects()
+    } catch {
+      // Surface fetch errors inside modal instead of blocking open.
+    }
+    setShowProjectModal(true)
+  }
+
   const handleDeploySuccess = (characterId: string) => {
     setCurrentCharacterId(characterId)
     setCurrentCharacter(null)
@@ -134,10 +172,10 @@ export default function CreatorPage() {
                 </div>
                 <RetroButton
                   variant="cyan"
-                  onClick={() => setShowProjectModal(true)}
+                  onClick={openProjectModal}
                   className="text-xs"
                 >
-                  {currentProject ? 'NEW GAME' : 'CREATE GAME'}
+                  {currentProject ? 'SWITCH / NEW GAME' : 'SELECT OR CREATE GAME'}
                 </RetroButton>
               </div>
             </div>
@@ -174,6 +212,9 @@ export default function CreatorPage() {
         isOpen={showProjectModal}
         onClose={handleProjectCreated}
         onCreateProject={createProject}
+        onSelectProject={handleProjectSelected}
+        onRefreshProjects={fetchProjects}
+        projects={projects}
         loading={loading}
       />
     </main>

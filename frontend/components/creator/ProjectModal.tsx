@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import RetroInput from '@/components/ui/RetroInput'
 import RetroButton from '@/components/ui/RetroButton'
 import type { Project } from '@/hooks/useProject'
@@ -9,6 +9,9 @@ interface ProjectModalProps {
   isOpen: boolean
   onClose: () => void
   onCreateProject: (name: string) => Promise<Project>
+  onSelectProject: (project: Project) => void
+  onRefreshProjects: () => Promise<Project[]>
+  projects: Project[]
   loading: boolean
 }
 
@@ -16,12 +19,25 @@ export default function ProjectModal({
   isOpen,
   onClose,
   onCreateProject,
+  onSelectProject,
+  onRefreshProjects,
+  projects,
   loading,
 }: ProjectModalProps) {
   const [projectName, setProjectName] = useState('')
   const [error, setError] = useState('')
   const [generatedApiKey, setGeneratedApiKey] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) {
+      return
+    }
+
+    onRefreshProjects().catch(() => {
+      // The modal stays usable for creation even if refresh fails.
+    })
+  }, [isOpen, onRefreshProjects])
 
   const handleCreate = async () => {
     if (!projectName.trim()) {
@@ -58,14 +74,41 @@ export default function ProjectModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-      <div className="retro-card-cyan border-4 border-cyan-400 p-6 max-w-md w-full mx-4">
+      <div className="retro-card-cyan border-4 border-cyan-400 p-6 max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto">
         {!generatedApiKey ? (
           <>
             <h2 className="text-2xl font-bold mb-4 text-white text-center">
-              CREATE NEW GAME
+              SELECT OR CREATE GAME
             </h2>
 
             <div className="space-y-4">
+              {projects.length > 0 && (
+                <div className="retro-card-cyan border-4 border-cyan-400 p-3">
+                  <p className="text-xs uppercase font-bold text-cyan-300 mb-3">
+                    Existing Games
+                  </p>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {projects.map((project) => (
+                      <button
+                        key={project.id}
+                        type="button"
+                        onClick={() => onSelectProject(project)}
+                        className="w-full text-left bg-black border-2 border-cyan-500 p-3 hover:border-magenta-500 transition-colors"
+                      >
+                        <p className="text-white text-sm font-bold uppercase">{project.name}</p>
+                        <p className="text-cyan-400 text-[10px] font-mono mt-1">
+                          Created {new Date(project.createdAt).toLocaleDateString()}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t-2 border-cyan-500 pt-4">
+                <p className="text-xs uppercase font-bold text-cyan-300 mb-3">
+                  Create New Game
+                </p>
               <RetroInput
                 borderColor="cyan"
                 label="Game Name"
@@ -75,6 +118,7 @@ export default function ProjectModal({
                 disabled={loading}
                 onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
               />
+              </div>
 
               {error && (
                 <div className="retro-card-red border-4 border-red-400 p-2">
