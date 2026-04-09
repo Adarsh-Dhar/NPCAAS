@@ -55,20 +55,15 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function toCharacterConfig(value: unknown): CharacterConfig {
   const payload = asRecord(value)
-
   return {
-    systemPrompt:
-      typeof payload.systemPrompt === 'string' ? payload.systemPrompt : undefined,
-    openness:
-      typeof payload.openness === 'number' ? payload.openness : undefined,
-    canTrade:
-      typeof payload.canTrade === 'boolean' ? payload.canTrade : undefined,
+    systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : undefined,
+    openness: typeof payload.openness === 'number' ? payload.openness : undefined,
+    canTrade: typeof payload.canTrade === 'boolean' ? payload.canTrade : undefined,
   }
 }
 
 function toAdaptationMemory(value: unknown): AdaptationMemory {
   const payload = asRecord(value)
-
   const pendingSection2 = asRecord(payload.pendingSection2)
   const hasPendingSection2 =
     typeof pendingSection2.systemPrompt === 'string' &&
@@ -103,24 +98,17 @@ function parseSection2Definition(message: string): Section2Profile | null {
   )
   const opennessMatch = message.match(/Openness\s+to\s+Experience\s*\n?\s*(\d{1,3})/i)
 
-  if (!promptMatch || !opennessMatch) {
-    return null
-  }
+  if (!promptMatch || !opennessMatch) return null
 
   const openness = Math.max(0, Math.min(100, parseInt(opennessMatch[1], 10)))
   const systemPrompt = promptMatch[1].trim()
-
-  if (!systemPrompt) {
-    return null
-  }
+  if (!systemPrompt) return null
 
   return { systemPrompt, openness }
 }
 
 function isActivationMessage(message: string): boolean {
-  return /(activate\s+section\s*2|activate\s+cognitive\s+layer|enable\s+specialization|confirm\s+section\s*2|yes\s+activate)/i.test(
-    message
-  )
+  return /(activate\s+section\s*2|activate\s+cognitive\s+layer|enable\s+specialization|confirm\s+section\s*2|yes\s+activate)/i.test(message)
 }
 
 function extractPreferences(message: string): string[] {
@@ -130,33 +118,24 @@ function extractPreferences(message: string): string[] {
     /prefer\s+([^.!?]+)/gi,
     /focus\s+on\s+([^.!?]+)/gi,
   ]
-
   const preferences: string[] = []
   for (const pattern of patterns) {
     let match: RegExpExecArray | null = pattern.exec(message)
     while (match) {
       const candidate = match[1].trim().replace(/\s+/g, ' ')
-      if (candidate.length >= 4 && candidate.length <= 120) {
-        preferences.push(candidate)
-      }
+      if (candidate.length >= 4 && candidate.length <= 120) preferences.push(candidate)
       match = pattern.exec(message)
     }
   }
-
   return preferences
 }
 
-function buildSummary(
-  preferences: string[],
-  turnCount: number,
-  profile: Section2Profile
-): string {
+function buildSummary(preferences: string[], turnCount: number, profile: Section2Profile): string {
   const topPreferences = preferences.slice(0, 4)
   const preferenceText =
     topPreferences.length > 0
       ? `Key preferences: ${topPreferences.join('; ')}`
       : 'Key preferences: none yet'
-
   return `${preferenceText}. Section 2 profile active with openness ${profile.openness}. Specialized turns: ${turnCount}.`
 }
 
@@ -172,16 +151,9 @@ function mergePreferences(existing: string[], incoming: string[]): string[] {
 
 export async function OPTIONS(request: NextRequest) {
   const origin = request.headers.get('origin')
-  return new NextResponse(null, {
-    status: 204,
-    headers: getCorsHeaders(origin),
-  })
+  return new NextResponse(null, { status: 204, headers: getCorsHeaders(origin) })
 }
 
-/**
- * POST /api/chat
- * Process a chat message from the user to the NPC agent
- */
 export async function POST(request: NextRequest) {
   const origin = request.headers.get('origin')
   const corsHeaders = getCorsHeaders(origin)
@@ -192,24 +164,15 @@ export async function POST(request: NextRequest) {
   if (authHeader) {
     if (!authHeader.startsWith('Bearer ')) {
       return NextResponse.json(
-        {
-          error:
-            'Missing or malformed Authorization header. Use: Bearer gc_live_...',
-        },
+        { error: 'Missing or malformed Authorization header. Use: Bearer gc_live_...' },
         { status: 401, headers: corsHeaders }
       )
     }
-
     const apiKey = authHeader.replace('Bearer ', '').trim()
     const validatedProject = await validateApiKey(apiKey)
-
     if (!validatedProject) {
-      return NextResponse.json(
-        { error: 'Invalid API key' },
-        { status: 401, headers: corsHeaders }
-      )
+      return NextResponse.json({ error: 'Invalid API key' }, { status: 401, headers: corsHeaders })
     }
-
     project = validatedProject
   }
 
@@ -218,28 +181,25 @@ export async function POST(request: NextRequest) {
     const { characterId, message } = body
 
     if (!message) {
-      return NextResponse.json(
-        { error: 'message is required' },
-        { status: 400, headers: corsHeaders }
-      )
+      return NextResponse.json({ error: 'message is required' }, { status: 400, headers: corsHeaders })
     }
 
-    // Base-chat fallback so the creator panel remains usable before deploy.
+    // Base-chat fallback (no characterId)
     if (!characterId) {
       const agent = kiteAgentClient
       agent.registerTools([])
-
       const agentResponse = await agent.chat(message, {
         characterName: 'NPC Assistant',
         canTrade: false,
         systemPrompt:
-          'You are a helpful NPC assistant. Chat naturally like a normal LLM and ask for Section 2 details when the user wants deeper specialization.',
+          'You are a helpful NPC assistant. Chat naturally and ask for Section 2 details when the user wants deeper specialization.',
       })
 
       return NextResponse.json(
         {
           success: true,
           response: agentResponse.text,
+          action: agentResponse.action ?? null,
           specializationActive: false,
           pendingSpecialization: false,
           timestamp: new Date().toISOString(),
@@ -254,10 +214,7 @@ export async function POST(request: NextRequest) {
     })) as unknown as StoredCharacter | null
 
     if (!character) {
-      return NextResponse.json(
-        { error: 'Character not found' },
-        { status: 404, headers: corsHeaders }
-      )
+      return NextResponse.json({ error: 'Character not found' }, { status: 404, headers: corsHeaders })
     }
 
     if (project && character.projectId !== project.id) {
@@ -272,23 +229,16 @@ export async function POST(request: NextRequest) {
 
     const section2Profile = parseSection2Definition(message)
     if (section2Profile) {
-      const nextAdaptation = {
-        ...adaptation,
-        pendingSection2: section2Profile,
-        lastUpdatedAt: new Date().toISOString(),
-      }
+      const nextAdaptation = { ...adaptation, pendingSection2: section2Profile, lastUpdatedAt: new Date().toISOString() }
       await prisma.character.update({
         where: { id: characterId },
-        data: {
-          adaptation: nextAdaptation as unknown as Prisma.InputJsonValue,
-        },
+        data: { adaptation: nextAdaptation as unknown as Prisma.InputJsonValue },
       })
-
       return NextResponse.json(
         {
           success: true,
-          response:
-            'I parsed your Section 2 cognitive layer. Reply with "Activate Section 2" to apply this profile and start progressive specialization.',
+          response: 'I parsed your Section 2 cognitive layer. Reply with "Activate Section 2" to apply this profile and start progressive specialization.',
+          action: 'nods slowly and processes the information',
           characterId,
           specializationActive: adaptation.specializationActive,
           pendingSpecialization: true,
@@ -301,12 +251,7 @@ export async function POST(request: NextRequest) {
 
     if (isActivationMessage(message) && adaptation.pendingSection2) {
       const appliedProfile = adaptation.pendingSection2
-      const nextConfig = {
-        ...config,
-        systemPrompt: appliedProfile.systemPrompt,
-        openness: appliedProfile.openness,
-      }
-
+      const nextConfig = { ...config, systemPrompt: appliedProfile.systemPrompt, openness: appliedProfile.openness }
       const nextAdaptation = {
         ...adaptation,
         specializationActive: true,
@@ -314,7 +259,6 @@ export async function POST(request: NextRequest) {
         summary: buildSummary(adaptation.preferences, adaptation.turnCount, appliedProfile),
         lastUpdatedAt: new Date().toISOString(),
       }
-
       await prisma.character.update({
         where: { id: characterId },
         data: {
@@ -322,12 +266,11 @@ export async function POST(request: NextRequest) {
           adaptation: nextAdaptation as unknown as Prisma.InputJsonValue,
         },
       })
-
       return NextResponse.json(
         {
           success: true,
-          response:
-            'Section 2 activated. I will now become progressively more specific to your goals as this conversation continues.',
+          response: 'Section 2 activated. I will now become progressively more specific to your goals as this conversation continues.',
+          action: 'stands tall with a confident nod',
           characterId,
           specializationActive: true,
           pendingSpecialization: false,
@@ -338,61 +281,36 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 1: Instantiate KiteAgentClient
     const agent = kiteAgentClient
-
-    // Step 2: Register tools available to the agent
-    agent.registerTools([
-      'get_payer_addr',
-      'approve_payment',
-      'check_inventory',
-      'execute_trade',
-    ])
+    agent.registerTools(['get_payer_addr', 'approve_payment', 'check_inventory', 'execute_trade'])
 
     let updatedAdaptation = adaptation
     if (adaptation.specializationActive) {
       const preferenceUpdates = extractPreferences(message)
-      const mergedPreferences = mergePreferences(
-        adaptation.preferences,
-        preferenceUpdates
-      )
-
+      const mergedPreferences = mergePreferences(adaptation.preferences, preferenceUpdates)
       const activeProfile: Section2Profile = {
         systemPrompt:
           typeof config.systemPrompt === 'string' && config.systemPrompt.trim()
             ? config.systemPrompt
             : 'You are an autonomous NPC that negotiates fairly and builds reputation.',
-        openness:
-          typeof config.openness === 'number'
-            ? config.openness
-            : 50,
+        openness: typeof config.openness === 'number' ? config.openness : 50,
       }
-
       updatedAdaptation = {
         ...adaptation,
         turnCount: adaptation.turnCount + 1,
         preferences: mergedPreferences,
-        summary: buildSummary(
-          mergedPreferences,
-          adaptation.turnCount + 1,
-          activeProfile
-        ),
+        summary: buildSummary(mergedPreferences, adaptation.turnCount + 1, activeProfile),
         lastUpdatedAt: new Date().toISOString(),
       }
-
       await prisma.character.update({
         where: { id: characterId },
-        data: {
-          adaptation: updatedAdaptation as unknown as Prisma.InputJsonValue,
-        },
+        data: { adaptation: updatedAdaptation as unknown as Prisma.InputJsonValue },
       })
     }
 
-    // Step 3: Call agent.chat() with the user's message
     const agentResponse = await agent.chat(message, {
       characterName: character.name,
-      systemPrompt:
-        typeof config.systemPrompt === 'string' ? config.systemPrompt : undefined,
+      systemPrompt: typeof config.systemPrompt === 'string' ? config.systemPrompt : undefined,
       openness: typeof config.openness === 'number' ? config.openness : undefined,
       canTrade: config.canTrade,
       specializationActive: updatedAdaptation.specializationActive,
@@ -401,11 +319,11 @@ export async function POST(request: NextRequest) {
       turnCount: updatedAdaptation.turnCount,
     })
 
-    // Step 4: Return the response with optional tradeIntent
     return NextResponse.json(
       {
         success: true,
         response: agentResponse.text,
+        action: agentResponse.action ?? null,   // <-- NEW: physical action field
         characterId,
         tradeIntent: agentResponse.tradeIntent,
         specializationActive: updatedAdaptation.specializationActive,

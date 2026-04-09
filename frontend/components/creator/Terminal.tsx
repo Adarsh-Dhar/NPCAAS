@@ -13,12 +13,14 @@ interface TradeIntent {
 interface Message {
   role: 'system' | 'user' | 'agent'
   text: string
+  action?: string          // NEW: physical action separate from dialogue
   tradeIntent?: TradeIntent
   id: string
 }
 
 interface TerminalProps {
   characterId?: string
+  onAction?: (action: string) => void   // NEW: callback to lift action up to LeftPanel
 }
 
 interface TransactionResult {
@@ -28,23 +30,25 @@ interface TransactionResult {
   error?: string
 }
 
-export default function Terminal({ characterId }: TerminalProps) {
+export default function Terminal({ characterId, onAction }: TerminalProps) {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'agent',
       text: 'Hi, I am your NPC assistant. Chat with me naturally, and share your Section 2 cognitive layer when you want deeper specialization.',
+      action: 'waves hand in greeting',
       id: '1',
     },
   ])
   const [loading, setLoading] = useState(false)
-  const [specializationState, setSpecializationState] = useState<
-    'inactive' | 'pending' | 'active'
-  >('inactive')
-  const [transactionState, setTransactionState] = useState<{
-    [key: string]: TransactionResult
-  }>({})
+  const [specializationState, setSpecializationState] = useState<'inactive' | 'pending' | 'active'>('inactive')
+  const [transactionState, setTransactionState] = useState<{ [key: string]: TransactionResult }>({})
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Fire the initial greeting action
+  useEffect(() => {
+    onAction?.('waves hand in greeting')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -59,7 +63,6 @@ export default function Terminal({ characterId }: TerminalProps) {
     setInput('')
     const userId = `msg_${Date.now()}`
 
-    // Add user message to chat
     setMessages((prev) => [
       ...prev,
       { role: 'user', text: userMessage, id: userId },
@@ -71,10 +74,7 @@ export default function Terminal({ characterId }: TerminalProps) {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          characterId,
-          message: userMessage,
-        }),
+        body: JSON.stringify({ characterId, message: userMessage }),
       })
 
       if (response.ok) {
@@ -88,12 +88,18 @@ export default function Terminal({ characterId }: TerminalProps) {
           setSpecializationState('inactive')
         }
 
+        // Emit action to parent (LeftPanel → DemoAgent)
+        if (data.action) {
+          onAction?.(data.action)
+        }
+
         const agentId = `msg_${Date.now()}_agent`
         setMessages((prev) => [
           ...prev,
           {
             role: 'agent',
-            text: data.response,
+            text: data.response,          // spoken text only
+            action: data.action ?? undefined, // physical action
             tradeIntent: data.tradeIntent,
             id: agentId,
           },
@@ -142,29 +148,19 @@ export default function Terminal({ characterId }: TerminalProps) {
       return
     }
 
-    setTransactionState((prev) => ({
-      ...prev,
-      [messageId]: { status: 'processing' },
-    }))
+    setTransactionState((prev) => ({ ...prev, [messageId]: { status: 'processing' } }))
 
     try {
       const response = await fetch('/api/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          characterId,
-          tradeIntent,
-        }),
+        body: JSON.stringify({ characterId, tradeIntent }),
       })
 
       const payload = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        const errorMessage =
-          typeof payload.error === 'string'
-            ? payload.error
-            : 'Trade execution failed.'
-        throw new Error(errorMessage)
+        throw new Error(typeof payload.error === 'string' ? payload.error : 'Trade execution failed.')
       }
 
       if (payload.mode !== 'sponsored') {
@@ -174,8 +170,7 @@ export default function Terminal({ characterId }: TerminalProps) {
             status: 'failed',
             mode: 'fallback',
             txHash: typeof payload.txHash === 'string' ? payload.txHash : undefined,
-            error:
-              'Gas sponsorship unavailable. Fallback requires user-paid gas for this transaction.',
+            error: 'Gas sponsorship unavailable. Fallback requires user-paid gas for this transaction.',
           },
         }))
         return
@@ -216,12 +211,17 @@ export default function Terminal({ characterId }: TerminalProps) {
         </div>
       )}
 
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto mb-3 space-y-3 text-xs pr-2"
-      >
+      <div ref={scrollRef} className="flex-1 overflow-y-auto mb-3 space-y-3 text-xs pr-2">
         {messages.map((msg) => (
           <div key={msg.id}>
+            {/* Action line (italic, dimmer) — shown for agent messages */}
+            {msg.role === 'agent' && msg.action && (
+              <div className="text-green-600 italic font-mono text-[10px] mb-1 pl-1">
+                *{msg.action}*
+              </div>
+            )}
+
+            {/* Main message bubble */}
             <div
               className={
                 msg.role === 'system'
@@ -234,14 +234,11 @@ export default function Terminal({ characterId }: TerminalProps) {
               {msg.text}
             </div>
 
+            {/* Trade offer button */}
             {msg.tradeIntent && (
               <div className="mt-2 ml-2">
                 <RetroButton
-                  variant={
-                    transactionState[msg.id]?.status === 'success'
-                      ? 'green'
-                      : 'magenta'
-                  }
+                  variant={transactionState[msg.id]?.status === 'success' ? 'green' : 'magenta'}
                   size="sm"
                   onClick={() => handleAcceptTrade(msg.id, msg.tradeIntent!)}
                   disabled={
@@ -283,9 +280,7 @@ export default function Terminal({ characterId }: TerminalProps) {
         className="text-xs"
         disabled={loading}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !loading) {
-            handleSendMessage()
-          }
+          if (e.key === 'Enter' && !loading) handleSendMessage()
         }}
       />
       <div className="mt-2 flex justify-end">
