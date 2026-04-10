@@ -1,10 +1,7 @@
 /**
- * GuildCraft SDK
- * Drop this file into any game project to connect NPCs to your GuildCraft backend.
- *
- * Usage:
- *   const gc = new GuildCraftClient("gc_live_your_key_here")
- *   const reply = await gc.chat("char_abc123", "I want to buy a sword")
+ * GuildCraft SDK (internal TypeScript copy)
+ * The published npm package (frontend/sdk/) is the canonical JS version.
+ * This file keeps the internal server-side types in sync.
  */
 
 export interface TradeIntent {
@@ -15,28 +12,36 @@ export interface TradeIntent {
 
 export interface Character {
   id: string
-  projectId: string
   name: string
-  walletAddress?: string
-  config: Record<string, any>
-  isDeployedOnChain?: boolean
-  deploymentTxHash?: string
-  createdAt: string
+  walletAddress: string
+  isDeployedOnChain: boolean
+  config?: Record<string, any>
 }
 
 export interface ChatResponse {
   success: boolean
   response: string
+  action?: string
   characterId: string
   tradeIntent?: TradeIntent
+  specializationActive?: boolean
+  pendingSpecialization?: boolean
   timestamp: string
+  projectId?: string
+}
+
+export interface TxRequest {
+  to: string
+  value: string
+  data: string
 }
 
 export interface ExecuteTransactionResponse {
   success: boolean
-  mode: 'sponsored' | 'fallback'
+  mode: 'sponsored' | 'fallback' | 'user-paid'
   sponsored: boolean
-  txHash: string
+  txHash?: string
+  txRequest?: TxRequest
   status: 'pending' | 'success'
   message: string
   sponsorError?: string
@@ -54,14 +59,10 @@ export class GuildCraftClient {
     this.baseUrl = baseUrl
   }
 
-  /**
-   * Fetch all characters for this project.
-   */
   async getCharacters(): Promise<Character[]> {
     const response = await fetch(`${this.baseUrl}/characters`, {
       method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiKey}`,
       },
     })
@@ -78,11 +79,6 @@ export class GuildCraftClient {
     return response.json() as Promise<Character[]>
   }
 
-  /**
-   * Send a player message to an NPC character and get an AI response.
-   * @param characterId  The character ID from your GuildCraft dashboard
-   * @param message      The player's input text
-   */
   async chat(characterId: string, message: string): Promise<ChatResponse> {
     const response = await fetch(`${this.baseUrl}/chat`, {
       method: 'POST',
@@ -105,10 +101,6 @@ export class GuildCraftClient {
     return response.json() as Promise<ChatResponse>
   }
 
-  /**
-   * Execute a write transaction for a character.
-   * Sponsor-first: the backend attempts gasless execution via Kite AA.
-   */
   async executeTransaction(
     characterId: string,
     tradeIntent: TradeIntent

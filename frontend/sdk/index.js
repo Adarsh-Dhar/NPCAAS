@@ -3,18 +3,34 @@ class GuildCraftClient {
     if (!apiKey || !apiKey.startsWith('gc_live_')) {
       throw new Error('Invalid GuildCraft API key. It must start with gc_live_')
     }
-
     this.apiKey = apiKey
     this.baseUrl = baseUrl
   }
 
+  /**
+   * Fetch all characters deployed under this project.
+   */
+  async getCharacters() {
+    const response = await fetch(`${this.baseUrl}/characters`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}))
+      throw new Error(
+        `GuildCraft API error ${response.status}: ${errorBody.error || response.statusText}`
+      )
+    }
+
+    return response.json()
+  }
+
   async chat(characterId, message) {
-    if (!characterId) {
-      throw new Error('characterId is required')
-    }
-    if (!message) {
-      throw new Error('message is required')
-    }
+    if (!characterId) throw new Error('characterId is required')
+    if (!message) throw new Error('message is required')
 
     const response = await fetch(`${this.baseUrl}/chat`, {
       method: 'POST',
@@ -36,12 +52,8 @@ class GuildCraftClient {
   }
 
   async executeTransaction(characterId, tradeIntent) {
-    if (!characterId) {
-      throw new Error('characterId is required')
-    }
-    if (!tradeIntent || typeof tradeIntent !== 'object') {
-      throw new Error('tradeIntent is required')
-    }
+    if (!characterId) throw new Error('characterId is required')
+    if (!tradeIntent || typeof tradeIntent !== 'object') throw new Error('tradeIntent is required')
 
     const response = await fetch(`${this.baseUrl}/transactions`, {
       method: 'POST',
@@ -63,6 +75,4 @@ class GuildCraftClient {
   }
 }
 
-module.exports = {
-  GuildCraftClient,
-}
+module.exports = { GuildCraftClient }

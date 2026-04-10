@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
 import { executeWriteTransaction } from '@/lib/tx-orchestrator'
+import { parseEther } from 'ethers' // <--- ADD THIS IMPORT
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -134,9 +135,12 @@ export async function POST(request: NextRequest) {
     // -- Build tx input ----------------------------------------------------
     const txInput = directTx ?? {
       to: character.walletAddress,
-      value: String(Math.max(0, Math.floor(tradeIntent!.price))),
-      data: encodeTradeData(tradeIntent!),
+      // Converts decimal KITE amount (e.g. 0.002) to Wei string (e.g. "2000000000000000")
+      value: parseEther(tradeIntent!.price.toString()).toString(),
+      data: "0x",
     }
+
+    console.log("txInput", txInput)
 
     // -- Execute via real Kite AA ------------------------------------------
     const execution = await executeWriteTransaction({

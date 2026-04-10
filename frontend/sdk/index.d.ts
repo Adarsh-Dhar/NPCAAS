@@ -4,9 +4,18 @@ export interface TradeIntent {
   currency: string
 }
 
+export interface Character {
+  id: string
+  name: string
+  walletAddress: string
+  isDeployedOnChain: boolean
+  config?: any
+}
+
 export interface ChatResponse {
   success: boolean
   response: string
+  action?: string
   characterId: string
   tradeIntent?: TradeIntent
   specializationActive?: boolean
@@ -15,11 +24,18 @@ export interface ChatResponse {
   projectId?: string
 }
 
+export interface TxRequest {
+  to: string
+  value: string
+  data: string
+}
+
 export interface ExecuteTransactionResponse {
   success: boolean
-  mode: 'sponsored' | 'fallback'
+  mode: 'sponsored' | 'fallback' | 'user-paid'
   sponsored: boolean
-  txHash: string
+  txHash?: string
+  txRequest?: TxRequest
   status: 'pending' | 'success'
   message: string
   sponsorError?: string
@@ -31,6 +47,7 @@ export declare class GuildCraftClient {
 
   constructor(apiKey: string, baseUrl?: string)
 
+  getCharacters(): Promise<Character[]>
   chat(characterId: string, message: string): Promise<ChatResponse>
   executeTransaction(
     characterId: string,
