@@ -27,5 +27,9 @@
   "homepage": "https://github.com/adarsh23/kite-ai#readme",
   "engines": {
     "node": ">=14.0.0"
+  },
+  "packageManager": "pnpm@9.10.0+sha1.216899f511c8dfde183c7cb50b69009c779534a8",
+  "dependencies": {
+    "@adarsh23/guildcraft-sdk": "^1.0.2"
   }
 }

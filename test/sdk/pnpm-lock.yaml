@@ -1,0 +1,23 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@adarsh23/guildcraft-sdk':
+        specifier: ^1.0.2
+        version: 1.0.2
+
+packages:
+
+  '@adarsh23/guildcraft-sdk@1.0.2':
+    resolution: {integrity: sha512-x955D8VVaNPDbSSGLX9Lsa52q89wksfplAgmVtMXSZfei3SFnofox8iHG/m8bmQzKKCRhpea0ddRKQHYzIq2KQ==}
+    engines: {node: '>=14.0.0'}
+
+snapshots:
+
+  '@adarsh23/guildcraft-sdk@1.0.2': {}
