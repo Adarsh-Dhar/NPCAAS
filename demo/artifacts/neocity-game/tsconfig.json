@@ -9,6 +9,8 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
     "types": ["node", "vite/client"],
     "paths": {
       "@/*": ["./src/*"]
