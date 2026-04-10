@@ -1,4 +1,4 @@
-const { GuildCraftClient } = require('@adarsh23/guildcraft-sdk');
+const { GuildCraftClient } = require('../../frontend/sdk/index.js');
 
 const API_KEY = 'gc_live_f17887c670631738dd45768b62d05293';
 const BASE_URL = 'http://localhost:3000/api';

@@ -132,43 +132,57 @@ export async function POST(request: NextRequest) {
     // smartAccountId stores the ownerId string (set during character creation)
     const ownerId = character.smartAccountId ?? `character:${character.id}`
 
-    // -- Build tx input ----------------------------------------------------
-    const txInput = directTx ?? {
-      to: character.walletAddress,
-      // Converts decimal KITE amount (e.g. 0.002) to Wei string (e.g. "2000000000000000")
-      value: parseEther(tradeIntent!.price.toString()).toString(),
-      data: "0x",
+    // -- Route the transaction based on intent -----------------------------
+    
+    // CASE 1: Player Trade (User must send funds to the NPC)
+    if (tradeIntent) {
+      const txRequest = {
+        to: character.walletAddress, // Receiver is the NPC
+        // Converts decimal KITE amount to Wei string
+        value: parseEther(tradeIntent.price.toString()).toString(),
+        data: "0x",
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          mode: 'user-paid', // Tells the SDK the user needs to sign
+          sponsored: false,
+          txRequest,         // The raw transaction data for MetaMask
+          status: 'pending',
+          characterId,
+          tradeIntent,
+          message: 'Player payment required. Prompt user wallet to sign transaction.',
+        },
+        { status: 200, headers: cors }
+      )
     }
 
-    console.log("txInput", txInput)
+    // CASE 2: NPC Action (Direct TX, NPC signs, Gas Sponsored by Dev)
+    if (directTx) {
+      const execution = await executeWriteTransaction({
+        ...directTx,
+        ownerId, // Sender is the NPC
+      })
 
-    // -- Execute via real Kite AA ------------------------------------------
-    const execution = await executeWriteTransaction({
-      ...txInput,
-      ownerId,
-    })
-
-    return NextResponse.json(
-      {
-        success: true,
-        mode: execution.mode,
-        sponsored: execution.sponsored,
-        txHash: execution.txHash,
-        userOpHash: execution.userOpHash,
-        status: execution.status,
-        sponsorError: execution.sponsorError,
-        characterId,
-        tradeIntent: tradeIntent ?? undefined,
-        transaction: directTx ?? undefined,
-        message:
-          execution.mode === 'sponsored'
-            ? tradeIntent
-              ? 'Trade accepted — gas sponsored by Kite.'
-              : 'Transaction sent — gas sponsored by Kite.'
-            : 'Sponsorship unavailable. Fallback requires user-paid gas.',
-      },
-      { status: 200, headers: cors }
-    )
+      return NextResponse.json(
+        {
+          success: true,
+          mode: execution.mode,
+          sponsored: execution.sponsored,
+          txHash: execution.txHash,
+          userOpHash: execution.userOpHash,
+          status: execution.status,
+          sponsorError: execution.sponsorError,
+          characterId,
+          transaction: directTx,
+          message: execution.mode === 'sponsored'
+              ? 'Transaction sent — gas sponsored by Kite.'
+              : 'Sponsorship unavailable. Fallback requires user-paid gas.',
+        },
+        { status: 200, headers: cors }
+      )
+    }
   } catch (error) {
     console.error('[API] Transaction execution error:', error)
     return NextResponse.json(

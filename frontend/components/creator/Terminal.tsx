@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import RetroInput from '@/components/ui/RetroInput'
 import RetroButton from '@/components/ui/RetroButton'
+import { useWallet } from '@/components/WalletContext'
 
 interface TradeIntent {
   item: string
@@ -27,7 +28,7 @@ interface TerminalProps {
 interface TransactionResult {
   status: 'pending' | 'processing' | 'success' | 'failed'
   txHash?: string
-  mode?: 'sponsored' | 'fallback'
+  mode?: 'sponsored' | 'fallback' | 'user-paid'
   error?: string
 }
 
@@ -45,6 +46,7 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
   const [specializationState, setSpecializationState] = useState<'inactive' | 'pending' | 'active'>('inactive')
   const [transactionState, setTransactionState] = useState<{ [key: string]: TransactionResult }>({})
   const scrollRef = useRef<HTMLDivElement>(null)
+  const { address, onKiteNetwork, switchToKite } = useWallet()
 
   // Fire the initial greeting action
   useEffect(() => {
@@ -164,6 +166,110 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
         throw new Error(typeof payload.error === 'string' ? payload.error : 'Trade execution failed.')
       }
 
+      // --- NEW LOGIC: User-Paid Transaction via MetaMask ---
+      if (payload.mode === 'user-paid' && payload.txRequest) {
+        if (!address) {
+          setTransactionState((prev) => ({
+            ...prev,
+            [messageId]: { status: 'failed', error: 'Please connect your Web3 wallet first to execute trades.' },
+          }))
+          setMessages((prev) => [
+            ...prev,
+            { role: 'system', text: 'Please connect your Web3 wallet to execute trades.', id: `tx_err_${Date.now()}` },
+          ])
+          return
+        }
+
+        if (!onKiteNetwork) {
+          await switchToKite()
+        }
+
+        const provider = (window as any).ethereum
+        if (!provider || typeof provider.request !== 'function') {
+          setTransactionState((prev) => ({
+            ...prev,
+            [messageId]: { status: 'failed', error: 'No Web3 wallet detected. Please install MetaMask.' },
+          }))
+          setMessages((prev) => [
+            ...prev,
+            { role: 'system', text: 'No Web3 wallet detected. Please install MetaMask or another injected wallet.', id: `tx_err_${Date.now()}` },
+          ])
+          return
+        }
+
+        // Convert the base-10 Wei string to a Hex string for MetaMask
+        let valueInHex = '0x0'
+        try {
+          if (payload.txRequest.value) {
+            valueInHex = '0x' + BigInt(payload.txRequest.value).toString(16)
+          }
+        } catch (e) {
+          // If value is already hex (0x...), use it; otherwise fallback to 0
+          if (typeof payload.txRequest.value === 'string' && payload.txRequest.value.startsWith('0x')) {
+            valueInHex = payload.txRequest.value
+          } else {
+            valueInHex = '0x0'
+          }
+        }
+
+        // Add the sender's address and the hex-formatted value
+        const txParams = {
+          ...payload.txRequest,
+          from: address,
+          value: valueInHex,
+        }
+
+        try {
+          const txHash = await provider.request({
+            method: 'eth_sendTransaction',
+            params: [txParams],
+          }) as string
+
+          setTransactionState((prev) => ({
+            ...prev,
+            [messageId]: { status: 'success', mode: 'user-paid', txHash },
+          }))
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'system',
+              text: 'Trade accepted! Transaction sent via your wallet.',
+              id: `tx_${Date.now()}`,
+              txHash,
+            },
+          ])
+          return
+        } catch (err: any) {
+          // Handle user rejection differently for a clearer UX
+          const code = err?.code
+          if (code === 4001) {
+            setTransactionState((prev) => ({
+              ...prev,
+              [messageId]: { status: 'failed', error: 'Transaction cancelled by user.' },
+            }))
+            setMessages((prev) => [
+              ...prev,
+              { role: 'system', text: 'Transaction cancelled by user.', id: `tx_cancelled_${Date.now()}` },
+            ])
+            return
+          }
+
+          // Unknown wallet error — surface friendly message
+          setTransactionState((prev) => ({
+            ...prev,
+            [messageId]: { status: 'failed', error: err instanceof Error ? err.message : 'Wallet transaction failed.' },
+          }))
+          setMessages((prev) => [
+            ...prev,
+            { role: 'system', text: `Transaction failed: ${err?.message ?? 'Unknown wallet error'}`, id: `tx_err_${Date.now()}` },
+          ])
+          return
+        }
+      }
+      // -----------------------------------------------------
+
+      // Handle fallback/failed sponsorships
       if (payload.mode !== 'sponsored') {
         setTransactionState((prev) => ({
           ...prev,
@@ -174,7 +280,6 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
             error: 'Gas sponsorship unavailable. Fallback requires user-paid gas for this transaction.',
           },
         }))
-        // Add a system message with the txHash if present
         if (typeof payload.txHash === 'string') {
           setMessages((prev) => [
             ...prev,
@@ -189,6 +294,7 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
         return
       }
 
+      // Handle successful sponsorships
       setTransactionState((prev) => ({
         ...prev,
         [messageId]: {
@@ -197,13 +303,12 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
           txHash: typeof payload.txHash === 'string' ? payload.txHash : undefined,
         },
       }))
-      // Add a system message with the txHash if present
       if (typeof payload.txHash === 'string') {
         setMessages((prev) => [
           ...prev,
           {
             role: 'system',
-            text: 'Trade accepted successfully.',
+            text: 'Trade accepted successfully (Gas Sponsored).',
             id: `tx_${Date.now()}`,
             txHash: payload.txHash,
           },
@@ -278,11 +383,11 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
                       ? 'Trade accepted: item received'
                       : 'Accept trade'}
                 </RetroButton>
-                {transactionState[msg.id]?.status === 'success' && (
-                  <div className="mt-1 text-[10px] text-green-300">
-                    Sponsored tx: {transactionState[msg.id]?.txHash?.slice(0, 16)}...
-                  </div>
-                )}
+                        {transactionState[msg.id]?.status === 'success' && (
+                          <div className="mt-1 text-[10px] text-green-300">
+                            Tx: {transactionState[msg.id]?.txHash?.slice(0, 16)}...
+                          </div>
+                        )}
                 {transactionState[msg.id]?.status === 'failed' && (
                   <div className="mt-1 text-[10px] text-yellow-300">
                     {transactionState[msg.id]?.error}
