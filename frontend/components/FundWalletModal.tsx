@@ -12,59 +12,89 @@ interface FundWalletModalProps {
   onClose: () => void
 }
 
-const KITE_CHAIN_ID_HEX = '0x940'
-const KITE_EXPLORER = 'https://testnet.kitescan.io'
+const KITE_EXPLORER = 'https://testnet.kitescan.ai'
 
 export default function FundWalletModal({ characterName, walletAddress, onClose }: FundWalletModalProps) {
-  const { address, connect, onKiteNetwork, switchToKite } = useWallet()
+  const { address, connecting, onKiteNetwork, connect, switchToKite } = useWallet()
   const [amount, setAmount] = useState('0.01')
-  const [status, setStatus] = useState<'idle' | 'switching' | 'sending' | 'success' | 'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'connecting' | 'switching' | 'sending' | 'success' | 'error'>('idle')
   const [txHash, setTxHash] = useState('')
   const [error, setError] = useState('')
 
   const handleSend = async () => {
     if (!window.ethereum) {
       setError('Please install MetaMask or another Web3 wallet to send funds.')
+      setStatus('error')
       return
     }
 
-    setStatus('sending')
     setError('')
 
     try {
-      // Ensure connected
-      if (!address) {
+      // Step 1: ensure wallet is connected
+      let currentAddress = address
+      if (!currentAddress) {
+        setStatus('connecting')
         await connect()
+        // After connect(), re-read accounts directly since React state may not update yet
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' }) as string[]
+        currentAddress = accounts[0] ?? null
+        if (!currentAddress) {
+          setError('Wallet connection was cancelled or failed.')
+          setStatus('error')
+          return
+        }
       }
 
-      // Ensure on Kite network
-      if (!onKiteNetwork) {
+      // Step 2: ensure we're on the Kite network
+      const currentChainIdHex = await window.ethereum.request({ method: 'eth_chainId' }) as string
+      const currentChainId = parseInt(currentChainIdHex, 16)
+      if (currentChainId !== 2368) {
         setStatus('switching')
         await switchToKite()
+        // Verify the switch actually happened
+        const newChainIdHex = await window.ethereum.request({ method: 'eth_chainId' }) as string
+        const newChainId = parseInt(newChainIdHex, 16)
+        if (newChainId !== 2368) {
+          setError('Please switch to KiteAI Testnet (Chain ID 2368) in your wallet to continue.')
+          setStatus('error')
+          return
+        }
       }
 
-      setStatus('sending')
+      // Step 3: validate amount
+      const parsedAmount = parseFloat(amount)
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        setError('Please enter a valid amount greater than 0.')
+        setStatus('error')
+        return
+      }
 
+      // Step 4: send transaction
+      setStatus('sending')
       const provider = new ethers.BrowserProvider(window.ethereum as ethers.Eip1193Provider)
       const signer = await provider.getSigner()
 
-      const parsedAmount = parseFloat(amount)
-      if (isNaN(parsedAmount) || parsedAmount <= 0) {
-        throw new Error('Invalid amount')
-      }
+      console.log("signer", signer)
 
       const tx = await signer.sendTransaction({
         to: walletAddress,
         value: ethers.parseEther(parsedAmount.toString()),
       })
+      console.log("tx", tx)
 
       setTxHash(tx.hash)
       setStatus('success')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Transaction failed'
-      // User rejection
-      if (msg.includes('user rejected') || msg.includes('User denied')) {
-        setError('Transaction rejected by user.')
+      if (
+        msg.includes('user rejected') ||
+        msg.includes('User denied') ||
+        msg.includes('ACTION_REJECTED')
+      ) {
+        setError('Transaction was rejected by the user.')
+      } else if (msg.includes('insufficient funds')) {
+        setError('Insufficient KITE balance in your wallet.')
       } else {
         setError(msg)
       }
@@ -72,7 +102,15 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
     }
   }
 
-  const shortAddress = `${walletAddress.slice(0, 10)}...${walletAddress.slice(-6)}`
+  const isBusy = status === 'connecting' || status === 'switching' || status === 'sending'
+
+  const buttonLabel = () => {
+    if (status === 'connecting') return 'CONNECTING WALLET...'
+    if (status === 'switching') return 'SWITCHING NETWORK...'
+    if (status === 'sending') return 'SENDING...'
+    if (address) return 'SEND KITE'
+    return 'CONNECT & SEND'
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
@@ -96,7 +134,11 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
           <div className="flex items-center gap-2 mb-4">
             <div className={`w-2 h-2 rounded-full ${onKiteNetwork && address ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
             <span className="text-xs font-mono text-gray-400">
-              {!address ? 'Wallet not connected' : onKiteNetwork ? 'Kite Testnet' : 'Wrong network — will switch on send'}
+              {!address
+                ? 'Wallet not connected'
+                : onKiteNetwork
+                  ? 'KiteAI Testnet ✓'
+                  : 'Wrong network — will switch automatically on send'}
             </span>
           </div>
 
@@ -143,14 +185,14 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
                 placeholder="0.01"
                 step="0.001"
                 min="0.001"
-                disabled={status === 'sending' || status === 'switching'}
+                disabled={isBusy}
               />
 
               <p className="mt-2 text-xs text-gray-500 font-mono">
-                Sending native KITE tokens on Kite Testnet
+                Sending native KITE tokens on KiteAI Testnet (Chain ID: 2368)
               </p>
 
-              {error && (
+              {(status === 'error' && error) && (
                 <div className="mt-3 border-2 border-red-500 bg-red-950/20 p-3">
                   <p className="text-red-400 text-xs font-mono">{error}</p>
                 </div>
@@ -161,7 +203,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
                   variant="magenta"
                   size="sm"
                   onClick={onClose}
-                  disabled={status === 'sending' || status === 'switching'}
+                  disabled={isBusy}
                 >
                   CANCEL
                 </RetroButton>
@@ -169,15 +211,9 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
                   variant="yellow"
                   size="sm"
                   onClick={handleSend}
-                  disabled={status === 'sending' || status === 'switching' || !amount}
+                  disabled={isBusy || !amount || parseFloat(amount) <= 0}
                 >
-                  {status === 'switching'
-                    ? 'SWITCHING NETWORK...'
-                    : status === 'sending'
-                      ? 'SENDING...'
-                      : address
-                        ? 'SEND KITE'
-                        : 'CONNECT & SEND'}
+                  {buttonLabel()}
                 </RetroButton>
               </div>
             </>

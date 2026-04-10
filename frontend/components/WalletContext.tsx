@@ -46,10 +46,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       params: [
         {
           chainId: KITE_CHAIN_ID_HEX,
-          chainName: 'Kite Testnet',
+          chainName: 'KiteAI Testnet',
           nativeCurrency: { name: 'KITE', symbol: 'KITE', decimals: 18 },
           rpcUrls: ['https://rpc-testnet.gokite.ai'],
-          blockExplorerUrls: ['https://testnet.kitescan.io'],
+          blockExplorerUrls: ['https://testnet.kitescan.ai'],
         },
       ],
     })

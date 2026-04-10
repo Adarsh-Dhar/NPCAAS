@@ -16,6 +16,7 @@ interface Message {
   action?: string          // NEW: physical action separate from dialogue
   tradeIntent?: TradeIntent
   id: string
+  txHash?: string // Optional transaction hash for explorer link
 }
 
 interface TerminalProps {
@@ -173,6 +174,18 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
             error: 'Gas sponsorship unavailable. Fallback requires user-paid gas for this transaction.',
           },
         }))
+        // Add a system message with the txHash if present
+        if (typeof payload.txHash === 'string') {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'system',
+              text: 'Trade failed: fallback mode. View transaction on explorer.',
+              id: `tx_${Date.now()}`,
+              txHash: payload.txHash,
+            },
+          ])
+        }
         return
       }
 
@@ -184,6 +197,18 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
           txHash: typeof payload.txHash === 'string' ? payload.txHash : undefined,
         },
       }))
+      // Add a system message with the txHash if present
+      if (typeof payload.txHash === 'string') {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'system',
+            text: 'Trade accepted successfully.',
+            id: `tx_${Date.now()}`,
+            txHash: payload.txHash,
+          },
+        ])
+      }
     } catch (error) {
       console.error('Trade error:', error)
       setTransactionState((prev) => ({
@@ -263,6 +288,25 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
                     {transactionState[msg.id]?.error}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Explorer button for txHash */}
+            {msg.txHash && (
+              <div className="mt-3">
+                <p className="text-xs text-gray-400 font-mono mb-2 break-all">
+                  Tx: {msg.txHash.slice(0, 16)}...{msg.txHash.slice(-10)}
+                </p>
+                <a
+                  href={`https://testnet.kitescan.ai/tx/${msg.txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block"
+                >
+                  <RetroButton variant="yellow" size="sm" className="text-xs">
+                    VIEW ON EXPLORER
+                  </RetroButton>
+                </a>
               </div>
             )}
           </div>
