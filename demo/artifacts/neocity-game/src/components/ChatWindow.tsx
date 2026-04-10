@@ -218,7 +218,7 @@ export function ChatWindow({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          npcId,
+          npcName: npcId,
           message: userText,
           systemPrompt: SYSTEM_PROMPTS[npcId],
           history: history.map((m) => ({
