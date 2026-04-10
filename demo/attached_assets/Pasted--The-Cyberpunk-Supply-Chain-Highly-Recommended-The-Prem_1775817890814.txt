@@ -1,0 +1,22 @@
+"The Cyberpunk Supply Chain" (Highly Recommended)
+The Premise: You are a fixer in a neon-lit city. Your goal is to acquire a highly restricted item (an NFT called "The Root Key"). To get it, you have to navigate a supply chain of three distinct AI NPCs who all operate simultaneously.
+
+The NPCs:
+Scrap (The Scavenger): Sells raw materials (ERC-20 tokens). He is paranoid and will only sell to you if you build a good rapport in chat.
+
+Cipher (The Crafter): Requires 100 raw material tokens to mint/craft the "Root Key" NFT. She charges a heavy gas/processing fee in native tokens.
+
+The Enforcer (The Rival): An autonomous NPC running on a loop. He is also trying to buy raw materials from Scrap to build the key before you do.
+
+How it uses your SDK in Sync:
+/api/chat (Progressive Memory): You have to chat with Scrap. Using your Section 2 cognitive layer, if you act aggressive, his openness drops and he raises prices. If you act sympathetic, he lowers them.
+
+/api/npcs/[id]/wallet/transfer: You execute on-chain transfers to pay Scrap for ERC-20 materials, and pay Cipher the native token fee.
+
+/api/npcs/[id]/wallet/interact: Cipher uses this route to autonomously interact with a smart contract to mint the NFT to your wallet once you pay her.
+
+/api/npcs/[id]/loop & /actions/queue: The Enforcer NPC is running on a background loop. Every 30 seconds, he queries Scrap's inventory. If you are too slow at negotiating, The Enforcer's queued action triggers a transaction to buy the materials out from under you.
+
+/api/environment/broadcast: To keep things dynamic, your Next.js server randomly broadcasts events like {"event": "POLICE_RAID", "location": "Scrapyard"}. All three NPCs receive this. Scrap might instantly clear his memory or refuse to trade, and Cipher might double her prices out of fear.
+
+/api/npcs/[id]/logs: You display a live "City Ledger" on the right side of the screen, showing the raw backend logs of all three NPCs thinking, queuing actions, and executing transactions in real-time.
