@@ -1,7 +1,7 @@
 // src/components/ChatWindow.tsx
 import { useState, useRef, useEffect, useCallback } from "react";
 import { X, Send, Zap, Loader2 } from "lucide-react";
-import { getClient, getCharacterId, isSdkReady } from "@/lib/sdk";
+import { getClient, isSdkReady } from "@/lib/sdk";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -163,22 +163,13 @@ export function ChatWindow({
       const client = getClient();
       if (!client) return false;
 
-      const characterId = getCharacterId(npcId);
-      if (characterId.startsWith("REPLACE_WITH")) {
-        addSystemMessage(
-          `⚠️ NPC character ID not configured for "${npcId}". ` +
-            "Set VITE_NPC_ID_SCRAP / VITE_NPC_ID_CIPHER / VITE_NPC_ID_ENFORCER in your .env"
-        );
-        return false;
-      }
-
       setIsStreaming(true);
       setStreamBuffer("");
       abortRef.current = false;
 
       let fullText = "";
       try {
-        for await (const event of client.chatStream(characterId, userText)) {
+        for await (const event of client.chatStream(npcId, userText)) {
           if (abortRef.current) break;
 
           if (event.type === "text_delta" && event.delta) {

@@ -54,20 +54,5 @@ export function getClient(): InstanceType<typeof GuildCraftClient> | null {
 export function isSdkReady(): boolean {
   return !!apiKey && !!GuildCraftClient;
 }
-
-// ---------------------------------------------------------------------------
-// NPC ID map
-// These are the real UUIDs from your Prisma / GuildCraft backend.
-// Replace the placeholder values with the actual character IDs you get from
-// calling `gcClient.getCharacters()` after seeding your backend.
-// ---------------------------------------------------------------------------
-export const NPC_CHARACTER_IDS: Record<string, string> = {
-  // "scrap"    -> GuildCraft character UUID
-  scrap:    import.meta.env.VITE_NPC_ID_SCRAP    ?? "REPLACE_WITH_SCRAP_CHARACTER_ID",
-  cipher:   import.meta.env.VITE_NPC_ID_CIPHER   ?? "REPLACE_WITH_CIPHER_CHARACTER_ID",
-  enforcer: import.meta.env.VITE_NPC_ID_ENFORCER ?? "REPLACE_WITH_ENFORCER_CHARACTER_ID",
-};
-
-export function getCharacterId(npcId: string): string {
-  return NPC_CHARACTER_IDS[npcId] ?? npcId;
-}
+// NOTE: Removed legacy NPC UUID mapping. The frontend now passes semantic
+// NPC names ("scrap", "cipher", "enforcer") directly to the SDK.

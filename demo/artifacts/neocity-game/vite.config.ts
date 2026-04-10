@@ -64,7 +64,7 @@ export default defineConfig({
     // Proxy /api calls to the local API server during development
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
     },

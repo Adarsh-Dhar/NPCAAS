@@ -1,7 +1,7 @@
 // src/components/HUD.tsx
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Loader2, CheckCircle, XCircle, Zap, RefreshCw } from "lucide-react";
-import { getClient, getCharacterId, isSdkReady } from "@/lib/sdk";
+import { getClient, isSdkReady } from "@/lib/sdk";
 import type { TradeIntent } from "./ChatWindow";
 
 // ---------------------------------------------------------------------------
@@ -48,12 +48,9 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
     const client = getClient();
     if (!client) return;
 
-    const characterId = getCharacterId(activeNpc);
-    if (characterId.startsWith("REPLACE_WITH")) return;
-
     try {
       setWalletLoading(true);
-      const data = await client.getWalletBalances(characterId);
+      const data = await client.getWalletBalances(activeNpc as string);
       setWalletState({
         walletAddress: data.walletAddress,
         native: data.native,
@@ -92,11 +89,10 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
     const client = getClient();
     if (!client) return;
 
-    const characterId = getCharacterId(activeNpc);
     setTxStatus({ state: "pending" });
 
     try {
-      const result = await client.executeTransaction(characterId, pendingTrade);
+      const result = await client.executeTransaction(activeNpc as string, pendingTrade);
       setTxStatus({
         state: "success",
         txHash: result.txHash,

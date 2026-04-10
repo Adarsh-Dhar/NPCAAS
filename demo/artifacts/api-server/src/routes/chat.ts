@@ -20,12 +20,9 @@ let gcClient: {
   }>;
 } | null = null;
 
-// NPC character ID mapping (server-side, uses regular env vars not VITE_)
-const NPC_CHARACTER_IDS: Record<string, string> = {
-  scrap:    process.env["NPC_ID_SCRAP"]    ?? "",
-  cipher:   process.env["NPC_ID_CIPHER"]   ?? "",
-  enforcer: process.env["NPC_ID_ENFORCER"] ?? "",
-};
+// NOTE: The server no longer needs a hardcoded NPC UUID mapping. The
+// frontend will pass semantic NPC names ("scrap", "cipher", "enforcer")
+// directly and the SDK / backend will resolve them per-project.
 
 // Dynamically import SDK only when API key is present
 // (SDK is a CJS package installed at server level separately if needed)
@@ -88,10 +85,9 @@ router.post("/chat", async (req, res) => {
   }
 
   // ── Try SDK proxy ────────────────────────────────────────────────────
-  if (gcClient && NPC_CHARACTER_IDS[npcId]) {
+  if (gcClient) {
     try {
-      const characterId = NPC_CHARACTER_IDS[npcId];
-      const result = await gcClient.chat(characterId, message);
+      const result = await gcClient.chat(npcId, message);
       return res.json({
         response: result.response,
         tradeIntent: result.tradeIntent,
