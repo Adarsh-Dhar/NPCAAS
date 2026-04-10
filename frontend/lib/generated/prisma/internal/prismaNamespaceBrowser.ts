@@ -52,7 +52,9 @@ export const AnyNull = runtime.AnyNull
 
 export const ModelName = {
   Project: 'Project',
-  Character: 'Character'
+  Character: 'Character',
+  NpcLog: 'NpcLog',
+  ActionQueue: 'ActionQueue'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -98,6 +100,30 @@ export const CharacterScalarFieldEnum = {
 } as const
 
 export type CharacterScalarFieldEnum = (typeof CharacterScalarFieldEnum)[keyof typeof CharacterScalarFieldEnum]
+
+
+export const NpcLogScalarFieldEnum = {
+  id: 'id',
+  characterId: 'characterId',
+  eventType: 'eventType',
+  details: 'details',
+  createdAt: 'createdAt'
+} as const
+
+export type NpcLogScalarFieldEnum = (typeof NpcLogScalarFieldEnum)[keyof typeof NpcLogScalarFieldEnum]
+
+
+export const ActionQueueScalarFieldEnum = {
+  id: 'id',
+  characterId: 'characterId',
+  actionType: 'actionType',
+  payload: 'payload',
+  status: 'status',
+  executeAt: 'executeAt',
+  createdAt: 'createdAt'
+} as const
+
+export type ActionQueueScalarFieldEnum = (typeof ActionQueueScalarFieldEnum)[keyof typeof ActionQueueScalarFieldEnum]
 
 
 export const SortOrder = {

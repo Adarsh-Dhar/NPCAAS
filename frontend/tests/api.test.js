@@ -137,27 +137,27 @@ describe('0 · Setup — create game + character', () => {
 describe('1 · Authentication & Authorization', () => {
   // ── 1.1 NPC routes enforce auth via middleware ───────────────────────────
 
-  test('GET /api/npcs/:id/memory — missing Authorization → 401', async () => {
+  test('GET /api/npcs/:name/memory — missing Authorization → 401', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/memory`)
     assert.equal(status, 401)
     assert.ok(body.error, 'Should return error message')
   })
 
-  test('GET /api/npcs/:id/memory — malformed header → 401', async () => {
+  test('GET /api/npcs/:name/memory — malformed header → 401', async () => {
     const { status } = await req(`/npcs/${state.characterId}/memory`, {
       headers: { Authorization: 'Token bad_format' },
     })
     assert.equal(status, 401)
   })
 
-  test('GET /api/npcs/:id/memory — wrong prefix → 401', async () => {
+  test('GET /api/npcs/:name/memory — wrong prefix → 401', async () => {
     const { status } = await req(`/npcs/${state.characterId}/memory`, {
       headers: { Authorization: 'Bearer not_a_gc_key_12345678901234567890' },
     })
     assert.equal(status, 401)
   })
 
-  test('GET /api/npcs/:id/memory — valid format but DB says invalid → 401', async () => {
+  test('GET /api/npcs/:name/memory — valid format but DB says invalid → 401', async () => {
     // Syntactically correct but not in DB
     const { status } = await req(`/npcs/${state.characterId}/memory`, {
       apiKey: 'gc_live_' + 'a'.repeat(32),
@@ -166,7 +166,7 @@ describe('1 · Authentication & Authorization', () => {
     assert.ok([401, 403].includes(status), `Expected 401 or 403, got ${status}`)
   })
 
-  test('GET /api/npcs/:id/memory — valid key → 200', async () => {
+  test('GET /api/npcs/:name/memory — valid key → 200', async () => {
     const { status } = await req(`/npcs/${state.characterId}/memory`, {
       apiKey: state.apiKey,
     })
@@ -562,7 +562,7 @@ Openness to Experience
 // ---------------------------------------------------------------------------
 
 describe('6 · NPC Memory', () => {
-  test('GET /api/npcs/:id/memory → 200 with memory object', async () => {
+  test('GET /api/npcs/:name/memory → 200 with memory object', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/memory`, {
       apiKey: state.apiKey,
     })
@@ -574,7 +574,7 @@ describe('6 · NPC Memory', () => {
     assert.ok(typeof body.memory.summary === 'string', 'summary must be a string')
   })
 
-  test('GET /api/npcs/:id/memory?topic=sword → filtered preferences', async () => {
+  test('GET /api/npcs/:name/memory?topic=sword → filtered preferences', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/memory?topic=sword`, {
       apiKey: state.apiKey,
     })
@@ -582,7 +582,7 @@ describe('6 · NPC Memory', () => {
     assert.ok(Array.isArray(body.memory.topicRelevance), 'topicRelevance must be array')
   })
 
-  test('POST /api/npcs/:id/memory — inject facts', async () => {
+  test('POST /api/npcs/:name/memory — inject facts', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/memory`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -598,7 +598,7 @@ describe('6 · NPC Memory', () => {
     assert.ok(body.totalPreferences > 0, 'totalPreferences must be > 0')
   })
 
-  test('POST /api/npcs/:id/memory — inject preferences', async () => {
+  test('POST /api/npcs/:name/memory — inject preferences', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/memory`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -608,7 +608,7 @@ describe('6 · NPC Memory', () => {
     assert.ok(body.injectedCount >= 2)
   })
 
-  test('POST /api/npcs/:id/memory — empty payload → 400', async () => {
+  test('POST /api/npcs/:name/memory — empty payload → 400', async () => {
     const { status } = await req(`/npcs/${state.characterId}/memory`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -627,7 +627,7 @@ describe('6 · NPC Memory', () => {
     )
   })
 
-  test('DELETE /api/npcs/:id/memory?scope=short → clears short-term context', async () => {
+  test('DELETE /api/npcs/:name/memory?scope=short → clears short-term context', async () => {
     const { status, body } = await req(
       `/npcs/${state.characterId}/memory?scope=short`,
       { method: 'DELETE', apiKey: state.apiKey }
@@ -637,7 +637,7 @@ describe('6 · NPC Memory', () => {
     assert.equal(body.npcId, state.characterId)
   })
 
-  test('DELETE /api/npcs/:id/memory?scope=long → clears long-term preferences', async () => {
+  test('DELETE /api/npcs/:name/memory?scope=long → clears long-term preferences', async () => {
     const { status, body } = await req(
       `/npcs/${state.characterId}/memory?scope=long`,
       { method: 'DELETE', apiKey: state.apiKey }
@@ -650,7 +650,7 @@ describe('6 · NPC Memory', () => {
     assert.equal(afterBody.memory.preferences.length, 0, 'Long-term clear should remove all preferences')
   })
 
-  test('DELETE /api/npcs/:id/memory?scope=all → full reset', async () => {
+  test('DELETE /api/npcs/:name/memory?scope=all → full reset', async () => {
     const { status, body } = await req(
       `/npcs/${state.characterId}/memory?scope=all`,
       { method: 'DELETE', apiKey: state.apiKey }
@@ -675,7 +675,7 @@ describe('6 · NPC Memory', () => {
 // ---------------------------------------------------------------------------
 
 describe('7 · NPC Logs', () => {
-  test('GET /api/npcs/:id/logs → 200 with logs array', async () => {
+  test('GET /api/npcs/:name/logs → 200 with logs array', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/logs`, {
       apiKey: state.apiKey,
     })
@@ -688,7 +688,7 @@ describe('7 · NPC Logs', () => {
     assert.ok(body.totalLogs >= 1, 'Should have at least 1 log (deployment)')
   })
 
-  test('GET /api/npcs/:id/logs?limit=1 → returns at most 1 log', async () => {
+  test('GET /api/npcs/:name/logs?limit=1 → returns at most 1 log', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/logs?limit=1`, {
       apiKey: state.apiKey,
     })
@@ -696,7 +696,7 @@ describe('7 · NPC Logs', () => {
     assert.ok(body.logs.length <= 1, `Expected ≤ 1 log, got ${body.logs.length}`)
   })
 
-  test('GET /api/npcs/:id/logs?type=deploy → only deploy logs', async () => {
+  test('GET /api/npcs/:name/logs?type=deploy → only deploy logs', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/logs?type=deploy`, {
       apiKey: state.apiKey,
     })
@@ -706,7 +706,7 @@ describe('7 · NPC Logs', () => {
     }
   })
 
-  test('GET /api/npcs/:id/logs?since=2099-01-01 → zero logs (future date)', async () => {
+  test('GET /api/npcs/:name/logs?since=2099-01-01 → zero logs (future date)', async () => {
     const { status, body } = await req(
       `/npcs/${state.characterId}/logs?since=2099-01-01T00:00:00Z`,
       { apiKey: state.apiKey }
@@ -731,7 +731,7 @@ describe('7 · NPC Logs', () => {
 // ---------------------------------------------------------------------------
 
 describe('8 · Autonomous Loop', () => {
-  test('POST /api/npcs/:id/loop → starts the loop', async () => {
+  test('POST /api/npcs/:name/loop → starts the loop', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/loop`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -756,7 +756,7 @@ describe('8 · Autonomous Loop', () => {
     assert.ok(body.npcId === state.characterId)
   })
 
-  test('POST /api/npcs/:id/stop → pauses the loop', async () => {
+  test('POST /api/npcs/:name/stop → pauses the loop', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/stop`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -766,7 +766,7 @@ describe('8 · Autonomous Loop', () => {
     assert.ok(body.loop.stoppedAt, 'stoppedAt must be set')
   })
 
-  test('POST /api/npcs/:id/loop — without body uses default schedule', async () => {
+  test('POST /api/npcs/:name/loop — without body uses default schedule', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/loop`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -787,7 +787,7 @@ describe('8 · Autonomous Loop', () => {
 describe('9 · Action Queue', () => {
   let enqueuedActionId = ''
 
-  test('GET /api/npcs/:id/actions/queue → 200 with queue', async () => {
+  test('GET /api/npcs/:name/actions/queue → 200 with queue', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/actions/queue`, {
       apiKey: state.apiKey,
     })
@@ -797,7 +797,7 @@ describe('9 · Action Queue', () => {
     assert.ok(typeof body.queueLength === 'number')
   })
 
-  test('POST /api/npcs/:id/actions/queue → enqueues action', async () => {
+  test('POST /api/npcs/:name/actions/queue → enqueues action', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/actions/queue`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -817,7 +817,7 @@ describe('9 · Action Queue', () => {
     console.log(`  ✔ enqueued action: ${enqueuedActionId}`)
   })
 
-  test('POST /api/npcs/:id/actions/queue — missing type → 400', async () => {
+  test('POST /api/npcs/:name/actions/queue — missing type → 400', async () => {
     const { status } = await req(`/npcs/${state.characterId}/actions/queue`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -848,7 +848,7 @@ describe('9 · Action Queue', () => {
     assert.ok(r2.body.queueLength > r1.body.queueLength, 'Queue should grow with each enqueue')
   })
 
-  test('DELETE /api/npcs/:id/actions/queue?actionId=… → vetoes action', async () => {
+  test('DELETE /api/npcs/:name/actions/queue?actionId=… → vetoes action', async () => {
     const { status, body } = await req(
       `/npcs/${state.characterId}/actions/queue?actionId=${enqueuedActionId}`,
       { method: 'DELETE', apiKey: state.apiKey }
@@ -883,7 +883,7 @@ describe('9 · Action Queue', () => {
 describe('10 · NPC Clone', () => {
   let cloneId = ''
 
-  test('POST /api/npcs/:id/clone → creates a clone with fresh wallet', async () => {
+  test('POST /api/npcs/:name/clone → creates a clone with fresh wallet', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/clone`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -911,7 +911,7 @@ describe('10 · NPC Clone', () => {
     assert.ok([200, 403, 404].includes(body ? 200 : 404))
   })
 
-  test('POST /api/npcs/:id/clone — nonexistent source → 404', async () => {
+  test('POST /api/npcs/:name/clone — nonexistent source → 404', async () => {
     const { status } = await req('/npcs/clfakeid00000/clone', {
       method: 'POST',
       apiKey: state.apiKey,
@@ -919,7 +919,7 @@ describe('10 · NPC Clone', () => {
     assert.equal(status, 404)
   })
 
-  test('POST /api/npcs/:id/clone — auto-generated name when omitted', async () => {
+  test('POST /api/npcs/:name/clone — auto-generated name when omitted', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/clone`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -935,7 +935,7 @@ describe('10 · NPC Clone', () => {
 // ---------------------------------------------------------------------------
 
 describe('11 · Event Trigger', () => {
-  test('POST /api/npcs/:id/trigger — market_crash event → 200 with reaction', async () => {
+  test('POST /api/npcs/:name/trigger — market_crash event → 200 with reaction', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/trigger`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -957,7 +957,7 @@ describe('11 · Event Trigger', () => {
     assert.ok(body.triggeredAt, 'triggeredAt must be present')
   })
 
-  test('POST /api/npcs/:id/trigger — no asset field → still works', async () => {
+  test('POST /api/npcs/:name/trigger — no asset field → still works', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/trigger`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -971,7 +971,7 @@ describe('11 · Event Trigger', () => {
     assert.ok(body.reaction.text)
   })
 
-  test('POST /api/npcs/:id/trigger — missing event → 400', async () => {
+  test('POST /api/npcs/:name/trigger — missing event → 400', async () => {
     const { status } = await req(`/npcs/${state.characterId}/trigger`, {
       method: 'POST',
       apiKey: state.apiKey,
@@ -1001,7 +1001,7 @@ describe('11 · Event Trigger', () => {
 // ---------------------------------------------------------------------------
 
 describe('12 · Wallet Balances', () => {
-  test('GET /api/npcs/:id/wallet/balances → 200 with native balance', async () => {
+  test('GET /api/npcs/:name/wallet/balances → 200 with native balance', async () => {
     const { status, body } = await req(`/npcs/${state.characterId}/wallet/balances`, {
       apiKey: state.apiKey,
     })
@@ -1015,7 +1015,7 @@ describe('12 · Wallet Balances', () => {
     assert.ok(body.fetchedAt, 'fetchedAt must be present')
   })
 
-  test('GET /api/npcs/:id/wallet/balances — invalid token address ignored', async () => {
+  test('GET /api/npcs/:name/wallet/balances — invalid token address ignored', async () => {
     const { status, body } = await req(
       `/npcs/${state.characterId}/wallet/balances?tokens=not_an_address`,
       { apiKey: state.apiKey }

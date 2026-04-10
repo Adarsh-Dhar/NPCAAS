@@ -1,26 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { validateApiKey } from '@/lib/api-key-store'
 import { ethers } from 'ethers'
-
-async function resolveAuthorizedProject(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization')
-  if (!authHeader) return null
-  if (!authHeader.startsWith('Bearer ')) {
-    return NextResponse.json(
-      { error: 'Missing or malformed Authorization header. Use: Bearer gc_live_...' },
-      { status: 401 }
-    )
-  }
-  const apiKey = authHeader.replace('Bearer ', '').trim()
-  const project = await validateApiKey(apiKey)
-  if (!project) return NextResponse.json({ error: 'Invalid API key' }, { status: 401 })
-  return project
-}
+import { resolveProjectAndCharacter } from '@/lib/npc-resolver'
 
 const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
 
-// Minimal ERC-20 ABI for balance queries
 const ERC20_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function symbol() view returns (string)',
@@ -29,42 +12,23 @@ const ERC20_ABI = [
 ]
 
 /**
- * GET /api/npcs/:id/wallet/balances
+ * GET /api/npcs/[name]/wallet/balances
  * Fetch native gas tokens and ERC20 token balances.
- * Query params: ?tokens=0xABC,0xDEF  (optional comma-separated ERC20 addresses)
+ * ?tokens=0xABC,0xDEF  (optional comma-separated ERC20 addresses)
  */
 export async function GET(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ name: string }> }
 ) {
   try {
-    const { id } = await context.params
-    const authorizedProject = await resolveAuthorizedProject(request)
-    if (authorizedProject instanceof NextResponse) return authorizedProject
+    const { name } = await context.params
+    const result = await resolveProjectAndCharacter(request, name)
+    if (result instanceof NextResponse) return result
 
-    const character = await (prisma.character as any).findUnique({
-      where: { id },
-      include: { projects: { select: { id: true } } },
-    })
-
-    if (!character) {
-      return NextResponse.json({ error: 'NPC not found' }, { status: 404 })
-    }
-
-    if (
-      authorizedProject &&
-      !character.projects.some((p: { id: string }) => p.id === authorizedProject.id)
-    ) {
-      return NextResponse.json(
-        { error: 'NPC not accessible with this API key' },
-        { status: 403 }
-      )
-    }
-
+    const { character } = result
     const provider = new ethers.JsonRpcProvider(KITE_RPC)
     const walletAddress = character.walletAddress
 
-    // Native balance
     let nativeBalance = '0'
     let nativeBalanceFormatted = '0'
     try {
@@ -75,7 +39,6 @@ export async function GET(
       console.warn('[wallet/balances] Native balance fetch failed:', err)
     }
 
-    // ERC20 tokens (optional)
     const url = new URL(request.url)
     const tokenAddresses = url.searchParams
       .get('tokens')
@@ -95,7 +58,7 @@ export async function GET(
     for (const tokenAddr of tokenAddresses) {
       try {
         const contract = new ethers.Contract(tokenAddr, ERC20_ABI, provider)
-        const [balance, symbol, decimals, name] = await Promise.all([
+        const [balance, symbol, decimals, tokenName] = await Promise.all([
           contract.balanceOf(walletAddress),
           contract.symbol(),
           contract.decimals(),
@@ -103,7 +66,7 @@ export async function GET(
         ])
         tokenBalances.push({
           address: tokenAddr,
-          name,
+          name: tokenName,
           symbol,
           decimals: Number(decimals),
           balance: balance.toString(),
@@ -123,14 +86,11 @@ export async function GET(
     }
 
     return NextResponse.json({
-      npcId: id,
+      npcId: character.id,
+      npcName: character.name,
       walletAddress,
       chainId: character.aaChainId,
-      native: {
-        symbol: 'KITE',
-        balance: nativeBalance,
-        balanceFormatted: nativeBalanceFormatted,
-      },
+      native: { symbol: 'KITE', balance: nativeBalance, balanceFormatted: nativeBalanceFormatted },
       tokens: tokenBalances,
       fetchedAt: new Date().toISOString(),
     })

@@ -1,68 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { validateApiKey } from '@/lib/api-key-store'
-import { kiteAgentClient } from '@/lib/kite-sdk'
 import type { Prisma } from '@/lib/generated/prisma/client'
-
-async function resolveAuthorizedProject(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization')
-  if (!authHeader) return null
-  if (!authHeader.startsWith('Bearer ')) {
-    return NextResponse.json(
-      { error: 'Missing or malformed Authorization header. Use: Bearer gc_live_...' },
-      { status: 401 }
-    )
-  }
-  const apiKey = authHeader.replace('Bearer ', '').trim()
-  const project = await validateApiKey(apiKey)
-  if (!project) return NextResponse.json({ error: 'Invalid API key' }, { status: 401 })
-  return project
-}
-
-function asRecord(v: unknown): Record<string, unknown> {
-  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
-}
+import { kiteAgentClient } from '@/lib/kite-sdk'
+import { resolveProjectAndCharacter, asRecord } from '@/lib/npc-resolver'
 
 /**
- * POST /api/npcs/:id/trigger
+ * POST /api/npcs/[name]/trigger
  * Inject an external event and get the NPC's reaction via the LLM.
- *
- * Body:
- * {
- *   event: string         // e.g. "market_crash"
- *   asset?: string        // e.g. "ETH"
- *   data?: object         // additional event payload
- *   recordInMemory?: boolean  // default: true
- * }
  */
 export async function POST(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ name: string }> }
 ) {
   try {
-    const { id } = await context.params
-    const authorizedProject = await resolveAuthorizedProject(request)
-    if (authorizedProject instanceof NextResponse) return authorizedProject
+    const { name } = await context.params
+    const result = await resolveProjectAndCharacter(request, name)
+    if (result instanceof NextResponse) return result
 
-    const character = await (prisma.character as any).findUnique({
-      where: { id },
-      include: { projects: { select: { id: true } } },
-    })
-
-    if (!character) {
-      return NextResponse.json({ error: 'NPC not found' }, { status: 404 })
-    }
-
-    if (
-      authorizedProject &&
-      !character.projects.some((p: { id: string }) => p.id === authorizedProject.id)
-    ) {
-      return NextResponse.json(
-        { error: 'NPC not accessible with this API key' },
-        { status: 403 }
-      )
-    }
-
+    const { character } = result
     const body = await request.json()
     const { event, asset, data = {}, recordInMemory = true } = body
 
@@ -73,7 +28,6 @@ export async function POST(
     const config = asRecord(character.config)
     const adaptation = asRecord(character.adaptation)
 
-    // Build a synthetic message for the LLM based on the event
     const eventDescription = asset
       ? `[AUTONOMOUS EVENT]: ${event} affecting ${asset}. Data: ${JSON.stringify(data)}`
       : `[AUTONOMOUS EVENT]: ${event}. Data: ${JSON.stringify(data)}`
@@ -91,7 +45,21 @@ export async function POST(
       adaptationSummary: typeof adaptation.summary === 'string' ? adaptation.summary : undefined,
     })
 
-    // Optionally record this trigger event in NPC memory
+    // Log the trigger
+    await (prisma as any).npcLog.create({
+      data: {
+        characterId: character.id,
+        eventType: 'TRIGGER',
+        details: {
+          event,
+          asset: asset ?? null,
+          data,
+          reaction: agentResponse.text,
+          action: agentResponse.action ?? null,
+        },
+      },
+    })
+
     if (recordInMemory) {
       const existingPrefs = Array.isArray(adaptation.preferences)
         ? (adaptation.preferences as string[])
@@ -103,13 +71,14 @@ export async function POST(
         lastUpdatedAt: new Date().toISOString(),
       }
       await prisma.character.update({
-        where: { id },
+        where: { id: character.id },
         data: { adaptation: updatedAdaptation as Prisma.InputJsonValue },
       })
     }
 
     return NextResponse.json({
-      npcId: id,
+      npcId: character.id,
+      npcName: character.name,
       event,
       asset,
       reaction: {

@@ -385,7 +385,9 @@ type FieldRefInputType<Model, FieldType> = Model extends never ? never : FieldRe
 
 export const ModelName = {
   Project: 'Project',
-  Character: 'Character'
+  Character: 'Character',
+  NpcLog: 'NpcLog',
+  ActionQueue: 'ActionQueue'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -401,7 +403,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "project" | "character"
+    modelProps: "project" | "character" | "npcLog" | "actionQueue"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -553,6 +555,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    NpcLog: {
+      payload: Prisma.$NpcLogPayload<ExtArgs>
+      fields: Prisma.NpcLogFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.NpcLogFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NpcLogPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.NpcLogFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NpcLogPayload>
+        }
+        findFirst: {
+          args: Prisma.NpcLogFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NpcLogPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.NpcLogFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NpcLogPayload>
+        }
+        findMany: {
+          args: Prisma.NpcLogFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NpcLogPayload>[]
+        }
+        create: {
+          args: Prisma.NpcLogCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NpcLogPayload>
+        }
+        createMany: {
+          args: Prisma.NpcLogCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.NpcLogCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NpcLogPayload>[]
+        }
+        delete: {
+          args: Prisma.NpcLogDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NpcLogPayload>
+        }
+        update: {
+          args: Prisma.NpcLogUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NpcLogPayload>
+        }
+        deleteMany: {
+          args: Prisma.NpcLogDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.NpcLogUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.NpcLogUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NpcLogPayload>[]
+        }
+        upsert: {
+          args: Prisma.NpcLogUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NpcLogPayload>
+        }
+        aggregate: {
+          args: Prisma.NpcLogAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateNpcLog>
+        }
+        groupBy: {
+          args: Prisma.NpcLogGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.NpcLogGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.NpcLogCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.NpcLogCountAggregateOutputType> | number
+        }
+      }
+    }
+    ActionQueue: {
+      payload: Prisma.$ActionQueuePayload<ExtArgs>
+      fields: Prisma.ActionQueueFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ActionQueueFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ActionQueuePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ActionQueueFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ActionQueuePayload>
+        }
+        findFirst: {
+          args: Prisma.ActionQueueFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ActionQueuePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ActionQueueFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ActionQueuePayload>
+        }
+        findMany: {
+          args: Prisma.ActionQueueFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ActionQueuePayload>[]
+        }
+        create: {
+          args: Prisma.ActionQueueCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ActionQueuePayload>
+        }
+        createMany: {
+          args: Prisma.ActionQueueCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ActionQueueCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ActionQueuePayload>[]
+        }
+        delete: {
+          args: Prisma.ActionQueueDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ActionQueuePayload>
+        }
+        update: {
+          args: Prisma.ActionQueueUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ActionQueuePayload>
+        }
+        deleteMany: {
+          args: Prisma.ActionQueueDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ActionQueueUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ActionQueueUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ActionQueuePayload>[]
+        }
+        upsert: {
+          args: Prisma.ActionQueueUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ActionQueuePayload>
+        }
+        aggregate: {
+          args: Prisma.ActionQueueAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateActionQueue>
+        }
+        groupBy: {
+          args: Prisma.ActionQueueGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ActionQueueGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ActionQueueCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ActionQueueCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -619,6 +769,30 @@ export const CharacterScalarFieldEnum = {
 } as const
 
 export type CharacterScalarFieldEnum = (typeof CharacterScalarFieldEnum)[keyof typeof CharacterScalarFieldEnum]
+
+
+export const NpcLogScalarFieldEnum = {
+  id: 'id',
+  characterId: 'characterId',
+  eventType: 'eventType',
+  details: 'details',
+  createdAt: 'createdAt'
+} as const
+
+export type NpcLogScalarFieldEnum = (typeof NpcLogScalarFieldEnum)[keyof typeof NpcLogScalarFieldEnum]
+
+
+export const ActionQueueScalarFieldEnum = {
+  id: 'id',
+  characterId: 'characterId',
+  actionType: 'actionType',
+  payload: 'payload',
+  status: 'status',
+  executeAt: 'executeAt',
+  createdAt: 'createdAt'
+} as const
+
+export type ActionQueueScalarFieldEnum = (typeof ActionQueueScalarFieldEnum)[keyof typeof ActionQueueScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -848,6 +1022,8 @@ export type PrismaClientOptions = ({
 export type GlobalOmitConfig = {
   project?: Prisma.ProjectOmit
   character?: Prisma.CharacterOmit
+  npcLog?: Prisma.NpcLogOmit
+  actionQueue?: Prisma.ActionQueueOmit
 }
 
 /* Types for Logging */

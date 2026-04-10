@@ -27,3 +27,13 @@ export type Project = Prisma.ProjectModel
  * 
  */
 export type Character = Prisma.CharacterModel
+/**
+ * Model NpcLog
+ * 
+ */
+export type NpcLog = Prisma.NpcLogModel
+/**
+ * Model ActionQueue
+ * 
+ */
+export type ActionQueue = Prisma.ActionQueueModel

@@ -4,7 +4,6 @@
 generator client {
   provider = "prisma-client"
   output   = "../lib/generated/prisma"
-
 }
 
 datasource db {
@@ -12,26 +11,54 @@ datasource db {
 }
 
 model Project {
-  id        String     @id @default(cuid())
-  name      String
-  apiKey    String     @unique
-  createdAt DateTime   @default(now())
+  id         String      @id @default(cuid())
+  name       String
+  apiKey     String      @unique
+  createdAt  DateTime    @default(now())
   characters Character[]
 }
 
 model Character {
-  id        String   @id @default(cuid())
-  name      String
-  walletAddress String
-  aaChainId     Int @default(42161)
-  aaProvider    String @default("kite-aa")
-  smartAccountId String?
-  smartAccountStatus String @default("created")
-  isDeployedOnChain Boolean @default(true)
-  deploymentTxHash String?
-  config    Json     // Stores the 5-layer configuration (Economic, Cognitive, Social, Agentic, Infrastructure)
-  adaptation Json?
-  projects  Project[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String        @id @default(cuid())
+  name               String
+  walletAddress      String
+  aaChainId          Int           @default(42161)
+  aaProvider         String        @default("kite-aa")
+  smartAccountId     String?
+  smartAccountStatus String        @default("created")
+  isDeployedOnChain  Boolean       @default(true)
+  deploymentTxHash   String?
+  config             Json
+  adaptation         Json?
+  projects           Project[]
+  logs               NpcLog[]
+  actions            ActionQueue[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+}
+
+model NpcLog {
+  id          String    @id @default(cuid())
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  eventType   String    // "CHAT", "TRADE", "BROADCAST", "LOOP", "TRIGGER"
+  details     Json
+  createdAt   DateTime  @default(now())
+
+  @@index([characterId])
+  @@index([characterId, eventType])
+}
+
+model ActionQueue {
+  id          String    @id @default(cuid())
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  actionType  String    // "CHECK_MARKET", "BUY_MATERIALS", "TRANSFER", "CHAT"
+  payload     Json?
+  status      String    @default("PENDING") // PENDING, EXECUTED, FAILED
+  executeAt   DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+
+  @@index([characterId])
+  @@index([characterId, status])
 }

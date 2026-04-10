@@ -10,4 +10,6 @@
  */
 export type * from './models/Project'
 export type * from './models/Character'
+export type * from './models/NpcLog'
+export type * from './models/ActionQueue'
 export type * from './commonInputTypes'

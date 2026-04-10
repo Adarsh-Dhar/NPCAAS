@@ -13,7 +13,6 @@ const ALLOWED_ORIGINS = [
 function getCorsHeaders(origin: string | null) {
   const allowedOrigin =
     origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
-
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -68,7 +67,6 @@ function toAdaptationMemory(value: unknown): AdaptationMemory {
   const hasPendingSection2 =
     typeof pendingSection2.systemPrompt === 'string' &&
     typeof pendingSection2.openness === 'number'
-
   return {
     specializationActive: Boolean(payload.specializationActive),
     turnCount: typeof payload.turnCount === 'number' ? payload.turnCount : 0,
@@ -80,15 +78,10 @@ function toAdaptationMemory(value: unknown): AdaptationMemory {
         ? payload.summary
         : 'No adaptation history yet.',
     pendingSection2: hasPendingSection2
-      ? {
-          systemPrompt: pendingSection2.systemPrompt as string,
-          openness: pendingSection2.openness as number,
-        }
+      ? { systemPrompt: pendingSection2.systemPrompt as string, openness: pendingSection2.openness as number }
       : undefined,
     lastUpdatedAt:
-      typeof payload.lastUpdatedAt === 'string'
-        ? payload.lastUpdatedAt
-        : new Date().toISOString(),
+      typeof payload.lastUpdatedAt === 'string' ? payload.lastUpdatedAt : new Date().toISOString(),
   }
 }
 
@@ -97,13 +90,10 @@ function parseSection2Definition(message: string): Section2Profile | null {
     /Core\s+System\s+Prompt\s*\n?\s*([\s\S]*?)\n\s*Openness\s+to\s+Experience/i
   )
   const opennessMatch = message.match(/Openness\s+to\s+Experience\s*\n?\s*(\d{1,3})/i)
-
   if (!promptMatch || !opennessMatch) return null
-
   const openness = Math.max(0, Math.min(100, parseInt(opennessMatch[1], 10)))
   const systemPrompt = promptMatch[1].trim()
   if (!systemPrompt) return null
-
   return { systemPrompt, openness }
 }
 
@@ -149,6 +139,25 @@ function mergePreferences(existing: string[], incoming: string[]): string[] {
   return merged.slice(0, 8)
 }
 
+/**
+ * Look up a character by name within the authenticated project.
+ * npcName is normalised to uppercase with underscores, matching how names are stored.
+ */
+async function findCharacterByName(
+  npcName: string,
+  projectId: string
+): Promise<StoredCharacter | null> {
+  const normalisedName = npcName.trim().toUpperCase().replace(/\s+/g, '_')
+  const character = await (prisma.character as any).findFirst({
+    where: {
+      name: normalisedName,
+      projects: { some: { id: projectId } },
+    },
+    include: { projects: { select: { id: true } } },
+  })
+  return character
+}
+
 export async function OPTIONS(request: NextRequest) {
   const origin = request.headers.get('origin')
   return new NextResponse(null, { status: 204, headers: getCorsHeaders(origin) })
@@ -178,14 +187,19 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { characterId, message } = body
+
+    // Support both npcName (new semantic API) and characterId (legacy)
+    const { npcName, characterId: legacyCharacterId, message } = body
 
     if (!message) {
-      return NextResponse.json({ error: 'message is required' }, { status: 400, headers: corsHeaders })
+      return NextResponse.json(
+        { error: 'message is required' },
+        { status: 400, headers: corsHeaders }
+      )
     }
 
-    // Base-chat fallback (no characterId)
-    if (!characterId) {
+    // Base-chat fallback — no NPC target
+    if (!npcName && !legacyCharacterId) {
       const agent = kiteAgentClient
       agent.registerTools([])
       const agentResponse = await agent.chat(message, {
@@ -194,7 +208,6 @@ export async function POST(request: NextRequest) {
         systemPrompt:
           'You are a helpful NPC assistant. Chat naturally and ask for Section 2 details when the user wants deeper specialization.',
       })
-
       return NextResponse.json(
         {
           success: true,
@@ -209,42 +222,75 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const character = (await prisma.character.findUnique({
-      where: { id: characterId },
-      include: {
-        projects: {
-          select: { id: true },
-        },
-      },
-    })) as unknown as StoredCharacter | null
+    // Resolve the character — prefer name lookup, fall back to ID
+    let character: StoredCharacter | null = null
 
-    if (!character) {
-      return NextResponse.json({ error: 'Character not found' }, { status: 404, headers: corsHeaders })
+    if (npcName && project) {
+      character = await findCharacterByName(npcName, project.id)
+      if (!character) {
+        return NextResponse.json(
+          { error: `Character '${npcName}' not found in this project. Check the name and your API key.` },
+          { status: 404, headers: corsHeaders }
+        )
+      }
+    } else if (legacyCharacterId) {
+      // Legacy path: look up by ID
+      character = (await (prisma.character as any).findUnique({
+        where: { id: legacyCharacterId },
+        include: { projects: { select: { id: true } } },
+      })) as StoredCharacter | null
+      if (!character) {
+        return NextResponse.json(
+          { error: 'Character not found' },
+          { status: 404, headers: corsHeaders }
+        )
+      }
+      if (project && !character.projects.some((p) => p.id === project!.id)) {
+        return NextResponse.json(
+          { error: 'Character not accessible with this API key' },
+          { status: 403, headers: corsHeaders }
+        )
+      }
     }
 
-    if (project && !character.projects.some((game) => game.id === project.id)) {
+    if (!character) {
       return NextResponse.json(
-        { error: 'Character not accessible with this API key' },
-        { status: 403, headers: corsHeaders }
+        { error: 'Could not resolve character. Provide npcName (with API key) or characterId.' },
+        { status: 400, headers: corsHeaders }
       )
     }
 
     const config = toCharacterConfig(character.config)
     const adaptation = toAdaptationMemory(character.adaptation)
 
+    // Section 2 definition parsing
     const section2Profile = parseSection2Definition(message)
     if (section2Profile) {
-      const nextAdaptation = { ...adaptation, pendingSection2: section2Profile, lastUpdatedAt: new Date().toISOString() }
+      const nextAdaptation = {
+        ...adaptation,
+        pendingSection2: section2Profile,
+        lastUpdatedAt: new Date().toISOString(),
+      }
       await prisma.character.update({
-        where: { id: characterId },
+        where: { id: character.id },
         data: { adaptation: nextAdaptation as unknown as Prisma.InputJsonValue },
+      })
+      // Log the event
+      await (prisma as any).npcLog.create({
+        data: {
+          characterId: character.id,
+          eventType: 'SECTION2_PARSED',
+          details: { systemPrompt: section2Profile.systemPrompt, openness: section2Profile.openness },
+        },
       })
       return NextResponse.json(
         {
           success: true,
-          response: 'I parsed your Section 2 cognitive layer. Reply with "Activate Section 2" to apply this profile and start progressive specialization.',
+          response:
+            'I parsed your Section 2 cognitive layer. Reply with "Activate Section 2" to apply this profile and start progressive specialization.',
           action: 'nods slowly and processes the information',
-          characterId,
+          characterId: character.id,
+          npcName: character.name,
           specializationActive: adaptation.specializationActive,
           pendingSpecialization: true,
           timestamp: new Date().toISOString(),
@@ -254,9 +300,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Section 2 activation
     if (isActivationMessage(message) && adaptation.pendingSection2) {
       const appliedProfile = adaptation.pendingSection2
-      const nextConfig = { ...config, systemPrompt: appliedProfile.systemPrompt, openness: appliedProfile.openness }
+      const nextConfig = {
+        ...config,
+        systemPrompt: appliedProfile.systemPrompt,
+        openness: appliedProfile.openness,
+      }
       const nextAdaptation = {
         ...adaptation,
         specializationActive: true,
@@ -265,18 +316,27 @@ export async function POST(request: NextRequest) {
         lastUpdatedAt: new Date().toISOString(),
       }
       await prisma.character.update({
-        where: { id: characterId },
+        where: { id: character.id },
         data: {
           config: nextConfig as unknown as Prisma.InputJsonValue,
           adaptation: nextAdaptation as unknown as Prisma.InputJsonValue,
         },
       })
+      await (prisma as any).npcLog.create({
+        data: {
+          characterId: character.id,
+          eventType: 'SECTION2_ACTIVATED',
+          details: { openness: appliedProfile.openness },
+        },
+      })
       return NextResponse.json(
         {
           success: true,
-          response: 'Section 2 activated. I will now become progressively more specific to your goals as this conversation continues.',
+          response:
+            'Section 2 activated. I will now become progressively more specific to your goals as this conversation continues.',
           action: 'stands tall with a confident nod',
-          characterId,
+          characterId: character.id,
+          npcName: character.name,
           specializationActive: true,
           pendingSpecialization: false,
           timestamp: new Date().toISOString(),
@@ -286,6 +346,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Normal chat
     const agent = kiteAgentClient
     agent.registerTools(['get_payer_addr', 'approve_payment', 'check_inventory', 'execute_trade'])
 
@@ -308,7 +369,7 @@ export async function POST(request: NextRequest) {
         lastUpdatedAt: new Date().toISOString(),
       }
       await prisma.character.update({
-        where: { id: characterId },
+        where: { id: character.id },
         data: { adaptation: updatedAdaptation as unknown as Prisma.InputJsonValue },
       })
     }
@@ -324,12 +385,27 @@ export async function POST(request: NextRequest) {
       turnCount: updatedAdaptation.turnCount,
     })
 
+    // Log the chat interaction in NpcLog table
+    await (prisma as any).npcLog.create({
+      data: {
+        characterId: character.id,
+        eventType: 'CHAT',
+        details: {
+          message,
+          response: agentResponse.text,
+          action: agentResponse.action ?? null,
+          hasTrade: !!agentResponse.tradeIntent,
+        },
+      },
+    })
+
     return NextResponse.json(
       {
         success: true,
         response: agentResponse.text,
-        action: agentResponse.action ?? null,   // <-- NEW: physical action field
-        characterId,
+        action: agentResponse.action ?? null,
+        characterId: character.id,
+        npcName: character.name,
         tradeIntent: agentResponse.tradeIntent,
         specializationActive: updatedAdaptation.specializationActive,
         pendingSpecialization: Boolean(updatedAdaptation.pendingSection2),

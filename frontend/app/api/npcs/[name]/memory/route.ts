@@ -1,62 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { validateApiKey } from '@/lib/api-key-store'
 import type { Prisma } from '@/lib/generated/prisma/client'
-
-function asRecord(v: unknown): Record<string, unknown> {
-  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
-}
-
-async function resolveAuthorizedProject(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization')
-  if (!authHeader) return null
-  if (!authHeader.startsWith('Bearer ')) {
-    return NextResponse.json(
-      { error: 'Missing or malformed Authorization header. Use: Bearer gc_live_...' },
-      { status: 401 }
-    )
-  }
-  const apiKey = authHeader.replace('Bearer ', '').trim()
-  const project = await validateApiKey(apiKey)
-  if (!project) return NextResponse.json({ error: 'Invalid API key' }, { status: 401 })
-  return project
-}
-
-async function loadCharacter(id: string, authorizedProject: { id: string } | null) {
-  const character = await (prisma.character as any).findUnique({
-    where: { id },
-    include: { projects: { select: { id: true } } },
-  })
-  if (!character) return { error: NextResponse.json({ error: 'NPC not found' }, { status: 404 }) }
-  if (
-    authorizedProject &&
-    !character.projects.some((p: { id: string }) => p.id === authorizedProject.id)
-  ) {
-    return {
-      error: NextResponse.json(
-        { error: 'NPC not accessible with this API key' },
-        { status: 403 }
-      ),
-    }
-  }
-  return { character }
-}
+import { resolveProjectAndCharacter, asRecord } from '@/lib/npc-resolver'
 
 /**
- * GET /api/npcs/:id/memory
+ * GET /api/npcs/[name]/memory
  * Query what the NPC currently "remembers".
  */
 export async function GET(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ name: string }> }
 ) {
   try {
-    const { id } = await context.params
-    const authorizedProject = await resolveAuthorizedProject(request)
-    if (authorizedProject instanceof NextResponse) return authorizedProject
-
-    const result = await loadCharacter(id, authorizedProject)
-    if (result.error) return result.error
+    const { name } = await context.params
+    const result = await resolveProjectAndCharacter(request, name)
+    if (result instanceof NextResponse) return result
 
     const { character } = result
     const adaptation = asRecord(character.adaptation)
@@ -75,13 +33,12 @@ export async function GET(
 
     if (topic) {
       const prefs = (adaptation.preferences as string[]) ?? []
-      memory.topicRelevance = prefs.filter((p) =>
-        p.toLowerCase().includes(topic)
-      )
+      memory.topicRelevance = prefs.filter((p) => p.toLowerCase().includes(topic))
     }
 
     return NextResponse.json({
-      npcId: id,
+      npcId: character.id,
+      npcName: character.name,
       memory,
       configSnapshot: {
         systemPrompt: config.systemPrompt,
@@ -95,24 +52,20 @@ export async function GET(
 }
 
 /**
- * POST /api/npcs/:id/memory
+ * POST /api/npcs/[name]/memory
  * Inject facts, rules, or backstory into the NPC's memory.
  */
 export async function POST(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ name: string }> }
 ) {
   try {
-    const { id } = await context.params
-    const authorizedProject = await resolveAuthorizedProject(request)
-    if (authorizedProject instanceof NextResponse) return authorizedProject
-
-    const result = await loadCharacter(id, authorizedProject)
-    if (result.error) return result.error
+    const { name } = await context.params
+    const result = await resolveProjectAndCharacter(request, name)
+    if (result instanceof NextResponse) return result
 
     const { character } = result
     const body = await request.json()
-
     const { facts, rules, backstory, preferences: incomingPrefs } = body
 
     if (!facts && !rules && !backstory && !incomingPrefs) {
@@ -130,24 +83,14 @@ export async function POST(
     const injectedItems: string[] = []
     if (facts) injectedItems.push(...(Array.isArray(facts) ? facts : [facts]))
     if (rules) injectedItems.push(...(Array.isArray(rules) ? rules : [rules]))
-    if (backstory)
-      injectedItems.push(...(Array.isArray(backstory) ? backstory : [backstory]))
-    if (incomingPrefs)
-      injectedItems.push(
-        ...(Array.isArray(incomingPrefs) ? incomingPrefs : [incomingPrefs])
-      )
+    if (backstory) injectedItems.push(...(Array.isArray(backstory) ? backstory : [backstory]))
+    if (incomingPrefs) injectedItems.push(...(Array.isArray(incomingPrefs) ? incomingPrefs : [incomingPrefs]))
 
-    const mergedPrefs = Array.from(
-      new Set([...injectedItems, ...existingPrefs])
-    ).slice(0, 20)
-
-    const existingSummary =
-      typeof adaptation.summary === 'string' ? adaptation.summary : ''
+    const mergedPrefs = Array.from(new Set([...injectedItems, ...existingPrefs])).slice(0, 20)
+    const existingSummary = typeof adaptation.summary === 'string' ? adaptation.summary : ''
     const injectionNote = `[Injected ${new Date().toISOString()}]: ${injectedItems.slice(0, 3).join('; ')}`
     const newSummary =
-      existingSummary === 'No adaptation history yet.'
-        ? injectionNote
-        : `${existingSummary} | ${injectionNote}`
+      existingSummary === 'No adaptation history yet.' ? injectionNote : `${existingSummary} | ${injectionNote}`
 
     const updatedAdaptation = {
       ...adaptation,
@@ -157,13 +100,23 @@ export async function POST(
     }
 
     await prisma.character.update({
-      where: { id },
+      where: { id: character.id },
       data: { adaptation: updatedAdaptation as Prisma.InputJsonValue },
+    })
+
+    // Log the memory injection
+    await (prisma as any).npcLog.create({
+      data: {
+        characterId: character.id,
+        eventType: 'MEMORY_INJECT',
+        details: { injectedCount: injectedItems.length, items: injectedItems.slice(0, 5) },
+      },
     })
 
     return NextResponse.json({
       message: 'Memory injected successfully.',
-      npcId: id,
+      npcId: character.id,
+      npcName: character.name,
       injectedCount: injectedItems.length,
       totalPreferences: mergedPrefs.length,
     })
@@ -174,21 +127,18 @@ export async function POST(
 }
 
 /**
- * DELETE /api/npcs/:id/memory
+ * DELETE /api/npcs/[name]/memory
  * Clear short-term or long-term context.
- * Query param: ?scope=short|long|all  (default: short)
+ * Query param: ?scope=short|long|all (default: short)
  */
 export async function DELETE(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ name: string }> }
 ) {
   try {
-    const { id } = await context.params
-    const authorizedProject = await resolveAuthorizedProject(request)
-    if (authorizedProject instanceof NextResponse) return authorizedProject
-
-    const result = await loadCharacter(id, authorizedProject)
-    if (result.error) return result.error
+    const { name } = await context.params
+    const result = await resolveProjectAndCharacter(request, name)
+    if (result instanceof NextResponse) return result
 
     const { character } = result
     const url = new URL(request.url)
@@ -213,7 +163,6 @@ export async function DELETE(
         lastUpdatedAt: new Date().toISOString(),
       }
     } else {
-      // short: reset turn-level context only
       updatedAdaptation = {
         ...adaptation,
         turnCount: 0,
@@ -222,13 +171,14 @@ export async function DELETE(
     }
 
     await prisma.character.update({
-      where: { id },
+      where: { id: character.id },
       data: { adaptation: updatedAdaptation as Prisma.InputJsonValue },
     })
 
     return NextResponse.json({
       message: `Memory cleared (scope: ${scope}).`,
-      npcId: id,
+      npcId: character.id,
+      npcName: character.name,
       scope,
     })
   } catch (error) {

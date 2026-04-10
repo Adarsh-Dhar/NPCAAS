@@ -1,26 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { validateApiKey } from '@/lib/api-key-store'
 import { ethers } from 'ethers'
-
-async function resolveAuthorizedProject(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization')
-  if (!authHeader) return null
-  if (!authHeader.startsWith('Bearer ')) {
-    return NextResponse.json(
-      { error: 'Missing or malformed Authorization header. Use: Bearer gc_live_...' },
-      { status: 401 }
-    )
-  }
-  const apiKey = authHeader.replace('Bearer ', '').trim()
-  const project = await validateApiKey(apiKey)
-  if (!project) return NextResponse.json({ error: 'Invalid API key' }, { status: 401 })
-  return project
-}
+import { resolveProjectAndCharacter } from '@/lib/npc-resolver'
 
 const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
 
-// Minimal ERC-721 ABI
 const ERC721_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
   'function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)',
@@ -29,48 +12,25 @@ const ERC721_ABI = [
   'function symbol() view returns (string)',
 ]
 
-// Minimal ERC-1155 ABI
 const ERC1155_ABI = [
   'function balanceOf(address account, uint256 id) view returns (uint256)',
   'function uri(uint256 id) view returns (string)',
 ]
 
 /**
- * GET /api/npcs/:id/wallet/nfts
+ * GET /api/npcs/[name]/wallet/nfts
  * Fetch NFTs owned by the NPC.
- * Query params:
- *   ?contracts=0xABC,0xDEF  ERC-721/1155 contract addresses to check
- *   &type=721|1155          default: 721
- *   &tokenIds=1,2,3         for ERC-1155 id checks
  */
 export async function GET(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ name: string }> }
 ) {
   try {
-    const { id } = await context.params
-    const authorizedProject = await resolveAuthorizedProject(request)
-    if (authorizedProject instanceof NextResponse) return authorizedProject
+    const { name } = await context.params
+    const result = await resolveProjectAndCharacter(request, name)
+    if (result instanceof NextResponse) return result
 
-    const character = await (prisma.character as any).findUnique({
-      where: { id },
-      include: { projects: { select: { id: true } } },
-    })
-
-    if (!character) {
-      return NextResponse.json({ error: 'NPC not found' }, { status: 404 })
-    }
-
-    if (
-      authorizedProject &&
-      !character.projects.some((p: { id: string }) => p.id === authorizedProject.id)
-    ) {
-      return NextResponse.json(
-        { error: 'NPC not accessible with this API key' },
-        { status: 403 }
-      )
-    }
-
+    const { character } = result
     const url = new URL(request.url)
     const contractAddresses = url.searchParams
       .get('contracts')
@@ -104,16 +64,9 @@ export async function GET(
           for (const tokenId of tokenIds) {
             try {
               const balance = await contract.balanceOf(walletAddress, tokenId)
-              if (balance > 0n) {
+              if (balance > BigInt(0)) {
                 const uri = await contract.uri(tokenId).catch(() => '')
-                nfts.push({
-                  contractAddress: contractAddr,
-                  name: 'ERC-1155',
-                  symbol: '1155',
-                  tokenId,
-                  uri,
-                  type: 'ERC-1155',
-                })
+                nfts.push({ contractAddress: contractAddr, name: 'ERC-1155', symbol: '1155', tokenId, uri, type: 'ERC-1155' })
               }
             } catch { /* skip */ }
           }
@@ -133,14 +86,7 @@ export async function GET(
             try {
               const tokenId = await contract.tokenOfOwnerByIndex(walletAddress, i)
               const uri = await contract.tokenURI(tokenId).catch(() => '')
-              nfts.push({
-                contractAddress: contractAddr,
-                name,
-                symbol,
-                tokenId: tokenId.toString(),
-                uri,
-                type: 'ERC-721',
-              })
+              nfts.push({ contractAddress: contractAddr, name, symbol, tokenId: tokenId.toString(), uri, type: 'ERC-721' })
             } catch { /* skip */ }
           }
         } catch (err) {
@@ -150,7 +96,8 @@ export async function GET(
     }
 
     return NextResponse.json({
-      npcId: id,
+      npcId: character.id,
+      npcName: character.name,
       walletAddress,
       chainId: character.aaChainId,
       nfts,
