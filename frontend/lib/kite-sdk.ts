@@ -1,8 +1,15 @@
 /**
  * lib/kite-sdk.ts
  *
- * Production KiteAgentClient — real LLM inference via OpenAI API.
- * Responses are structured JSON: { action: string, text: string }
+ * Production KiteAgentClient — real LLM inference via OpenAI-compatible API.
+ *
+ * Exports two chat methods:
+ *   chat()       — standard request/response (existing behaviour)
+ *   chatStream() — returns a ReadableStream<string> of SSE-formatted chunks
+ *                  for the /api/chat/stream route
+ *
+ * Response format (structured JSON):
+ *   { "action": "<physical action, max 8 words>", "text": "<spoken dialogue>" }
  */
 
 import OpenAI from 'openai'
@@ -52,7 +59,7 @@ export interface TradeIntent {
 
 export interface ChatResponse {
   text: string
-  action?: string        // NEW: physical action / expression (separate from dialogue)
+  action?: string
   tradeIntent?: TradeIntent
 }
 
@@ -67,8 +74,18 @@ export interface AgentContext {
   canTrade?: boolean
 }
 
+/** SSE event shape emitted by chatStream(). */
+export interface StreamEvent {
+  type: 'text_delta' | 'action' | 'trade_intent' | 'done' | 'error'
+  delta?: string       // incremental text token (type=text_delta)
+  action?: string      // physical action (type=action)
+  tradeIntent?: TradeIntent // (type=trade_intent)
+  error?: string       // (type=error)
+  final?: ChatResponse // (type=done) — full assembled response
+}
+
 // ---------------------------------------------------------------------------
-// Tool definition — now includes action field
+// Tool definition
 // ---------------------------------------------------------------------------
 
 const PROPOSE_TRADE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
@@ -81,27 +98,11 @@ const PROPOSE_TRADE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
     parameters: {
       type: 'object',
       properties: {
-        item: {
-          type: 'string',
-          description: 'The item or service being traded',
-        },
-        price: {
-          type: 'number',
-          description: 'Price in KITE_USD',
-        },
-        currency: {
-          type: 'string',
-          enum: ['KITE_USD'],
-          description: 'Always KITE_USD',
-        },
-        message: {
-          type: 'string',
-          description: 'Spoken dialogue accompanying the trade offer (1–2 sentences, no asterisk actions)',
-        },
-        action: {
-          type: 'string',
-          description: 'Brief physical action or expression under 8 words, e.g. "rubs hands together eagerly"',
-        },
+        item:     { type: 'string',  description: 'The item or service being traded' },
+        price:    { type: 'number',  description: 'Price in KITE_USD' },
+        currency: { type: 'string',  enum: ['KITE_USD'] },
+        message:  { type: 'string',  description: 'Spoken dialogue (1–2 sentences, no asterisk actions)' },
+        action:   { type: 'string',  description: 'Physical action, max 8 words' },
       },
       required: ['item', 'price', 'currency', 'message', 'action'],
     },
@@ -113,7 +114,7 @@ const PROPOSE_TRADE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
 // ---------------------------------------------------------------------------
 
 function buildSystemPrompt(ctx: AgentContext): string {
-  const name = ctx.characterName ?? 'NPC'
+  const name     = ctx.characterName ?? 'NPC'
   const openness = ctx.openness ?? 50
 
   const basePersona = ctx.systemPrompt?.trim()
@@ -129,8 +130,8 @@ function buildSystemPrompt(ctx: AgentContext): string {
         : 'You balance practicality with occasional creativity.'
 
   const tradeLine = ctx.canTrade !== false
-    ? 'When a player wants to buy, sell, or trade something, use the propose_trade function to make a concrete offer.'
-    : 'Trading is currently disabled for your character. Politely redirect trade requests.'
+    ? 'When a player wants to buy, sell, or trade something, use the propose_trade function.'
+    : 'Trading is currently disabled. Politely redirect trade requests.'
 
   const specializationNote =
     ctx.specializationActive && ctx.preferences?.length
@@ -145,22 +146,15 @@ function buildSystemPrompt(ctx: AgentContext): string {
       : ''
 
   const jsonFormatInstructions = `
-CRITICAL OUTPUT FORMAT — you must always respond with valid JSON:
+CRITICAL OUTPUT FORMAT — always respond with valid JSON:
 {
-  "action": "<brief physical action or expression, max 8 words, e.g. 'waves hand warmly' or 'scratches chin thoughtfully' or 'leans forward with excitement'>",
-  "text": "<spoken dialogue only, 2–3 sentences, absolutely no asterisks or stage directions>"
+  "action": "<brief physical action, max 8 words, e.g. 'waves hand warmly'>",
+  "text": "<spoken dialogue only, 2–3 sentences, no asterisk actions>"
 }
-Never include asterisk actions (*like this*) in the text field. Keep action and text strictly separate.`
+Never include asterisk actions (*like this*) in the text field.`
 
-  return [
-    basePersona,
-    opennessLine,
-    tradeLine,
-    specializationNote,
-    turnNote,
-    'Stay in character at all times. Do not break the fourth wall or mention being an AI.',
-    jsonFormatInstructions,
-  ]
+  return [basePersona, opennessLine, tradeLine, specializationNote, turnNote,
+    'Stay in character. Do not mention being an AI.', jsonFormatInstructions]
     .filter(Boolean)
     .join('\n\n')
 }
@@ -171,22 +165,27 @@ Never include asterisk actions (*like this*) in the text field. Keep action and 
 
 function parseStructuredResponse(content: string): { text: string; action?: string } {
   try {
-    // Strip markdown code fences if present
     const clean = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
     const parsed = JSON.parse(clean)
     return {
-      text: typeof parsed.text === 'string' ? parsed.text.trim() : content,
+      text:   typeof parsed.text   === 'string' ? parsed.text.trim()   : content,
       action: typeof parsed.action === 'string' ? parsed.action.trim() : undefined,
     }
   } catch {
-    // Fallback: try to extract action from asterisks if JSON parse fails
     const actionMatch = content.match(/\*([^*]+)\*/g)
-    const action = actionMatch
-      ? actionMatch[0].replace(/\*/g, '').trim()
-      : undefined
-    const text = content.replace(/\*[^*]+\*/g, '').trim()
+    const action = actionMatch ? actionMatch[0].replace(/\*/g, '').trim() : undefined
+    const text   = content.replace(/\*[^*]+\*/g, '').trim()
     return { text: text || content, action }
   }
+}
+
+// ---------------------------------------------------------------------------
+// SSE frame encoder
+// ---------------------------------------------------------------------------
+
+/** Encodes a StreamEvent as a valid Server-Sent Events frame. */
+export function encodeSSEFrame(event: StreamEvent): string {
+  return `data: ${JSON.stringify(event)}\n\n`
 }
 
 // ---------------------------------------------------------------------------
@@ -200,15 +199,15 @@ export class KiteAgentClient {
     this.registeredTools = tools
   }
 
+  // ── Standard (blocking) chat ─────────────────────────────────────────────
+
   async chat(userMessage: string, ctx: AgentContext = {}): Promise<ChatResponse> {
     const client = getClient()
-    const model = getModel()
+    const model  = getModel()
     const systemPrompt = buildSystemPrompt(ctx)
-
     const tools: OpenAI.Chat.Completions.ChatCompletionTool[] =
       ctx.canTrade !== false ? [PROPOSE_TRADE_TOOL] : []
 
-    // Use json_object response format when no tools (tools + json_object can conflict on some models)
     const responseFormat = tools.length === 0
       ? { response_format: { type: 'json_object' as const } }
       : {}
@@ -222,7 +221,7 @@ export class KiteAgentClient {
         temperature: this.opennessToTemperature(ctx.openness),
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
+          { role: 'user',   content: userMessage },
         ],
         ...(tools.length > 0 ? { tools, tool_choice: 'auto' } : {}),
         ...responseFormat,
@@ -231,14 +230,13 @@ export class KiteAgentClient {
       const msg = err instanceof Error ? err.message : 'Unknown LLM error'
       console.error('[KiteAgentClient] LLM request failed:', msg)
       return {
-        text: 'I seem to be lost in thought right now. Try again in a moment.',
+        text:   'I seem to be lost in thought right now. Try again in a moment.',
         action: 'looks away distractedly',
       }
     }
 
     const choice = completion.choices[0]
 
-    // -- Tool call path: NPC wants to propose a trade ----------------------
     if (
       choice.finish_reason === 'tool_calls' &&
       choice.message.tool_calls?.length
@@ -247,32 +245,145 @@ export class KiteAgentClient {
       if (isFunctionToolCall(toolCall) && toolCall.function.name === 'propose_trade') {
         try {
           const args = JSON.parse(toolCall.function.arguments) as {
-            item: string
-            price: number
-            currency: string
-            message: string
-            action?: string
+            item: string; price: number; currency: string; message: string; action?: string
           }
           return {
-            text: args.message,
+            text:   args.message,
             action: args.action ?? 'presents item with a flourish',
-            tradeIntent: {
-              item: args.item,
-              price: args.price,
-              currency: args.currency,
-            },
+            tradeIntent: { item: args.item, price: args.price, currency: args.currency },
           }
-        } catch {
-          // Fall through to text path
-        }
+        } catch { /* fall through */ }
       }
     }
 
-    // -- Normal text path: parse structured JSON ---------------------------
     const rawContent = choice.message.content?.trim() ?? ''
     const { text, action } = parseStructuredResponse(rawContent)
     return { text, action }
   }
+
+  // ── Streaming chat ────────────────────────────────────────────────────────
+
+  /**
+   * Returns a ReadableStream that emits SSE-formatted frames:
+   *
+   *   data: {"type":"text_delta","delta":"Hello"}\n\n
+   *   data: {"type":"action","action":"waves hand"}\n\n
+   *   data: {"type":"done","final":{...}}\n\n
+   *
+   * The caller is responsible for piping this into a Response with the
+   * appropriate Content-Type: text/event-stream header.
+   *
+   * NOTE: If the NPC decides to call the `propose_trade` tool, streaming
+   * is not possible (tool calls are returned only after the full response is
+   * generated).  In that case, a single non-streaming done frame is emitted.
+   */
+  chatStream(userMessage: string, ctx: AgentContext = {}): ReadableStream<string> {
+    const client = getClient()
+    const model  = getModel()
+    const systemPrompt = buildSystemPrompt(ctx)
+    const tools: OpenAI.Chat.Completions.ChatCompletionTool[] =
+      ctx.canTrade !== false ? [PROPOSE_TRADE_TOOL] : []
+    const temp = this.opennessToTemperature(ctx.openness)
+
+    return new ReadableStream<string>({
+      start: async (controller) => {
+        const enqueue = (event: StreamEvent) => {
+          controller.enqueue(encodeSSEFrame(event))
+        }
+
+        try {
+          // ── Tool-call path: must use non-streaming for tool_choice ──────
+          if (tools.length > 0) {
+            const completion = await client.chat.completions.create({
+              model,
+              max_tokens: 400,
+              temperature: temp,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user',   content: userMessage },
+              ],
+              tools,
+              tool_choice: 'auto',
+            })
+
+            const choice = completion.choices[0]
+
+            if (
+              choice.finish_reason === 'tool_calls' &&
+              choice.message.tool_calls?.length
+            ) {
+              const toolCall = choice.message.tool_calls[0]
+              if (isFunctionToolCall(toolCall) && toolCall.function.name === 'propose_trade') {
+                const args = JSON.parse(toolCall.function.arguments) as {
+                  item: string; price: number; currency: string; message: string; action?: string
+                }
+                const final: ChatResponse = {
+                  text:   args.message,
+                  action: args.action ?? 'presents item with a flourish',
+                  tradeIntent: { item: args.item, price: args.price, currency: args.currency },
+                }
+                if (final.action) enqueue({ type: 'action', action: final.action })
+                // Emit the text as a single delta so clients render it progressively
+                enqueue({ type: 'text_delta', delta: final.text })
+                if (final.tradeIntent) enqueue({ type: 'trade_intent', tradeIntent: final.tradeIntent })
+                enqueue({ type: 'done', final })
+                controller.close()
+                return
+              }
+            }
+
+            // Fell through — no tool call; emit as text
+            const rawContent = choice.message.content?.trim() ?? ''
+            const { text, action } = parseStructuredResponse(rawContent)
+            if (action) enqueue({ type: 'action', action })
+            enqueue({ type: 'text_delta', delta: text })
+            const final: ChatResponse = { text, action }
+            enqueue({ type: 'done', final })
+            controller.close()
+            return
+          }
+
+          // ── Streaming path: no tools, pure text JSON ─────────────────────
+          const stream = await client.chat.completions.create({
+            model,
+            max_tokens: 400,
+            temperature: temp,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user',   content: userMessage },
+            ],
+            stream: true,
+            response_format: { type: 'json_object' },
+          })
+
+          let accumulated = ''
+
+          for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta?.content ?? ''
+            if (!delta) continue
+
+            accumulated += delta
+            // Stream raw tokens as they arrive — clients can buffer until done
+            enqueue({ type: 'text_delta', delta })
+          }
+
+          // Parse the fully assembled JSON to extract action + clean text
+          const { text, action } = parseStructuredResponse(accumulated)
+          if (action) enqueue({ type: 'action', action })
+          const final: ChatResponse = { text, action }
+          enqueue({ type: 'done', final })
+          controller.close()
+        } catch (err) {
+          const error = err instanceof Error ? err.message : 'LLM stream error'
+          console.error('[KiteAgentClient] stream error:', error)
+          enqueue({ type: 'error', error })
+          controller.close()
+        }
+      },
+    })
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   private opennessToTemperature(openness?: number): number {
     const o = openness ?? 50
