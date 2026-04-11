@@ -185,6 +185,29 @@ export declare class GuildCraftClient {
     tradeIntent: TradeIntent
   ): Promise<ExecuteTransactionResponse>
 
+  npcInteract(
+    initiatorId: string,
+    targetName: string,
+    message: string,
+    tradeIntent?: TradeIntent
+  ): Promise<{
+    success: boolean
+    interaction: {
+      from: { id: string; name: string }
+      to: { id: string; name: string }
+      message: string
+      tradeAttempted: boolean
+      txResult: { txHash?: string; mode?: string; sponsored?: boolean; error?: string } | null
+    }
+    targetResponse: {
+      text: string
+      action: string | null
+      tradeIntent: TradeIntent | null
+      counterTrade: { txHash?: string; mode?: string; error?: string } | null
+    }
+    timestamp: string
+  }>
+
   // NPC Memory
   getMemory(npcId: string, topic?: string): Promise<{ npcId: string; memory: NpcMemory; configSnapshot: Record<string, unknown> }>
   injectMemory(

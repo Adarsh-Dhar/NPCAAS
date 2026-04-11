@@ -3,7 +3,9 @@ import { useState, useEffect, useCallback } from "react";
 import { GameCanvas } from "@/game/GameCanvas";
 import { ChatWindow, type TradeIntent } from "@/components/ChatWindow";
 import { HUD } from "@/components/HUD";
-import { isSdkReady, loadCharacters } from "@/lib/sdk";
+import { WorldEventFeed } from "@/components/WorldEventFeed";
+import { worldLoop } from "@/lib/npcWorldLoop";
+import { getClient, isSdkReady, loadCharacters } from "@/lib/sdk";
 
 interface ActiveNpc {
   id: string;   // game-local key: "scraper" | "cipher" | "enforcer"
@@ -19,6 +21,68 @@ export default function GamePage() {
     if (isSdkReady()) {
       void loadCharacters();
     }
+  }, []);
+
+  useEffect(() => {
+    if (!isSdkReady()) return;
+
+    let loopId: number | undefined;
+    let cancelled = false;
+
+    loadCharacters()
+      .then(async (chars) => {
+        if (cancelled) return;
+        if (chars.size < 2) return;
+        const client = getClient();
+        if (!client) return;
+
+        const allChars = await client.getCharacters();
+        if (allChars.length < 2) return;
+
+        const [scrap, cipher] = allChars;
+
+        // Kick off an initial NPC conversation
+        worldLoop
+          .npcSpeak(
+            scrap.id,
+            cipher.name,
+            "Heard you can craft the Root Key. What's it gonna cost me?"
+          )
+          .catch(() => {
+            /* demo may not have API key */
+          });
+
+        // Simulate autonomous trade negotiation loop
+        loopId = window.setInterval(async () => {
+          if (allChars.length < 2) return;
+          try {
+            const initiator = allChars[Math.floor(Math.random() * allChars.length)];
+            const others = allChars.filter((c: { id: any; }) => c.id !== initiator.id);
+            if (others.length === 0) return;
+            const target = others[Math.floor(Math.random() * others.length)];
+
+            const prompts = [
+              "What's your current inventory looking like?",
+              'I have SCRP tokens. Looking to trade for crafted materials.',
+              'The Enforcer has been watching us. Be careful what you say.',
+              'Need the Root Key components. Name your price.',
+            ];
+            const msg = prompts[Math.floor(Math.random() * prompts.length)];
+
+            await worldLoop.npcSpeak(initiator.id, target.name, msg);
+          } catch {
+            /* ignore */
+          }
+        }, 20000);
+      })
+      .catch(() => {
+        /* ignore */
+      });
+
+    return () => {
+      cancelled = true;
+      if (loopId) clearInterval(loopId);
+    };
   }, []);
 
   const handleOpenChat = useCallback((npcId: string, npcName: string) => {
@@ -63,6 +127,8 @@ export default function GamePage() {
         pendingTrade={pendingTrade}
         onTradeExecuted={handleTradeExecuted}
       />
+
+      <WorldEventFeed />
 
       {/* Layer 2: Chat window */}
       {activeNpc && (

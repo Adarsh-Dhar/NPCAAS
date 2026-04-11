@@ -478,6 +478,23 @@ class GuildCraftClient {
   async getSupportedWebhookEvents() {
     return this._request('/webhooks/register')
   }
+  
+  /**
+   * NPC-to-NPC interaction — one agent speaks to or trades with another.
+   * @param {string} initiatorId  character.id of the speaking NPC
+   * @param {string} targetName   character.name of the NPC being addressed
+   * @param {string} message      what the initiator says
+   * @param {object} [tradeIntent]  optional { item, price, currency }
+   */
+  async npcInteract(initiatorId, targetName, message, tradeIntent) {
+    if (!initiatorId) throw new GuildCraftError('initiatorId is required', 400, null)
+    if (!targetName)  throw new GuildCraftError('targetName is required',  400, null)
+    if (!message)     throw new GuildCraftError('message is required',     400, null)
+    return this._request('/npcs/interact', {
+      method: 'POST',
+      body: JSON.stringify({ initiatorId, targetName, message, tradeIntent }),
+    })
+  }
 }
 
 // Support CommonJS `require()` in Node environments while avoiding
