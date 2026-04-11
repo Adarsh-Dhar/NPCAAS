@@ -13,6 +13,7 @@
  */
 
 import OpenAI from 'openai'
+import { executeWriteTransaction } from '@/lib/tx-orchestrator'
 
 type FunctionToolCall = OpenAI.Chat.Completions.ChatCompletionMessageFunctionToolCall
 
@@ -72,6 +73,7 @@ export interface AgentContext {
   preferences?: string[]
   turnCount?: number
   canTrade?: boolean
+  characterId?: string
 }
 
 /** SSE event shape emitted by chatStream(). */
@@ -105,6 +107,23 @@ const PROPOSE_TRADE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
         action:   { type: 'string',  description: 'Physical action, max 8 words' },
       },
       required: ['item', 'price', 'currency', 'message', 'action'],
+    },
+  },
+}
+
+const EXECUTE_TRADE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'execute_trade',
+    description:
+      'Call this to autonomously sign and send a blockchain transaction transferring funds to another character.',
+    parameters: {
+      type: 'object',
+      properties: {
+        targetAddress: { type: 'string', description: 'The blockchain wallet address of the recipient' },
+        amount: { type: 'number', description: 'The amount of currency to send' },
+      },
+      required: ['targetAddress', 'amount'],
     },
   },
 }
@@ -206,7 +225,7 @@ export class KiteAgentClient {
     const model  = getModel()
     const systemPrompt = buildSystemPrompt(ctx)
     const tools: OpenAI.Chat.Completions.ChatCompletionTool[] =
-      ctx.canTrade !== false ? [PROPOSE_TRADE_TOOL] : []
+      ctx.canTrade !== false ? [PROPOSE_TRADE_TOOL, EXECUTE_TRADE_TOOL] : []
 
     const responseFormat = tools.length === 0
       ? { response_format: { type: 'json_object' as const } }
@@ -228,9 +247,9 @@ export class KiteAgentClient {
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown LLM error'
-      console.error('[KiteAgentClient] LLM request failed:', msg)
+      console.error('[KiteAgentClient] LLM request failed:', msg, err)
       return {
-        text:   'I seem to be lost in thought right now. Try again in a moment.',
+        text:   `LLM error: ${msg}`,
         action: 'looks away distractedly',
       }
     }
@@ -242,6 +261,32 @@ export class KiteAgentClient {
       choice.message.tool_calls?.length
     ) {
       const toolCall = choice.message.tool_calls[0]
+
+      // Map an on-chain execution tool to the tx-orchestrator
+      if (isFunctionToolCall(toolCall) && toolCall.function.name === 'execute_trade') {
+        try {
+          const args = JSON.parse(toolCall.function.arguments) as {
+            targetAddress?: string
+            amount?: number | string
+            memo?: string
+            ownerId?: string
+          }
+          const targetAddress = args.targetAddress ?? (args as any).to ?? ''
+          const amountStr = typeof args.amount === 'number' ? String(args.amount) : (args.amount ?? '0')
+          const ownerId = ctx.characterId
+          if (!ownerId) {
+            return { text: 'Transaction aborted: I do not know my own identity.', action: 'shakes head' }
+          }
+          try {
+            const txResult = await executeWriteTransaction({ to: targetAddress, value: amountStr, data: '0x', ownerId })
+            return { text: `Transaction successful. Hash: ${txResult.txHash}`, action: 'nods approvingly' }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Unknown transaction error'
+            return { text: `Transaction failed: ${msg}`, action: 'shakes head sadly' }
+          }
+        } catch { /* fall through */ }
+      }
+
       if (isFunctionToolCall(toolCall) && toolCall.function.name === 'propose_trade') {
         try {
           const args = JSON.parse(toolCall.function.arguments) as {
@@ -282,7 +327,7 @@ export class KiteAgentClient {
     const model  = getModel()
     const systemPrompt = buildSystemPrompt(ctx)
     const tools: OpenAI.Chat.Completions.ChatCompletionTool[] =
-      ctx.canTrade !== false ? [PROPOSE_TRADE_TOOL] : []
+      ctx.canTrade !== false ? [PROPOSE_TRADE_TOOL, EXECUTE_TRADE_TOOL] : []
     const temp = this.opennessToTemperature(ctx.openness)
 
     return new ReadableStream<string>({
@@ -313,6 +358,34 @@ export class KiteAgentClient {
               choice.message.tool_calls?.length
             ) {
               const toolCall = choice.message.tool_calls[0]
+              if (isFunctionToolCall(toolCall) && toolCall.function.name === 'execute_trade') {
+                const args = JSON.parse(toolCall.function.arguments) as {
+                  targetAddress?: string; amount?: number | string; memo?: string; ownerId?: string
+                }
+                const ownerId = ctx.characterId
+                const amountStr = typeof args.amount === 'number' ? String(args.amount) : (args.amount ?? '0')
+                if (!ownerId) {
+                  const final: ChatResponse = { text: 'Transaction aborted: I do not know my own identity.', action: 'shakes head' }
+                  enqueue({ type: 'done', final })
+                  controller.close()
+                  return
+                }
+                try {
+                  const txResult = await executeWriteTransaction({ to: args.targetAddress ?? '', value: amountStr, data: '0x', ownerId })
+                  const final: ChatResponse = { text: `Transaction successful. Hash: ${txResult.txHash}`, action: 'nods approvingly' }
+                  if (final.action) enqueue({ type: 'action', action: final.action })
+                  enqueue({ type: 'text_delta', delta: final.text })
+                  enqueue({ type: 'done', final })
+                  controller.close()
+                  return
+                } catch (err) {
+                  const errorMsg = err instanceof Error ? err.message : 'Transaction error'
+                  const final: ChatResponse = { text: `Transaction failed: ${errorMsg}`, action: 'shakes head' }
+                  enqueue({ type: 'done', final })
+                  controller.close()
+                  return
+                }
+              }
               if (isFunctionToolCall(toolCall) && toolCall.function.name === 'propose_trade') {
                 const args = JSON.parse(toolCall.function.arguments) as {
                   item: string; price: number; currency: string; message: string; action?: string

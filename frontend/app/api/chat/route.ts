@@ -3,6 +3,8 @@ import { kiteAgentClient } from '@/lib/kite-sdk'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@/lib/generated/prisma/client'
+import { eventBus } from '@/lib/npcEventBus'
+import { worldState } from '@/lib/npcWorldState'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -350,17 +352,23 @@ export async function POST(request: NextRequest) {
     const agent = kiteAgentClient
     agent.registerTools(['get_payer_addr', 'approve_payment', 'check_inventory', 'execute_trade'])
 
+    // 1. Fetch the live context of other NPCs in the project
+    const dynamicWorldContext = worldState.buildWorldContextPrompt(character.id)
+
+    // 2. Append it to the base system prompt
+    const basePrompt = typeof config.systemPrompt === 'string' && config.systemPrompt.trim()
+      ? config.systemPrompt
+      : 'You are an autonomous NPC that negotiates fairly and builds reputation.'
+
+    const activeProfile: Section2Profile = {
+      systemPrompt: `${basePrompt}\n\n${dynamicWorldContext}`,
+      openness: typeof config.openness === 'number' ? config.openness : 50,
+    }
+
     let updatedAdaptation = adaptation
     if (adaptation.specializationActive) {
       const preferenceUpdates = extractPreferences(message)
       const mergedPreferences = mergePreferences(adaptation.preferences, preferenceUpdates)
-      const activeProfile: Section2Profile = {
-        systemPrompt:
-          typeof config.systemPrompt === 'string' && config.systemPrompt.trim()
-            ? config.systemPrompt
-            : 'You are an autonomous NPC that negotiates fairly and builds reputation.',
-        openness: typeof config.openness === 'number' ? config.openness : 50,
-      }
       updatedAdaptation = {
         ...adaptation,
         turnCount: adaptation.turnCount + 1,
@@ -376,8 +384,9 @@ export async function POST(request: NextRequest) {
 
     const agentResponse = await agent.chat(message, {
       characterName: character.name,
-      systemPrompt: typeof config.systemPrompt === 'string' ? config.systemPrompt : undefined,
-      openness: typeof config.openness === 'number' ? config.openness : undefined,
+      characterId: character.id,
+      systemPrompt: activeProfile.systemPrompt,
+      openness: activeProfile.openness,
       canTrade: config.canTrade,
       specializationActive: updatedAdaptation.specializationActive,
       adaptationSummary: updatedAdaptation.summary,
@@ -397,6 +406,20 @@ export async function POST(request: NextRequest) {
           hasTrade: !!agentResponse.tradeIntent,
         },
       },
+    })
+
+    // Broadcast to the Event Bus so other NPCs "hear" this interaction
+    eventBus.broadcast({
+      sourceId: character.id,
+      sourceName: character.name,
+      actionType: agentResponse.tradeIntent ? 'TRADE_PROPOSED' : 'CHAT',
+      payload: {
+        message: message,
+        response: agentResponse.text,
+        tradeIntent: agentResponse.tradeIntent,
+        projectId: project?.id,
+      },
+      timestamp: new Date().toISOString(),
     })
 
     return NextResponse.json(
