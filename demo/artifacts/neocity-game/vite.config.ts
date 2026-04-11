@@ -3,6 +3,13 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import dotenv from "dotenv";
+
+// Load local .env (next to this config) into process.env so the config
+// can read `PORT` and `BASE_PATH` synchronously during config evaluation.
+// Prefer the project's working directory so bundled/temp configs still
+// load the correct `.env` when Vite creates a temp copy of this file.
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 const rawPort = process.env.PORT;
 if (!rawPort) throw new Error("PORT environment variable is required.");
