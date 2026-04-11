@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@/lib/generated/prisma/client'
 import { kiteAAProvider } from '@/lib/aa-sdk'
@@ -39,7 +40,8 @@ export async function POST(
       )
     }
 
-    const ownerId = `character:${cloneName}:${Date.now()}`
+    const cloneId = crypto.randomUUID()
+    const ownerId = `character:${cloneId}`
     const smartAccount = await kiteAAProvider.createSmartAccount({
       ownerId,
       metadata: { npcName: cloneName, clonedFrom: character.id },
@@ -47,6 +49,7 @@ export async function POST(
 
     const clone = await prisma.character.create({
       data: {
+        id: cloneId,
         name: cloneName,
         walletAddress: smartAccount.address,
         aaChainId: smartAccount.chainId,

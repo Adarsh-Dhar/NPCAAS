@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { z } from 'zod'
 import { kiteAAProvider } from '@/lib/aa-sdk'
 import { validateApiKey } from '@/lib/api-key-store'
@@ -149,7 +150,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const ownerId = `character:${name}:${Date.now()}`
+    // Use a stable ownerId based on a generated character id so the derived
+    // signer is deterministic and can be recreated later for signing.
+    const characterId = crypto.randomUUID()
+    const ownerId = `character:${characterId}`
+
     const smartAccount = await kiteAAProvider.createSmartAccount({
       ownerId,
       metadata: {
@@ -159,6 +164,7 @@ export async function POST(request: NextRequest) {
     })
 
     const characterData = {
+      id: characterId,
       name,
       walletAddress: smartAccount.address,
       aaChainId: smartAccount.chainId,

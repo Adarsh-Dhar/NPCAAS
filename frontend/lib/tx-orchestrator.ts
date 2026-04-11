@@ -55,6 +55,20 @@ export async function executeWriteTransaction(
   input: WriteTransactionInput
 ): Promise<SponsoredExecutionResult> {
   try {
+    // Pre-check: estimate the UserOp so we can log paymaster/estimation details
+    try {
+      const estimate = await kiteAAProvider.estimateTransaction({
+        to: input.to,
+        value: input.value,
+        data: input.data,
+        ownerId: input.ownerId,
+      })
+      // Helpful debug for paymaster/bundler issues
+      console.debug('[tx-orchestrator] UserOp estimate:', estimate)
+    } catch (e) {
+      console.debug('[tx-orchestrator] Failed to estimate UserOp:', e instanceof Error ? e.message : String(e))
+    }
+
     const result = await kiteAAProvider.sponsorTransaction({
       to: input.to,
       value: input.value,
@@ -75,7 +89,7 @@ export async function executeWriteTransaction(
       sponsored: true,
     }
   } catch (err) {
-    const reason = err instanceof Error ? err.message : 'Unknown sponsorship error'
+    const reason = err instanceof Error ? (err.stack ?? err.message) : JSON.stringify(err)
 
     if (!allowFallback()) {
       throw new Error(`Gas sponsorship failed and fallback is disabled: ${reason}`)

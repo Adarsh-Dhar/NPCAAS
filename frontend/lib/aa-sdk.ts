@@ -32,6 +32,8 @@ function getEnv(key: string, fallback: string): string {
 const NETWORK    = getEnv('KITE_AA_NETWORK',     'kite_testnet')
 const RPC_URL    = getEnv('KITE_AA_RPC_URL',     'https://rpc-testnet.gokite.ai')
 const BUNDLER    = getEnv('KITE_AA_BUNDLER_URL', 'https://bundler-service.staging.gokite.ai/rpc/')
+// Fallback to production bundler if staging is unhealthy
+const BUNDLER_FALLBACK = getEnv('KITE_AA_BUNDLER_FALLBACK_URL', 'https://bundler-service.gokite.ai/rpc/')
 const CHAIN_ID   = Number(getEnv('KITE_AA_CHAIN_ID', '2368'))
 const PROVIDER   = 'gokite-aa-sdk'
 
@@ -70,6 +72,10 @@ function getSDK(): GokiteAASDK {
     _sdk = new GokiteAASDK(NETWORK, RPC_URL, BUNDLER)
   }
   return _sdk
+}
+
+function makeSDKWithBundler(bundlerUrl: string): GokiteAASDK {
+  return new GokiteAASDK(NETWORK, RPC_URL, bundlerUrl)
 }
 
 // ---------------------------------------------------------------------------
@@ -152,25 +158,98 @@ export class KiteAAProvider {
       return signer.signMessage(ethers.getBytes(userOpHash))
     }
 
-    const { userOpHash, status } = await sdk.sendUserOperationAndWait(
-      signer.address,
-      request,
-      signFn,
-      undefined, // salt — use default (0n)
-      undefined, // paymasterAddress — SDK fetches from bundler
-      {
-        interval: 2000,
-        timeout: 60_000,
-        maxRetries: 30,
+    try {
+      const { userOpHash, status } = await sdk.sendUserOperationAndWait(
+        signer.address,
+        request,
+        signFn,
+        undefined, // salt — use default (0n)
+        undefined, // paymasterAddress — SDK fetches from bundler
+        {
+          interval: 2000,
+          timeout: 60_000,
+          maxRetries: 30,
+        }
+      )
+
+      const txHash = status.transactionHash ?? userOpHash
+
+      return {
+        txHash,
+        userOpHash,
+        status: status.status,
       }
-    )
+    } catch (err) {
+      // If the staging bundler returned a generic "execution reverted" it may
+      // be a symptom of the staging paymaster or bundler being unhealthy.
+      // Retry once against the production bundler before propagating the error.
+      const message = err instanceof Error ? err.message : String(err)
+      if (message && message.toLowerCase().includes('execution reverted')) {
+        try {
+          const sdk2 = makeSDKWithBundler(BUNDLER_FALLBACK)
+          const { userOpHash, status } = await sdk2.sendUserOperationAndWait(
+            signer.address,
+            request,
+            signFn,
+            undefined,
+            undefined,
+            {
+              interval: 2000,
+              timeout: 60_000,
+              maxRetries: 30,
+            }
+          )
 
-    const txHash = status.transactionHash ?? userOpHash
+          const txHash = status.transactionHash ?? userOpHash
 
-    return {
-      txHash,
-      userOpHash,
-      status: status.status,
+          return {
+            txHash,
+            userOpHash,
+            status: status.status,
+          }
+        } catch (err2) {
+          // fall-through to rethrow original error below after augmenting
+          const err2msg = err2 instanceof Error ? err2.message : String(err2)
+            // If we have a server-side PRIVATE_KEY configured, attempt to
+            // bypass the bundler entirely by calling EntryPoint.handleOps
+            // directly. This requires `PRIVATE_KEY` to be a funded account.
+            if (process.env.PRIVATE_KEY) {
+              try {
+                // Build a userOp with no paymaster (server will pay gas)
+                const userOp = await sdk.createUserOperation(
+                  signer.address,
+                  request,
+                  undefined,
+                  // create with default paymaster then clear paymasterAndData
+                  undefined
+                )
+
+                // Remove paymaster data so EntryPoint.handleOps executes with
+                // the server-funded signer (we'll pay gas directly).
+                userOp.paymasterAndData = '0x'
+
+                const userOpHash = await sdk.getUserOpHash(userOp)
+                const signature = await signFn(userOpHash)
+                userOp.signature = signature
+
+                const directTxHash = await sdk.sendUserOperationDirectly(signer.address, userOp)
+
+                return {
+                  txHash: directTxHash,
+                  userOpHash,
+                  status: 'success',
+                }
+              } catch (err3) {
+                const err3msg = err3 instanceof Error ? err3.message : String(err3)
+                throw new Error(`sponsorTransaction failed (staging): ${message}; retry (prod) failed: ${err2msg}; direct send failed: ${err3msg}`)
+              }
+            }
+
+            throw new Error(`sponsorTransaction failed (staging): ${message}; retry (prod) failed: ${err2msg}`)
+        }
+      }
+
+      throw err
     }
   }
 
