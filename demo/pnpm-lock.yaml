@@ -83,6 +83,9 @@ importers:
 
   artifacts/api-server:
     dependencies:
+      '@adarsh23/guildcraft-sdk':
+        specifier: link:/Users/adarsh/Documents/kite-ai/frontend/sdk
+        version: link:../../../frontend/sdk
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
@@ -319,7 +322,7 @@ importers:
   artifacts/neocity-game:
     dependencies:
       '@adarsh23/guildcraft-sdk':
-        specifier: ^1.0.2
+        specifier: ^1.0.0
         version: 1.0.2
       phaser:
         specifier: ^3.90.0

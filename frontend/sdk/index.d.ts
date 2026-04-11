@@ -174,10 +174,11 @@ export declare class GuildCraftClient {
   ): Promise<{ message: string; gameId: string; assignedCharacterIds: string[] }>
 
   // Chat
-  chat(characterId: string, message: string): Promise<ChatResponse>
+  chat(characterId: string, message: string, opts?: { npcName?: string; characterId?: string }): Promise<ChatResponse>
   chatStream(
     characterId: string,
-    message: string
+    message: string,
+    opts?: { npcName?: string; characterId?: string }
   ): AsyncGenerator<StreamEvent, void, undefined>
   executeTransaction(
     characterId: string,

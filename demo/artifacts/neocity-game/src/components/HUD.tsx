@@ -1,7 +1,17 @@
 // src/components/HUD.tsx
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Loader2, CheckCircle, XCircle, Zap, RefreshCw } from "lucide-react";
-import { getClient, isSdkReady } from "@/lib/sdk";
+import {
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Zap,
+  RefreshCw,
+} from "lucide-react";
+import {
+  getClient,
+  getCharacterByName,
+  isSdkReady,
+} from "@/lib/sdk";
 import type { TradeIntent } from "./ChatWindow";
 
 // ---------------------------------------------------------------------------
@@ -26,31 +36,67 @@ type TxStatus =
   | { state: "success"; txHash?: string; mode: string }
   | { state: "error"; message: string };
 
-interface HUDProps {
+export interface HUDProps {
+  /** Game-local NPC id like "scrap", or null when no chat is open */
   activeNpc: string | null;
+  /** Display name like "SCRAP" — used for GuildCraft character lookup */
+  activeNpcName: string | null;
   pendingTrade: TradeIntent | null;
   onTradeExecuted?: () => void;
 }
 
 // ---------------------------------------------------------------------------
+// NPC color map
+// ---------------------------------------------------------------------------
+const NPC_COLORS: Record<string, string> = {
+  scrap: "#ff6600",
+  cipher: "#00ffcc",
+  enforcer: "#ff0066",
+};
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
+export function HUD({
+  activeNpc,
+  activeNpcName,
+  pendingTrade,
+  onTradeExecuted,
+}: HUDProps) {
   const [walletState, setWalletState] = useState<WalletState | null>(null);
   const [walletLoading, setWalletLoading] = useState(false);
   const [txStatus, setTxStatus] = useState<TxStatus>({ state: "idle" });
   const [sdkActive] = useState(isSdkReady);
+  // Resolved GuildCraft character id for the active NPC
+  const [resolvedCharId, setResolvedCharId] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Resolve character id by name whenever activeNpcName changes ──────
+  useEffect(() => {
+    setResolvedCharId(null);
+    setWalletState(null);
+    if (!activeNpcName || !sdkActive) return;
+
+    getCharacterByName(activeNpcName).then((char) => {
+      if (char) {
+        setResolvedCharId(char.id);
+      } else {
+        console.warn(
+          `[HUD] No character found for name "${activeNpcName}" — wallet panel disabled.`
+        );
+      }
+    });
+  }, [activeNpcName, sdkActive]);
 
   // ── Wallet polling ────────────────────────────────────────────────────
   const fetchBalances = useCallback(async () => {
-    if (!activeNpc || !sdkActive) return;
+    if (!resolvedCharId) return;
     const client = getClient();
     if (!client) return;
 
     try {
       setWalletLoading(true);
-      const data = await client.getWalletBalances(activeNpc as string);
+      const data = await client.getWalletBalances(resolvedCharId);
       setWalletState({
         walletAddress: data.walletAddress,
         native: data.native,
@@ -62,21 +108,18 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
     } finally {
       setWalletLoading(false);
     }
-  }, [activeNpc, sdkActive]);
+  }, [resolvedCharId]);
 
   useEffect(() => {
-    if (!activeNpc || !sdkActive) {
-      setWalletState(null);
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      return;
-    }
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (!resolvedCharId) return;
 
-    fetchBalances();
-    intervalRef.current = setInterval(fetchBalances, 10_000);
+    void fetchBalances();
+    intervalRef.current = setInterval(() => void fetchBalances(), 10_000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [activeNpc, sdkActive, fetchBalances]);
+  }, [resolvedCharId, fetchBalances]);
 
   // Reset tx status when trade changes
   useEffect(() => {
@@ -85,35 +128,27 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
 
   // ── Trade execution ───────────────────────────────────────────────────
   const executeTrade = useCallback(async () => {
-    if (!activeNpc || !pendingTrade) return;
+    if (!resolvedCharId || !pendingTrade) return;
     const client = getClient();
     if (!client) return;
 
     setTxStatus({ state: "pending" });
-
     try {
-      const result = await client.executeTransaction(activeNpc as string, pendingTrade);
-      setTxStatus({
-        state: "success",
-        txHash: result.txHash,
-        mode: result.mode,
-      });
-      // Refresh balances after successful trade
-      setTimeout(fetchBalances, 2000);
+      const result = await client.executeTransaction(
+        resolvedCharId,
+        pendingTrade
+      );
+      setTxStatus({ state: "success", txHash: result.txHash, mode: result.mode });
+      // Refresh balances 2 s after the tx lands
+      setTimeout(() => void fetchBalances(), 2000);
       onTradeExecuted?.();
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Transaction failed";
+      const msg = err instanceof Error ? err.message : "Transaction failed";
       setTxStatus({ state: "error", message: msg });
     }
-  }, [activeNpc, pendingTrade, fetchBalances, onTradeExecuted]);
+  }, [resolvedCharId, pendingTrade, fetchBalances, onTradeExecuted]);
 
-  // ── Rendering helpers ─────────────────────────────────────────────────
-  const npcColors: Record<string, string> = {
-    scrap:    "#ff6600",
-    cipher:   "#00ffcc",
-    enforcer: "#ff0066",
-  };
+  const npcColor = activeNpc ? (NPC_COLORS[activeNpc] ?? "#00ffff") : "#00ffff";
 
   return (
     <>
@@ -122,11 +157,14 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
         className="absolute top-4 left-4 z-10 text-xs select-none"
         style={{ fontFamily: "monospace" }}
       >
-        <div className="mb-2 flex items-center gap-2" style={{ color: "#00ffff", letterSpacing: 3 }}>
+        <div
+          className="mb-2 flex items-center gap-2"
+          style={{ color: "#00ffff", letterSpacing: 3 }}
+        >
           NEOCITY-7
           {sdkActive && (
             <span
-              className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded"
               style={{
                 background: "rgba(0,255,255,0.08)",
                 border: "1px solid rgba(0,255,255,0.2)",
@@ -156,60 +194,57 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
         </div>
       </div>
 
-      {/* ── Top-right: NPC legend + wallet panel ───────────────────── */}
+      {/* ── Top-right: NPC legend + wallet + trade panel ───────────── */}
       <div
         className="absolute top-4 right-4 z-10 text-xs select-none"
         style={{ fontFamily: "monospace" }}
       >
         {/* NPC legend */}
         <div style={{ color: "#334466" }}>
-          {["scrap", "cipher", "enforcer"].map((id) => (
+          {(["scrap", "cipher", "enforcer"] as const).map((id, idx) => (
             <div key={id} className="flex items-center gap-2 mb-1">
               <div
                 className="w-2 h-2 rounded-full animate-pulse"
                 style={{
-                  background: npcColors[id],
-                  animationDelay: id === "cipher" ? "0.5s" : id === "enforcer" ? "1s" : "0s",
+                  background: NPC_COLORS[id],
+                  animationDelay: `${idx * 0.5}s`,
                 }}
               />
-              <span style={{ color: npcColors[id] }}>
-                {id.toUpperCase()}
-              </span>
+              <span style={{ color: NPC_COLORS[id] }}>{id.toUpperCase()}</span>
               <span>
                 ·{" "}
                 {id === "scrap"
                   ? "The Scavenger"
                   : id === "cipher"
-                  ? "The Crafter"
-                  : "The Rival"}
+                    ? "The Crafter"
+                    : "The Rival"}
               </span>
             </div>
           ))}
         </div>
 
-        {/* Wallet panel — only visible when NPC is active and SDK is live */}
+        {/* Wallet panel — only when SDK is live and character resolved */}
         {activeNpc && sdkActive && (
           <div
             className="mt-3 rounded p-3 space-y-1"
             style={{
               background: "rgba(5,5,15,0.92)",
-              border: `1px solid ${npcColors[activeNpc] ?? "#00ffff"}44`,
-              boxShadow: `0 0 12px ${npcColors[activeNpc] ?? "#00ffff"}11`,
+              border: `1px solid ${npcColor}44`,
+              boxShadow: `0 0 12px ${npcColor}11`,
               minWidth: "180px",
             }}
           >
             <div
               className="text-xs font-bold flex items-center justify-between gap-2 mb-2"
-              style={{ color: npcColors[activeNpc] ?? "#00ffff", letterSpacing: 2 }}
+              style={{ color: npcColor, letterSpacing: 2 }}
             >
               TARGET UPLINK
               <button
-                onClick={fetchBalances}
-                disabled={walletLoading}
+                onClick={() => void fetchBalances()}
+                disabled={walletLoading || !resolvedCharId}
                 style={{ color: "#445566" }}
                 onMouseEnter={(e) =>
-                  ((e.currentTarget as HTMLElement).style.color =
-                    npcColors[activeNpc] ?? "#00ffff")
+                  ((e.currentTarget as HTMLElement).style.color = npcColor)
                 }
                 onMouseLeave={(e) =>
                   ((e.currentTarget as HTMLElement).style.color = "#445566")
@@ -222,10 +257,23 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
               </button>
             </div>
 
-            {walletState ? (
+            {!resolvedCharId && (
+              <div
+                className="flex items-center gap-2 text-xs"
+                style={{ color: "#445566" }}
+              >
+                <Loader2 size={10} className="animate-spin" />
+                resolving…
+              </div>
+            )}
+
+            {resolvedCharId && walletState && (
               <>
-                <div style={{ color: "#334455" }} className="text-xs truncate">
-                  {walletState.walletAddress.slice(0, 6)}...
+                <div
+                  className="text-xs truncate"
+                  style={{ color: "#334455" }}
+                >
+                  {walletState.walletAddress.slice(0, 6)}…
                   {walletState.walletAddress.slice(-4)}
                 </div>
                 <div style={{ color: "#aaccdd" }}>
@@ -237,24 +285,22 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
                 {walletState.tokens.map((t) => (
                   <div key={t.address} style={{ color: "#aaccdd" }}>
                     {t.symbol}:{" "}
-                    <span style={{ color: "#fff" }}>{t.balanceFormatted}</span>
+                    <span style={{ color: "#fff" }}>
+                      {t.balanceFormatted}
+                    </span>
                   </div>
                 ))}
-                <div style={{ color: "#223344", fontSize: "9px" }} className="mt-1">
+                <div
+                  style={{ color: "#223344", fontSize: "9px" }}
+                  className="mt-1"
+                >
                   updated {new Date(walletState.fetchedAt).toLocaleTimeString()}
                 </div>
               </>
-            ) : (
-              <div
-                className="flex items-center gap-2"
-                style={{ color: "#445566" }}
-              >
-                {walletLoading ? (
-                  <><Loader2 size={10} className="animate-spin" /> scanning...</>
-                ) : (
-                  "no data"
-                )}
-              </div>
+            )}
+
+            {resolvedCharId && !walletState && !walletLoading && (
+              <div style={{ color: "#445566" }}>no data</div>
             )}
           </div>
         )}
@@ -278,7 +324,10 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
               TRADE PROPOSAL
             </div>
 
-            <div style={{ color: "#aaccdd" }} className="text-xs space-y-0.5 mb-3">
+            <div
+              className="text-xs space-y-0.5 mb-3"
+              style={{ color: "#aaccdd" }}
+            >
               <div>
                 ITEM:{" "}
                 <span style={{ color: "#fff" }}>{pendingTrade.item}</span>
@@ -295,24 +344,29 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
 
             {txStatus.state === "idle" && (
               <button
-                onClick={executeTrade}
+                onClick={() => void executeTrade()}
+                disabled={!resolvedCharId}
                 className="w-full text-xs py-1.5 px-2 rounded font-bold tracking-widest transition-all"
                 style={{
-                  background: "rgba(255,200,0,0.15)",
+                  background: resolvedCharId
+                    ? "rgba(255,200,0,0.15)"
+                    : "rgba(255,200,0,0.05)",
                   border: "1px solid rgba(255,200,0,0.5)",
-                  color: "#ffcc00",
-                  cursor: "pointer",
+                  color: resolvedCharId ? "#ffcc00" : "#66550088",
+                  cursor: resolvedCharId ? "pointer" : "not-allowed",
                 }}
-                onMouseEnter={(e) =>
-                  ((e.currentTarget as HTMLElement).style.background =
-                    "rgba(255,200,0,0.25)")
-                }
-                onMouseLeave={(e) =>
-                  ((e.currentTarget as HTMLElement).style.background =
-                    "rgba(255,200,0,0.15)")
-                }
+                onMouseEnter={(e) => {
+                  if (resolvedCharId)
+                    (e.currentTarget as HTMLElement).style.background =
+                      "rgba(255,200,0,0.25)";
+                }}
+                onMouseLeave={(e) => {
+                  if (resolvedCharId)
+                    (e.currentTarget as HTMLElement).style.background =
+                      "rgba(255,200,0,0.15)";
+                }}
               >
-                SIGN & EXECUTE
+                SIGN &amp; EXECUTE
               </button>
             )}
 
@@ -326,7 +380,7 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
                 }}
               >
                 <Loader2 size={10} className="animate-spin" />
-                broadcasting...
+                broadcasting…
               </div>
             )}
 
@@ -341,14 +395,17 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
                   }}
                 >
                   <CheckCircle size={10} />
-                  {txStatus.mode === "sponsored" ? "GASLESS SUCCESS" : "SUCCESS"}
+                  {txStatus.mode === "sponsored"
+                    ? "GASLESS SUCCESS"
+                    : "SUCCESS"}
                 </div>
                 {txStatus.txHash && (
                   <div
                     className="text-xs truncate text-center"
                     style={{ color: "#334455", fontSize: "9px" }}
                   >
-                    {txStatus.txHash.slice(0, 10)}...{txStatus.txHash.slice(-6)}
+                    {txStatus.txHash.slice(0, 10)}…
+                    {txStatus.txHash.slice(-6)}
                   </div>
                 )}
               </div>
@@ -371,7 +428,7 @@ export function HUD({ activeNpc, pendingTrade, onTradeExecuted }: HUDProps) {
         )}
       </div>
 
-      {/* ── Bottom center: district label ───────────────────────────── */}
+      {/* ── Bottom: district label ──────────────────────────────────── */}
       <div
         className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 text-xs select-none"
         style={{ fontFamily: "monospace", color: "#1a2233" }}

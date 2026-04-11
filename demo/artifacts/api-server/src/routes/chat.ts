@@ -1,49 +1,94 @@
 // artifacts/api-server/src/routes/chat.ts
 //
-// This route is the local fallback when the frontend SDK is not configured.
-// If GC_API_KEY is set in the server environment, it will use the real SDK
-// to proxy the chat request. Otherwise it returns canned fallback lines.
+// Local fallback chat route.  When GC_API_KEY is set in the server
+// environment the route proxies the request through the real GuildCraft SDK,
+// looking up the character BY NAME (not by hardcoded UUID).
+// Without the env var it returns canned fallback lines.
 
 import { Router } from "express";
 
 const router = Router();
 
 // ---------------------------------------------------------------------------
-// Optional SDK integration
-// When GC_API_KEY is set in the server env, use the real GuildCraft SDK
+// Optional SDK – loaded lazily when GC_API_KEY is present
 // ---------------------------------------------------------------------------
-let gcClient: {
-  chat: (characterId: string, message: string) => Promise<{
-    success: boolean;
-    response: string;
-    tradeIntent?: { item: string; price: number; currency: string };
-  }>;
-} | null = null;
+type GcCharacter = { id: string; name: string };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let gcClient: any | null = null;
+/** Lowercase name → character (populated on first request) */
+const characterCache = new Map<string, GcCharacter>();
+let cacheLoaded = false;
 
-// NOTE: The server no longer needs a hardcoded NPC UUID mapping. The
-// frontend will pass semantic NPC names ("scrap", "cipher", "enforcer")
-// directly and the SDK / backend will resolve them per-project.
-
-// Dynamically import SDK only when API key is present
-// (SDK is a CJS package installed at server level separately if needed)
 async function initSdk() {
-  const apiKey = process.env["GC_API_KEY"];
-  const baseUrl = process.env["GC_BASE_URL"] ?? "http://localhost:3000/api";
+  // Prefer the runtime env var. If it's not present (common in local demos)
+  // attempt to read the neighbouring neocity-game .env file so the demo
+  // developer can place their key there once and both processes pick it up.
+  let apiKey = process.env["GC_API_KEY"];
+  let baseUrl = process.env["GC_BASE_URL"] ?? "http://localhost:3000/api";
+
+  if (!apiKey) {
+    try {
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const candidate = path.resolve(process.cwd(), "../neocity-game/.env");
+      if (fs.existsSync(candidate)) {
+        const data = fs.readFileSync(candidate, "utf8");
+        for (const line of data.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) continue;
+          const eq = trimmed.indexOf("=");
+          if (eq === -1) continue;
+          const key = trimmed.slice(0, eq).trim();
+          const val = trimmed.slice(eq + 1).trim();
+          if (key === "GC_API_KEY" && !apiKey) apiKey = val;
+          if (key === "GC_BASE_URL" && (!process.env["GC_BASE_URL"])) baseUrl = val;
+        }
+      }
+    } catch (err) {
+      // non-fatal — we'll just bail below if no key is set
+    }
+  }
+
   if (!apiKey || !apiKey.startsWith("gc_live_")) return;
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { GuildCraftClient } = require("../../../../../frontend/sdk/index");
+    const { GuildCraftClient } = require("@adarsh23/guildcraft-sdk");
     gcClient = new GuildCraftClient(apiKey, baseUrl);
-    console.log("[chat] GuildCraft SDK initialized for server-side proxying");
+    console.log("[chat] GuildCraft SDK initialised (server-side proxy)");
   } catch (err) {
-    console.warn("[chat] GuildCraft SDK not available for server-side use:", err);
+    console.warn("[chat] GuildCraft SDK not available for server proxy:", err);
   }
 }
-initSdk().catch(() => {});
+void initSdk();
+
+/** Load all characters into the server-side cache (once). */
+async function ensureCharacterCache(): Promise<void> {
+  if (cacheLoaded || !gcClient) return;
+  try {
+    const chars: GcCharacter[] = await gcClient.getCharacters();
+    for (const c of chars) {
+      characterCache.set(c.name.toLowerCase(), c);
+    }
+    cacheLoaded = true;
+    console.log(
+      `[chat] Character cache loaded: ${[...characterCache.keys()].join(", ")}`
+    );
+  } catch (err) {
+    console.warn("[chat] Failed to load character cache:", err);
+  }
+}
+
+/** Return the character whose name matches (case-insensitive). */
+async function findCharacterByName(
+  name: string
+): Promise<GcCharacter | null> {
+  await ensureCharacterCache();
+  return characterCache.get(name.toLowerCase()) ?? null;
+}
 
 // ---------------------------------------------------------------------------
-// Fallback lines (used when SDK is unavailable)
+// Fallback lines
 // ---------------------------------------------------------------------------
 const NPC_FALLBACK_LINES: Record<string, string[]> = {
   scrap: [
@@ -56,7 +101,7 @@ const NPC_FALLBACK_LINES: Record<string, string[]> = {
   cipher: [
     "Transaction parameters received. Processing fee: 0.05 ETH. Confirm to proceed.",
     "Your input lacks precision. Provide exact token quantities.",
-    "The Root Key mint requires 100 RAW tokens transferred to address 0xC1PH3R.",
+    "The Root Key mint requires 100 SCRP tokens. Confirm to proceed.",
     "Computation cycle: 2.3 seconds. Your request is in queue.",
     "Emotional appeals are inefficient. Speak in numbers.",
   ],
@@ -71,10 +116,19 @@ const NPC_FALLBACK_LINES: Record<string, string[]> = {
 
 // ---------------------------------------------------------------------------
 // POST /api/chat
+// Body: { npcId, npcName, message, systemPrompt?, history? }
+//
+//  npcId   — game-local key like "scrap"
+//  npcName — display name like "SCRAP" (used for GuildCraft lookup)
 // ---------------------------------------------------------------------------
 router.post("/chat", async (req, res) => {
-  const { npcId, message } = req.body as {
+  const {
+    npcId,
+    npcName,
+    message,
+  } = req.body as {
     npcId?: string;
+    npcName?: string;
     message?: string;
     systemPrompt?: string;
     history?: Array<{ role: string; content: string }>;
@@ -84,34 +138,39 @@ router.post("/chat", async (req, res) => {
     return res.status(400).json({ error: "Missing npcId or message" });
   }
 
-  // ── Try SDK proxy ────────────────────────────────────────────────────
-  if (gcClient) {
-    try {
-      const result = await gcClient.chat(npcId, message);
-      return res.json({
-        response: result.response,
-        tradeIntent: result.tradeIntent,
-        npcId,
-        timestamp: new Date().toISOString(),
-        source: "sdk",
-      });
-    } catch (err) {
-      console.error("[chat] SDK proxy error, falling back:", err);
-      // Fall through to local fallback
-    }
+  // Require server-side SDK to be configured. Do not fall back to canned
+  // lines here — the demo should surface errors so the developer notices
+  // missing configuration rather than silently returning mock output.
+  if (!gcClient) {
+    return res.status(500).json({
+      error:
+        "Server-side GuildCraft SDK is not configured. Set GC_API_KEY and GC_BASE_URL in the api-server environment.",
+    });
   }
 
-  // ── Local fallback ───────────────────────────────────────────────────
-  const fallbackLines = NPC_FALLBACK_LINES[npcId] ?? ["..."];
-  const fallbackResponse =
-    fallbackLines[Math.floor(Math.random() * fallbackLines.length)];
+  // Lookup the character by name (case-insensitive) and proxy the chat
+  // request through the GuildCraft SDK. If the character is not found,
+  // return 404 so callers can surface an explicit error.
+  try {
+    const char = npcName ? await findCharacterByName(npcName) : null;
+    if (!char) {
+      return res.status(404).json({ error: `Character '${npcName ?? npcId}' not found` });
+    }
 
-  return res.json({
-    response: fallbackResponse,
-    npcId,
-    timestamp: new Date().toISOString(),
-    source: "fallback",
-  });
+    const result = await gcClient.chat(char.id, message);
+    return res.json({
+      response: result.response,
+      tradeIntent: result.tradeIntent ?? null,
+      npcId,
+      characterId: char.id,
+      characterName: char.name,
+      timestamp: new Date().toISOString(),
+      source: "sdk",
+    });
+  } catch (err) {
+    console.error('[chat] SDK proxy error:', err);
+    return res.status(502).json({ error: 'GuildCraft SDK proxy error', details: String(err) });
+  }
 });
 
 export default router;

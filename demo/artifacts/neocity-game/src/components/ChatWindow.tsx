@@ -1,17 +1,16 @@
 // src/components/ChatWindow.tsx
 import { useState, useRef, useEffect, useCallback } from "react";
 import { X, Send, Zap, Loader2 } from "lucide-react";
-import { getClient, isSdkReady } from "@/lib/sdk";
+import {
+  getClient,
+  getCharacterByName,
+  isSdkReady,
+  loadCharacters,
+} from "@/lib/sdk";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-interface Message {
-  role: "user" | "npc" | "system";
-  text: string;
-  timestamp: Date;
-}
-
 export interface TradeIntent {
   item: string;
   price: number;
@@ -19,18 +18,26 @@ export interface TradeIntent {
 }
 
 export interface ChatWindowProps {
+  /** Game-local NPC identifier, e.g. "scrap" */
   npcId: string;
+  /** Display name shown in the chat header, e.g. "SCRAP" */
   npcName: string;
   onClose: () => void;
   onTradeIntent?: (trade: TradeIntent) => void;
+}
+
+interface Message {
+  role: "user" | "npc" | "system";
+  text: string;
+  timestamp: Date;
 }
 
 // ---------------------------------------------------------------------------
 // Static NPC metadata
 // ---------------------------------------------------------------------------
 const NPC_COLORS: Record<string, string> = {
-  scrap:    "#ff6600",
-  cipher:   "#00ffcc",
+  scrap: "#ff6600",
+  cipher: "#00ffcc",
   enforcer: "#ff0066",
 };
 
@@ -39,8 +46,15 @@ const NPC_DESCRIPTIONS: Record<string, string> = {
     "SCRAP is a paranoid scavenger. He has rare materials but doesn't trust easily.",
   cipher:
     "CIPHER is a cold, precise crafter. She speaks in calculations and requires payment upfront.",
+  enforcer: "THE ENFORCER is your rival. He's watching every move you make.",
+};
+
+const NPC_GREETINGS: Record<string, string> = {
+  scrap: "...you got three seconds before I raise my hood. What do you want.",
+  cipher:
+    "Connection established. State your purpose and transfer amount. I don't do small talk.",
   enforcer:
-    "THE ENFORCER is your rival. He's watching every move you make.",
+    "Heh. You're still chasing the Root Key? I'm already three trades ahead of you. Good luck.",
 };
 
 const SYSTEM_PROMPTS: Record<string, string> = {
@@ -49,13 +63,13 @@ const SYSTEM_PROMPTS: Record<string, string> = {
     "You deal in rare ERC-20 materials. You are suspicious of everyone but can be won over. " +
     "Speak in short, terse sentences. Use slang. Never give information freely. " +
     "React to aggression by raising prices. React to empathy by warming up slightly. " +
-    "If a player asks to buy materials, respond with a tradeIntent JSON block at the end like: " +
+    "If a player negotiates a trade, embed this at the end of your reply: " +
     '[[TRADE:{"item":"SCRP","price":50,"currency":"KITE"}]]',
   cipher:
     "You are CIPHER, a precise AI-augmented crafter. " +
     "You speak in cold, calculated terms. You charge heavy fees. " +
-    "You require raw material tokens before crafting the Root Key NFT. " +
-    "If player has enough SCRP tokens, respond with a tradeIntent like: " +
+    "You require 100 SCRP tokens before crafting the Root Key NFT. " +
+    "When the player agrees to pay, embed: " +
     '[[TRADE:{"item":"ROOT_KEY_NFT","price":100,"currency":"SCRP"}]]',
   enforcer:
     "You are THE ENFORCER, the player's main rival. " +
@@ -63,57 +77,22 @@ const SYSTEM_PROMPTS: Record<string, string> = {
     "Hint that you are always one step ahead. Use intimidation.",
 };
 
-const NPC_GREETINGS: Record<string, string> = {
-  scrap:
-    "...you got three seconds before I raise my hood. What do you want.",
-  cipher:
-    "Connection established. State your purpose and transfer amount. I don't do small talk.",
-  enforcer:
-    "Heh. You're still chasing the Root Key? I'm already three trades ahead of you. Good luck.",
-};
-
-// ---------------------------------------------------------------------------
-// Fallbacks (used when SDK is not configured or request fails)
-// ---------------------------------------------------------------------------
-const FALLBACK_RESPONSES: Record<string, string[]> = {
-  scrap: [
-    "...don't like repeating myself. You want the goods or not?",
-    "Quiet. I'm thinking.",
-    "Watch your tone. I got eyes everywhere.",
-    "Maybe. Maybe not. Depends on what you got.",
-  ],
-  cipher: [
-    "Insufficient data. Elaborate.",
-    "Transaction pending. Awaiting confirmation.",
-    "Computation in progress. Stand by.",
-    "Your parameters are unclear. Be precise.",
-  ],
-  enforcer: [
-    "Hah. You think that matters?",
-    "Keep talking. I've already made my move.",
-    "You're running out of time. I'm not.",
-    "Cute strategy. Shame it won't work.",
-  ],
-};
-
-function randomFallback(npcId: string): string {
-  const opts = FALLBACK_RESPONSES[npcId] ?? ["..."];
-  return opts[Math.floor(Math.random() * opts.length)];
-}
+// Note: demo fallbacks removed — chat requires the SDK and a resolved character.
+// If the SDK or character is not available, the UI will show a lookup/error message.
 
 // ---------------------------------------------------------------------------
 // Trade intent parser
-// Parses [[TRADE:{...}]] markers that the LLM embeds in its response
+// The LLM embeds [[TRADE:{...}]] in its response; we strip and parse it.
 // ---------------------------------------------------------------------------
-function extractTradeIntent(
-  text: string
-): { clean: string; trade: TradeIntent | null } {
+function extractTradeIntent(text: string): {
+  clean: string;
+  trade: TradeIntent | null;
+} {
   const match = text.match(/\[\[TRADE:(\{.*?\})\]\]/s);
   if (!match) return { clean: text, trade: null };
   try {
     const trade = JSON.parse(match[1]) as TradeIntent;
-    const clean = text.replace(match[0], "").trim();
-    return { clean, trade };
+    return { clean: text.replace(match[0], "").trim(), trade };
   } catch {
     return { clean: text, trade: null };
   }
@@ -138,13 +117,82 @@ export function ChatWindow({
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [sdkActive] = useState(isSdkReady);
   const [streamBuffer, setStreamBuffer] = useState("");
+  const [sdkActive, setSdkActive] = useState<boolean>(() => isSdkReady());
+  const [characterId, setCharacterId] = useState<string | null>(null);
+  const [charLookupError, setCharLookupError] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const abortRef = useRef<boolean>(false);
+  const abortRef = useRef(false);
 
   const npcColor = NPC_COLORS[npcId] ?? "#00ffff";
+
+  // ── Resolve character by name on mount ──────────────────────────────
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      if (!isSdkReady()) return;
+
+      try {
+        const cache = await loadCharacters();
+
+        if (cache.size === 0) {
+          // No characters cached — show helpful message and allow further attempts
+          setCharLookupError(
+            "⚠️ No characters found in GuildCraft. " +
+              "Make sure you have created characters matching the NPC names."
+          );
+        }
+
+        // Try several lookups to be resilient:
+        // 1) Display name (npcName)
+        // 2) Game-local id (npcId)
+        // 3) Direct fetch by id via the client (if available)
+        let char = await getCharacterByName(npcName);
+        if (!char) char = await getCharacterByName(npcId);
+
+        if (!char) {
+          const client = getClient();
+          if (client?.getCharacter) {
+            try {
+              // If npcId happens to be a real character id, this will resolve it
+              const fetched = await client.getCharacter(npcId);
+              if (fetched) char = fetched as any;
+            } catch (err) {
+              // ignore — we'll surface a helpful error below
+            }
+          }
+        }
+
+        if (!mounted) return;
+
+        if (char) {
+          setCharacterId(char.id);
+          console.log(`[ChatWindow] Resolved "${npcName}" → character id: ${char.id}`);
+          setCharLookupError(null);
+        } else {
+          const found = cache.size ? [...cache.keys()].join(", ") : "(none)";
+          const msg =
+            `⚠️ No GuildCraft character found with name "${npcName}".` +
+            ` Available characters: ${found}. ` +
+            "Create a character with this exact name in your GuildCraft dashboard.";
+          setCharLookupError(msg);
+          console.warn("[ChatWindow]", msg);
+        }
+      } catch (err) {
+        console.error("[ChatWindow] character resolution error:", err);
+        if (mounted) {
+          setCharLookupError("⚠️ Error loading characters — see console for details.");
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [npcName, npcId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -157,11 +205,16 @@ export function ChatWindow({
     };
   }, []);
 
-  // ── SDK streaming chat ──────────────────────────────────────────────────
+  // Keep `sdkActive` in sync in case runtime env/localStorage was set
+  useEffect(() => {
+    setSdkActive(isSdkReady());
+  }, []);
+
+  // ── SDK streaming chat ──────────────────────────────────────────────
   const sendViaSdk = useCallback(
-    async (userText: string) => {
+    async (userText: string): Promise<boolean> => {
       const client = getClient();
-      if (!client) return false;
+      if (!client || !characterId) return false;
 
       setIsStreaming(true);
       setStreamBuffer("");
@@ -169,7 +222,16 @@ export function ChatWindow({
 
       let fullText = "";
       try {
-        for await (const event of client.chatStream(npcId, userText)) {
+        for await (const event of client.chatStream(
+          characterId,
+          userText,
+          { npcName: npcName, characterId }
+        ) as AsyncIterable<{
+          type: string;
+          delta?: string;
+          error?: string;
+          final?: { text: string; action?: string; tradeIntent?: TradeIntent };
+        }>) {
           if (abortRef.current) break;
 
           if (event.type === "text_delta" && event.delta) {
@@ -179,9 +241,8 @@ export function ChatWindow({
 
           if (event.type === "done" && event.final) {
             fullText = event.final.text ?? fullText;
-            // Check for trade intent from SDK-level extraction
             if (event.final.tradeIntent) {
-              onTradeIntent?.(event.final.tradeIntent as TradeIntent);
+              onTradeIntent?.(event.final.tradeIntent);
             }
           }
 
@@ -191,65 +252,32 @@ export function ChatWindow({
         }
       } catch (err) {
         console.error("[ChatWindow] SDK stream error:", err);
-        // Fall through to local fallback
         return false;
       } finally {
         setIsStreaming(false);
         setStreamBuffer("");
       }
 
-      // Also check text for embedded [[TRADE:...]] markers
+      // Also check text body for embedded [[TRADE:...]] markers
       const { clean, trade } = extractTradeIntent(fullText);
       if (trade) onTradeIntent?.(trade);
 
       setMessages((prev) => [
         ...prev,
-        { role: "npc", text: clean || fullText, timestamp: new Date() },
+        {
+          role: "npc",
+          text: clean || fullText || "[no response from SDK]",
+          timestamp: new Date(),
+        },
       ]);
       return true;
     },
-    [npcId, onTradeIntent]
+    [characterId, npcId, onTradeIntent]
   );
 
-  // ── Local API fallback ──────────────────────────────────────────────────
-  const sendViaLocalApi = useCallback(
-    async (userText: string, history: Message[]) => {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          npcName: npcId,
-          message: userText,
-          systemPrompt: SYSTEM_PROMPTS[npcId],
-          history: history.map((m) => ({
-            role: m.role === "user" ? "user" : "assistant",
-            content: m.text,
-          })),
-        }),
-      });
-      if (!res.ok) throw new Error(`API ${res.status}`);
-      const data = (await res.json()) as {
-        response?: string;
-        message?: string;
-        tradeIntent?: TradeIntent;
-      };
-      const text = data.response ?? data.message ?? "...";
-      if (data.tradeIntent) onTradeIntent?.(data.tradeIntent);
-      const { clean, trade } = extractTradeIntent(text);
-      if (trade) onTradeIntent?.(trade);
-      return clean || text;
-    },
-    [npcId, onTradeIntent]
-  );
+  // NOTE: local API fallbacks removed — demo uses the GuildCraft SDK exclusively.
 
-  function addSystemMessage(text: string) {
-    setMessages((prev) => [
-      ...prev,
-      { role: "system", text, timestamp: new Date() },
-    ]);
-  }
-
-  // ── Main send handler ───────────────────────────────────────────────────
+  // ── Main send handler ───────────────────────────────────────────────
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || isThinking || isStreaming) return;
@@ -260,26 +288,26 @@ export function ChatWindow({
     setIsThinking(true);
 
     try {
-      // Try SDK first (streaming)
-      if (sdkActive) {
-        const ok = await sendViaSdk(text);
-        if (ok) return;
-      }
-
-      // Fallback to local API server
-      const currentMessages = [...messages, userMsg];
-      try {
-        const reply = await sendViaLocalApi(text, currentMessages);
+      // Require SDK + resolved character for chat in the demo.
+      if (!isSdkReady() || !characterId) {
+        const errMsg = isSdkReady()
+          ? `No character named "${npcName}" found. Create a character with this name in GuildCraft.`
+          : `GuildCraft SDK not configured. Set VITE_GC_API_KEY in demo/.env to enable live chat.`;
         setMessages((prev) => [
           ...prev,
-          { role: "npc", text: reply, timestamp: new Date() },
+          { role: "system", text: errMsg, timestamp: new Date() },
         ]);
-      } catch {
+        return;
+      }
+
+      // Use SDK streaming chat (await stream completion)
+      const ok = await sendViaSdk(text);
+      if (!ok) {
         setMessages((prev) => [
           ...prev,
           {
             role: "npc",
-            text: randomFallback(npcId),
+            text: "[SDK chat failed — check console for details]",
             timestamp: new Date(),
           },
         ]);
@@ -292,16 +320,25 @@ export function ChatWindow({
     isThinking,
     isStreaming,
     sdkActive,
+    characterId,
     sendViaSdk,
-    sendViaLocalApi,
+    // sendViaLocalApi,
     messages,
     npcId,
   ]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    // Prevent global/game key handlers from intercepting typing keys
+    e.stopPropagation();
+    try {
+      // stopImmediatePropagation exists on the native KeyboardEvent
+      (e.nativeEvent as unknown as KeyboardEvent).stopImmediatePropagation?.();
+    } catch (err) {
+      // ignore
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      void sendMessage();
     }
     if (e.key === "Escape") onClose();
   }
@@ -318,7 +355,7 @@ export function ChatWindow({
         fontFamily: "monospace",
       }}
     >
-      {/* Header */}
+      {/* ── Header ─────────────────────────────────────────────────── */}
       <div
         className="flex items-center justify-between px-4 py-3 flex-shrink-0"
         style={{
@@ -332,7 +369,7 @@ export function ChatWindow({
             style={{ color: npcColor }}
           >
             {npcName}
-            {sdkActive && (
+            {sdkActive && characterId && (
               <span
                 className="text-xs px-1.5 py-0.5 rounded"
                 style={{
@@ -344,6 +381,20 @@ export function ChatWindow({
                 }}
               >
                 SDK LIVE
+              </span>
+            )}
+            {sdkActive && !characterId && !charLookupError && (
+              <span
+                className="text-xs px-1.5 py-0.5 rounded flex items-center gap-1"
+                style={{
+                  background: "rgba(255,200,0,0.1)",
+                  border: "1px solid rgba(255,200,0,0.3)",
+                  color: "#ffcc00",
+                  fontSize: "9px",
+                }}
+              >
+                <Loader2 size={7} className="animate-spin" />
+                RESOLVING
               </span>
             )}
           </div>
@@ -366,8 +417,22 @@ export function ChatWindow({
         </button>
       </div>
 
-      {/* Messages */}
+      {/* ── Messages ───────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin min-h-0">
+        {/* Character lookup warning */}
+        {charLookupError && (
+          <div
+            className="text-xs px-3 py-2 rounded leading-relaxed"
+            style={{
+              background: "rgba(255,200,0,0.06)",
+              border: "1px solid rgba(255,200,0,0.2)",
+              color: "#ccaa44",
+            }}
+          >
+            {charLookupError}
+          </div>
+        )}
+
         {messages.map((msg, i) => (
           <div
             key={i}
@@ -375,8 +440,8 @@ export function ChatWindow({
               msg.role === "user"
                 ? "items-end"
                 : msg.role === "system"
-                ? "items-center"
-                : "items-start"
+                  ? "items-center"
+                  : "items-start"
             }`}
           >
             {msg.role !== "system" && (
@@ -394,18 +459,18 @@ export function ChatWindow({
                       color: "#aaddee",
                     }
                   : msg.role === "system"
-                  ? {
-                      background: "rgba(255,200,0,0.08)",
-                      border: "1px solid rgba(255,200,0,0.2)",
-                      color: "#ccaa44",
-                      fontSize: "10px",
-                      maxWidth: "95%",
-                    }
-                  : {
-                      background: `${npcColor}11`,
-                      border: `1px solid ${npcColor}33`,
-                      color: "#ccddee",
-                    }
+                    ? {
+                        background: "rgba(255,200,0,0.08)",
+                        border: "1px solid rgba(255,200,0,0.2)",
+                        color: "#ccaa44",
+                        fontSize: "10px",
+                        maxWidth: "95%",
+                      }
+                    : {
+                        background: `${npcColor}11`,
+                        border: `1px solid ${npcColor}33`,
+                        color: "#ccddee",
+                      }
               }
             >
               {msg.text}
@@ -428,7 +493,10 @@ export function ChatWindow({
               }}
             >
               {streamBuffer}
-              <span className="animate-pulse ml-1" style={{ color: npcColor }}>
+              <span
+                className="animate-pulse ml-0.5"
+                style={{ color: npcColor }}
+              >
                 ▋
               </span>
             </div>
@@ -447,7 +515,7 @@ export function ChatWindow({
               }}
             >
               <Loader2 size={10} className="animate-spin" />
-              <span>connecting...</span>
+              connecting...
             </div>
           </div>
         )}
@@ -455,7 +523,7 @@ export function ChatWindow({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
+      {/* ── Input ──────────────────────────────────────────────────── */}
       <div
         className="px-3 pb-3 pt-2 flex-shrink-0"
         style={{ borderTop: `1px solid ${npcColor}22` }}
@@ -473,13 +541,15 @@ export function ChatWindow({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={busy ? "waiting for response..." : "type your message..."}
+            placeholder={
+              busy ? "waiting for response..." : "type your message..."
+            }
             className="flex-1 bg-transparent text-xs outline-none"
             style={{ color: "#aaccdd", caretColor: npcColor }}
             disabled={busy}
           />
           <button
-            onClick={sendMessage}
+            onClick={() => void sendMessage()}
             disabled={!input.trim() || busy}
             style={{
               color: input.trim() && !busy ? npcColor : "#334455",
@@ -498,13 +568,13 @@ export function ChatWindow({
           <div className="text-xs" style={{ color: "#223344" }}>
             ESC to exit · ENTER to send
           </div>
-          {sdkActive && (
+          {sdkActive && characterId && (
             <div
               className="text-xs flex items-center gap-1"
               style={{ color: "#334455" }}
             >
               <Zap size={9} style={{ color: npcColor }} />
-              <span>streaming</span>
+              streaming
             </div>
           )}
         </div>

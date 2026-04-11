@@ -34,6 +34,8 @@ export class MainScene extends Phaser.Scene {
   }> = [];
   private promptGroup!: Phaser.GameObjects.Group;
   private paused = false;
+  private boundCloseChat?: (e: Event) => void;
+  private boundGameResume?: (e: Event) => void;
   private playerSpeed = 200;
   private physicsPlayer!: Phaser.Types.Physics.Arcade.GameObjectWithBody;
   private tilemap!: Phaser.GameObjects.Group;
@@ -44,8 +46,8 @@ export class MainScene extends Phaser.Scene {
   private playerDirection: "up" | "down" | "left" | "right" = "down";
   private npcData: NpcData[] = [
     {
-      id: "scrap",
-      name: "SCRAP",
+      id: "scraper",
+      name: "SCRAPER",
       x: 220,
       y: 200,
       color: 0xff6600,
@@ -97,12 +99,10 @@ export class MainScene extends Phaser.Scene {
     );
 
     this.promptGroup = this.add.group();
-
-    window.addEventListener("CLOSE_CHAT", this.handleCloseChat.bind(this));
-    window.addEventListener(
-      "GAME_RESUME",
-      this.handleGameResume.bind(this)
-    );
+    this.boundCloseChat = this.handleCloseChat.bind(this);
+    this.boundGameResume = this.handleGameResume.bind(this);
+    window.addEventListener("CLOSE_CHAT", this.boundCloseChat);
+    window.addEventListener("GAME_RESUME", this.boundGameResume);
   }
 
   private createCyberpunkMap(W: number, H: number) {
@@ -321,10 +321,24 @@ export class MainScene extends Phaser.Scene {
 
   private handleCloseChat() {
     this.paused = false;
+    try {
+      if (this.input && (this.input.keyboard as any)) {
+        (this.input.keyboard as any).enabled = true;
+      }
+    } catch (err) {
+      // ignore
+    }
   }
 
   private handleGameResume() {
     this.paused = false;
+    try {
+      if (this.input && (this.input.keyboard as any)) {
+        (this.input.keyboard as any).enabled = true;
+      }
+    } catch (err) {
+      // ignore
+    }
   }
 
   update() {
@@ -375,6 +389,13 @@ export class MainScene extends Phaser.Scene {
 
   private openChat(npcId: string, npcName: string) {
     this.paused = true;
+    try {
+      if (this.input && (this.input.keyboard as any)) {
+        (this.input.keyboard as any).enabled = false;
+      }
+    } catch (err) {
+      // ignore
+    }
     window.dispatchEvent(
       new CustomEvent("OPEN_CHAT", {
         detail: { npcId, npcName },
@@ -383,7 +404,11 @@ export class MainScene extends Phaser.Scene {
   }
 
   destroy() {
-    window.removeEventListener("CLOSE_CHAT", this.handleCloseChat.bind(this));
-    window.removeEventListener("GAME_RESUME", this.handleGameResume.bind(this));
+    if (this.boundCloseChat) {
+      window.removeEventListener("CLOSE_CHAT", this.boundCloseChat);
+    }
+    if (this.boundGameResume) {
+      window.removeEventListener("GAME_RESUME", this.boundGameResume);
+    }
   }
 }

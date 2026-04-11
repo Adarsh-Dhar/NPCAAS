@@ -174,10 +174,14 @@ class GuildCraftClient {
     if (!characterId) throw new GuildCraftError('characterId is required', 400, null)
     if (!message)     throw new GuildCraftError('message is required',     400, null)
     // Support both legacy characterId (UUID) and semantic npcName strings.
-    // Send both fields so the server can resolve by name when an API key/project is present.
+    // Accept an optional `opts` third parameter to explicitly provide `npcName`.
+    // Backwards compatible: if `opts` is omitted, existing behavior is preserved.
+    const opts = arguments[2] ?? {}
+    const npcName = opts.npcName ?? characterId
+    const charId = opts.characterId ?? characterId
     return this._request('/chat', {
       method: 'POST',
-      body: JSON.stringify({ npcName: characterId, characterId, message }),
+      body: JSON.stringify({ npcName, characterId: charId, message }),
     })
   }
 
@@ -198,11 +202,15 @@ class GuildCraftClient {
     if (!characterId) throw new GuildCraftError('characterId is required', 400, null)
     if (!message)     throw new GuildCraftError('message is required',     400, null)
 
+    const opts = arguments[2] ?? {}
+    const npcName = opts.npcName ?? characterId
+    const charId = opts.characterId ?? characterId
+
     const res = await fetch(`${this.baseUrl}/chat/stream`, {
       method: 'POST',
       headers: this._authHeaders(),
-      // Send both `npcName` and `characterId` for compatibility. Server will prefer npcName when available.
-      body: JSON.stringify({ npcName: characterId, characterId, message }),
+      // Send both `npcName` and `characterId` (prefer explicit `opts` when provided).
+      body: JSON.stringify({ npcName, characterId: charId, message }),
     })
 
     if (!res.ok) {
@@ -472,4 +480,8 @@ class GuildCraftClient {
   }
 }
 
-module.exports = { GuildCraftClient, GuildCraftError }
+// Support CommonJS `require()` in Node environments while avoiding
+// a ReferenceError in browser ESM modules (where `module` is undefined).
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { GuildCraftClient, GuildCraftError }
+}
