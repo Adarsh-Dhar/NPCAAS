@@ -16,6 +16,7 @@
 
 import { kiteAAProvider } from '@/lib/aa-sdk'
 import type { SponsoredTx } from '@/lib/aa-sdk'
+import { ethers } from 'ethers'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -28,7 +29,7 @@ export interface WriteTransactionInput {
   ownerId: string  // NPC owner string used at creation time
 }
 
-export type ExecutionMode = 'sponsored' | 'fallback'
+export type ExecutionMode = 'sponsored' | 'fallback' | 'server_bypass'
 
 export interface SponsoredExecutionResult {
   mode: ExecutionMode
@@ -98,6 +99,40 @@ export async function executeWriteTransaction(
     // Fallback: return a synthetic result so the UI can handle it gracefully.
     // In a real game client, this would prompt the player to sign the tx themselves.
     console.warn('[tx-orchestrator] Sponsored execution failed, using fallback:', reason)
+
+    // Dev bypass: if a server PRIVATE_KEY is configured, send a normal
+    // EOA transaction from the server wallet (temporary workaround while
+    // the bundler/paymaster is down). This moves funds on-chain and
+    // returns a real tx hash so the UI can proceed.
+    if (process.env.PRIVATE_KEY) {
+      try {
+        const RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
+        const provider = new ethers.JsonRpcProvider(RPC)
+        const serverWallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider)
+
+        const tx = await serverWallet.sendTransaction({
+          to: input.to,
+          value: input.value ? BigInt(input.value) : BigInt(0),
+          data: input.data ?? '0x',
+        })
+
+        console.info('[tx-orchestrator] Dev Bypass successful. Hash:', tx.hash)
+
+        // Do not block for a long time; await one confirmation if available
+        try { await tx.wait(1) } catch (_) { /* ignore wait errors */ }
+
+        return {
+          mode: 'server_bypass',
+          txHash: tx.hash,
+          userOpHash: undefined,
+          status: 'pending',
+          sponsored: false,
+        }
+      } catch (bypassErr) {
+        console.error('[tx-orchestrator] Dev Bypass failed:', bypassErr)
+        // fall through to the default synthetic fallback below
+      }
+    }
 
     return {
       mode: 'fallback',

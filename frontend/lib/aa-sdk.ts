@@ -37,6 +37,13 @@ const BUNDLER_FALLBACK = getEnv('KITE_AA_BUNDLER_FALLBACK_URL', 'https://bundler
 const CHAIN_ID   = Number(getEnv('KITE_AA_CHAIN_ID', '2368'))
 const PROVIDER   = 'gokite-aa-sdk'
 
+// Backwards compatibility: some setups set PAYMASTER_KEY instead of PRIVATE_KEY.
+// Ensure downstream code (and the bundled gokite-aa-sdk) can read a singular
+// `PRIVATE_KEY` env var when attempting direct EntryPoint submissions.
+if (!process.env.PRIVATE_KEY && process.env.PAYMASTER_KEY) {
+  process.env.PRIVATE_KEY = process.env.PAYMASTER_KEY
+}
+
 // ---------------------------------------------------------------------------
 // Deterministic per-NPC signer derivation
 //
@@ -232,7 +239,55 @@ export class KiteAAProvider {
                 const signature = await signFn(userOpHash)
                 userOp.signature = signature
 
-                const directTxHash = await sdk.sendUserOperationDirectly(signer.address, userOp)
+                  // Before submitting the tx for real, call the EntryPoint.handleOps
+                  // as a static call to capture any revert reason from the EVM.
+                  try {
+                    const entryPointAddr = (sdk as any).config.entryPoint
+                    const providerAny = (sdk as any).ethersProvider
+                    const serverPk = process.env.PRIVATE_KEY
+                    if (serverPk) {
+                      const serverWallet = new (ethers as any).Wallet(serverPk, providerAny)
+                      const entryPoint = new (ethers as any).Contract(
+                        entryPointAddr,
+                        ['function handleOps((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes)[] ops, address payable beneficiary) external'],
+                        serverWallet
+                      )
+
+                      const packedUserOp = [
+                        userOp.sender,
+                        userOp.nonce,
+                        userOp.initCode,
+                        userOp.callData,
+                        userOp.accountGasLimits,
+                        userOp.preVerificationGas,
+                        userOp.gasFees,
+                        userOp.paymasterAndData,
+                        userOp.signature,
+                      ]
+
+                      try {
+                        // Simulate the handleOps call using a raw eth_call so we can
+                        // capture any revert data (some providers expose it on the
+                        // thrown error as `.data`). Using `provider.call` avoids the
+                        // `callStatic` shaped API differences between ethers versions.
+                        const iface = entryPoint.interface
+                        const callData = iface.encodeFunctionData('handleOps', [[packedUserOp], serverWallet.address])
+                        try {
+                          const prov: any = providerAny
+                          await prov.call({ to: entryPointAddr, data: callData })
+                        } catch (callErr: any) {
+                          const raw = callErr?.data || callErr?.error?.data || callErr?.error?.body || callErr?.message || String(callErr)
+                          console.error('EntryPoint.handleOps static call reverted (raw):', raw)
+                        }
+                      } catch (staticErr) {
+                        console.error('EntryPoint.handleOps call simulation failed:', staticErr)
+                      }
+                    }
+                  } catch (staticErrOuter) {
+                    console.debug('callStatic check failed:', staticErrOuter instanceof Error ? staticErrOuter.message : String(staticErrOuter))
+                  }
+
+                  const directTxHash = await sdk.sendUserOperationDirectly(signer.address, userOp)
 
                 return {
                   txHash: directTxHash,
