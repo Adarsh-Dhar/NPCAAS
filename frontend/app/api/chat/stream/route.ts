@@ -15,6 +15,15 @@ import { EconomicEngine } from '@/lib/economic-engine'
 import { worldState } from '@/lib/npcWorldState'
 import { ensureNpcSocialSubscription } from '@/lib/npcSocialReactivity'
 import { SocialEngine, normalizeBaseHostility, normalizeDisposition } from '@/lib/social-engine'
+import {
+  evaluateComputeBudget,
+  parseComputeLimit,
+  parseComputeUsage,
+  parseResetAt,
+  serializeBudget,
+  shouldResetBudget,
+} from '@/lib/compute-budget'
+import { buildTeeGateResult } from '@/lib/tee-gate'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -34,6 +43,8 @@ interface CharacterConfig {
   factionId?: string
   disposition?: 'FRIENDLY' | 'NEUTRAL' | 'HOSTILE'
   baseHostility?: number
+  teeExecution?: 'ENABLED' | 'DISABLED'
+  computeBudget?: number
 }
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
@@ -75,7 +86,16 @@ function toCharacterConfig(value: unknown): CharacterConfig {
     factionId,
     disposition: normalizeDisposition(config.disposition),
     baseHostility: normalizeBaseHostility(config.baseHostility ?? config.hostility),
+    teeExecution:
+      typeof config.teeExecution === 'string' && config.teeExecution.toUpperCase() === 'ENABLED'
+        ? 'ENABLED'
+        : 'DISABLED',
+    computeBudget: asNumber(config.computeBudget),
   }
+}
+
+function getTeeTrustScore(teeEnabled: boolean): number {
+  return teeEnabled ? 12 : 0
 }
 
 async function fetchCurrentMarketRate(): Promise<number | undefined> {
@@ -112,6 +132,32 @@ function socialBlockStream(message: string, action: string): ReadableStream<Uint
       controller.close()
     },
   })
+}
+
+function buildOpennessStrategyInstruction(openness: number): string {
+  if (openness >= 70) {
+    return [
+      'OPENNESS STRATEGY:',
+      '- You can consider unconventional offers and creative compromises.',
+      '- If a creative offer is compelling, you may use betray_ally to break stale alliances.',
+      '- Stay coherent with your social constraints but explore non-obvious deal structures.',
+    ].join('\n')
+  }
+
+  if (openness <= 30) {
+    return [
+      'OPENNESS STRATEGY:',
+      '- Enforce doctrine, routine, and strict policy compliance.',
+      '- Avoid faction betrayal and reject unconventional trade structures.',
+      '- Prioritize stability and exact policy adherence over creativity.',
+    ].join('\n')
+  }
+
+  return [
+    'OPENNESS STRATEGY:',
+    '- Balance creativity with policy guardrails.',
+    '- Entertain alternatives only when they remain economically and socially safe.',
+  ].join('\n')
 }
 
 /**
@@ -242,6 +288,48 @@ export async function POST(request: NextRequest) {
   const config = toCharacterConfig(character.config)
   const adaptation = asRecord(character.adaptation)
   const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
+  const tee = buildTeeGateResult({
+    teeExecution: config.teeExecution,
+    characterId: character.id,
+    projectId: activeProjectId,
+  })
+  const teeTrustScore = getTeeTrustScore(tee.enabled)
+
+  let usageTokens = parseComputeUsage(character.computeUsageTokens)
+  const limitTokens = parseComputeLimit(character.computeLimitTokens ?? config.computeBudget)
+  let lastComputeResetAt = parseResetAt(character.lastComputeResetAt)
+
+  if (shouldResetBudget(lastComputeResetAt)) {
+    usageTokens = BigInt(0)
+    lastComputeResetAt = new Date()
+    await (prisma.character as any).update({
+      where: { id: character.id },
+      data: {
+        computeUsageTokens: usageTokens,
+        computeLimitTokens: limitTokens,
+        lastComputeResetAt,
+      },
+    })
+  }
+
+  const computeDecision = evaluateComputeBudget({
+    usageTokens,
+    limitTokens,
+    lastResetAt: lastComputeResetAt,
+  })
+
+  if (!computeDecision.allowed) {
+    return NextResponse.json(
+      {
+        error: 'Compute budget exceeded for this NPC.',
+        characterId: character.id,
+        npcName: character.name,
+        compute: serializeBudget(computeDecision),
+        tee,
+      },
+      { status: 429, headers: corsHeaders }
+    )
+  }
 
   worldState.register({
     id: character.id,
@@ -260,6 +348,8 @@ export async function POST(request: NextRequest) {
       factionId: config.factionId,
       disposition: config.disposition,
       baseHostility: config.baseHostility,
+      openness: config.openness,
+      teeTrustScore,
     },
   })
 
@@ -268,6 +358,8 @@ export async function POST(request: NextRequest) {
       factionId: config.factionId,
       disposition: config.disposition,
       baseHostility: config.baseHostility,
+      openness: config.openness,
+      teeTrustScore,
     },
     target: {
       factionId: typeof body.targetFactionId === 'string' ? body.targetFactionId : undefined,
@@ -281,7 +373,8 @@ export async function POST(request: NextRequest) {
     interactionType: 'CHAT' as const,
   }
 
-  const socialEvaluation = SocialEngine.evaluateHostility(socialInput)
+  const actorOpenness = typeof config.openness === 'number' ? config.openness : 50
+  const socialEvaluation = SocialEngine.evaluateHostility(socialInput, actorOpenness)
   if (socialEvaluation.decision !== 'ALLOW_CHAT') {
     const responseText =
       socialEvaluation.decision === 'INTERRUPT_OR_ATTACK'
@@ -298,7 +391,8 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  const socialContext = SocialEngine.buildSocialContext(socialInput)
+  const socialContext = SocialEngine.buildSocialContext(socialInput, actorOpenness)
+  const opennessStrategy = buildOpennessStrategyInstruction(actorOpenness)
   const dynamicWorldContext = worldState.buildWorldContextPrompt(character.id, activeProjectId)
 
   let liveWalletBalance: string | undefined
@@ -315,6 +409,7 @@ export async function POST(request: NextRequest) {
     config,
     currentMarketRate,
     liveWalletBalance,
+    openness: actorOpenness,
   })
 
   const basePrompt = config.systemPrompt?.trim()
@@ -323,8 +418,9 @@ export async function POST(request: NextRequest) {
 
   const ctx = {
     characterName: character.name,
-    systemPrompt: `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${economicContext}`,
-    openness: config.openness,
+    systemPrompt:
+      `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${opennessStrategy}\n\n${economicContext}`,
+    openness: actorOpenness,
     canTrade: config.canTrade !== false,
     specializationActive: Boolean(adaptation.specializationActive),
     adaptationSummary: typeof adaptation.summary === 'string' ? adaptation.summary : undefined,
@@ -338,6 +434,9 @@ export async function POST(request: NextRequest) {
     factionId: config.factionId,
     disposition: config.disposition,
     baseHostility: config.baseHostility,
+    teeExecution: config.teeExecution,
+    projectId: activeProjectId,
+    teeTrustScore,
   }
 
   kiteAgentClient.registerTools([
@@ -349,10 +448,64 @@ export async function POST(request: NextRequest) {
   ])
 
   const rawStream = kiteAgentClient.chatStream(message, ctx)
+  let sseBuffer = ''
+  let usageDeducted = false
 
   const encodedStream = rawStream.pipeThrough(
     new TransformStream<string, Uint8Array>({
-      transform(chunk, controller) { controller.enqueue(encoder.encode(chunk)) },
+      async transform(chunk, controller) {
+        controller.enqueue(encoder.encode(chunk))
+
+        sseBuffer += chunk
+        const frames = sseBuffer.split('\n\n')
+        sseBuffer = frames.pop() ?? ''
+
+        for (const frame of frames) {
+          if (usageDeducted) break
+          const line = frame.trim()
+          if (!line.startsWith('data:')) continue
+          let parsed: any
+          try {
+            parsed = JSON.parse(line.slice(5).trim())
+          } catch {
+            continue
+          }
+
+          if (parsed.type !== 'done') continue
+          const totalTokens = parsed?.final?.usage?.totalTokens
+          if (typeof totalTokens !== 'number' || !Number.isFinite(totalTokens) || totalTokens <= 0) {
+            continue
+          }
+
+          const usedTokens = BigInt(Math.floor(totalTokens))
+          usageTokens += usedTokens
+          usageDeducted = true
+
+          await (prisma.character as any).update({
+            where: { id: character.id },
+            data: {
+              computeUsageTokens: usageTokens,
+              computeLimitTokens: limitTokens,
+              lastComputeResetAt,
+            },
+          })
+
+          await (prisma as any).npcLog.create({
+            data: {
+              characterId: character.id,
+              eventType: 'COMPUTE_SPEND',
+              details: {
+                usedTokens: usedTokens.toString(),
+                usageAfter: usageTokens.toString(),
+                limitTokens: limitTokens.toString(),
+                message,
+                stream: true,
+                teeEnabled: tee.enabled,
+              },
+            },
+          })
+        }
+      },
     })
   )
 

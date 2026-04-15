@@ -28,6 +28,10 @@ model Character {
   smartAccountStatus String        @default("created")
   isDeployedOnChain  Boolean       @default(true)
   deploymentTxHash   String?
+  computeUsageTokens BigInt        @default(0)
+  computeLimitTokens BigInt        @default(5000)
+  lastComputeResetAt DateTime      @default(now())
+  teeAttestationProof String?
   config             Json
   adaptation         Json?
   projects           Project[]

@@ -412,6 +412,130 @@ describe('5 · Chat API', () => {
     assert.ok('action' in body, 'action field should be in response')
   })
 
+  test('POST /api/chat — low openness increases hostility response rigidity', async () => {
+    const { status: patchStatus } = await req('/characters', {
+      method: 'PATCH',
+      apiKey: state.apiKey,
+      body: JSON.stringify({
+        characterId: state.characterId,
+        config: {
+          openness: 20,
+          disposition: 'NEUTRAL',
+          baseHostility: 35,
+          factionId: 'IRON_GUILD',
+          canTrade: true,
+        },
+      }),
+    })
+    assert.equal(patchStatus, 200)
+
+    const { status, body } = await req('/chat', {
+      method: 'POST',
+      apiKey: state.apiKey,
+      body: JSON.stringify({
+        characterId: state.characterId,
+        message: 'Can we negotiate peacefully?',
+        targetFactionId: 'RIVAL_HOUSE',
+      }),
+    })
+
+    assert.equal(status, 200)
+    assert.equal(body.socialDecision, 'REFUSE_CHAT')
+    assert.ok(typeof body.hostilityScore === 'number')
+    assert.ok(body.hostilityScore >= 60)
+  })
+
+  test('POST /api/chat — high openness can allow dialogue under same hostility baseline', async () => {
+    const { status: patchStatus } = await req('/characters', {
+      method: 'PATCH',
+      apiKey: state.apiKey,
+      body: JSON.stringify({
+        characterId: state.characterId,
+        config: {
+          openness: 80,
+          disposition: 'NEUTRAL',
+          baseHostility: 35,
+          factionId: 'IRON_GUILD',
+          canTrade: true,
+        },
+      }),
+    })
+    assert.equal(patchStatus, 200)
+
+    const { status, body } = await req('/chat', {
+      method: 'POST',
+      apiKey: state.apiKey,
+      body: JSON.stringify({
+        characterId: state.characterId,
+        message: 'Can we negotiate peacefully?',
+        targetFactionId: 'RIVAL_HOUSE',
+      }),
+    })
+
+    assert.equal(status, 200)
+    assert.equal(body.socialDecision, 'ALLOW_CHAT')
+    assert.ok(typeof body.hostilityScore === 'number')
+    assert.ok(body.hostilityScore < 60)
+  })
+
+  test('POST /api/chat — compute budget exceeded returns 429', async () => {
+    const { status: patchStatus } = await req('/characters', {
+      method: 'PATCH',
+      apiKey: state.apiKey,
+      body: JSON.stringify({
+        characterId: state.characterId,
+        config: {
+          computeBudget: '1',
+          teeExecution: 'DISABLED',
+        },
+      }),
+    })
+    assert.equal(patchStatus, 200)
+
+    const { status, body } = await req('/chat', {
+      method: 'POST',
+      apiKey: state.apiKey,
+      body: JSON.stringify({
+        characterId: state.characterId,
+        message: 'Can you still respond?',
+      }),
+    })
+
+    assert.equal(status, 429)
+    assert.ok(body.compute, 'compute budget details should be present')
+    assert.equal(typeof body.compute.remainingTokens, 'string')
+  })
+
+  test('POST /api/chat — tee enabled response includes attestation metadata', async () => {
+    const { status: patchStatus } = await req('/characters', {
+      method: 'PATCH',
+      apiKey: state.apiKey,
+      body: JSON.stringify({
+        characterId: state.characterId,
+        config: {
+          computeBudget: '500000',
+          teeExecution: 'ENABLED',
+        },
+      }),
+    })
+    assert.equal(patchStatus, 200)
+
+    const { status, body } = await req('/chat', {
+      method: 'POST',
+      apiKey: state.apiKey,
+      body: JSON.stringify({
+        characterId: state.characterId,
+        message: 'Confirm secure mode status.',
+      }),
+    })
+
+    assert.equal(status, 200)
+    assert.ok(body.tee, 'tee field should be present')
+    assert.equal(typeof body.tee.enabled, 'boolean')
+    assert.equal(body.tee.enabled, true)
+    assert.ok(body.compute, 'compute object should be included in response')
+  })
+
   test('POST /api/chat — missing message → 400', async () => {
     const { status } = await req('/chat', {
       method: 'POST',
@@ -554,6 +678,18 @@ Openness to Experience
     const { value } = await reader.read()
     reader.cancel()
     assert.ok(value && value.length > 0, 'Should receive at least one chunk')
+  })
+
+  test('GET /api/system/usage — uses runtime compute counters', async () => {
+    const { status, body } = await req('/system/usage', {
+      apiKey: state.apiKey,
+    })
+
+    assert.equal(status, 200)
+    assert.ok(body.compute, 'compute object should be present')
+    assert.equal(typeof body.compute.llmTokensConsumed, 'string')
+    assert.equal(typeof body.compute.llmTokensLimit, 'string')
+    assert.equal(typeof body.compute.llmTokensRemaining, 'string')
   })
 })
 

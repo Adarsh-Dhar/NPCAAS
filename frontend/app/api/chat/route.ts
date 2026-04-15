@@ -9,6 +9,15 @@ import { worldState } from '@/lib/npcWorldState'
 import { EconomicEngine } from '@/lib/economic-engine'
 import { ensureNpcSocialSubscription } from '@/lib/npcSocialReactivity'
 import { SocialEngine, normalizeBaseHostility, normalizeDisposition } from '@/lib/social-engine'
+import {
+  evaluateComputeBudget,
+  parseComputeLimit,
+  parseComputeUsage,
+  parseResetAt,
+  serializeBudget,
+  shouldResetBudget,
+} from '@/lib/compute-budget'
+import { buildTeeGateResult } from '@/lib/tee-gate'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -38,6 +47,8 @@ interface CharacterConfig {
   factionId?: string
   disposition?: 'FRIENDLY' | 'NEUTRAL' | 'HOSTILE'
   baseHostility?: number
+  teeExecution?: 'ENABLED' | 'DISABLED'
+  computeBudget?: number
 }
 
 interface Section2Profile {
@@ -60,6 +71,10 @@ interface StoredCharacter {
   walletAddress: string
   config: unknown
   adaptation: unknown
+  computeUsageTokens?: bigint | number | string
+  computeLimitTokens?: bigint | number | string
+  lastComputeResetAt?: Date | string
+  teeAttestationProof?: string | null
   projects: Array<{ id: string }>
 }
 
@@ -106,7 +121,16 @@ function toCharacterConfig(value: unknown): CharacterConfig {
     factionId,
     disposition: normalizeDisposition(payload.disposition),
     baseHostility: normalizeBaseHostility(payload.baseHostility ?? payload.hostility),
+    teeExecution:
+      typeof payload.teeExecution === 'string' && payload.teeExecution.toUpperCase() === 'ENABLED'
+        ? 'ENABLED'
+        : 'DISABLED',
+    computeBudget: asNumber(payload.computeBudget),
   }
+}
+
+function getTeeTrustScore(teeEnabled: boolean): number {
+  return teeEnabled ? 12 : 0
 }
 
 function toAdaptationMemory(value: unknown): AdaptationMemory {
@@ -185,6 +209,32 @@ function mergePreferences(existing: string[], incoming: string[]): string[] {
     }
   }
   return merged.slice(0, 8)
+}
+
+function buildOpennessStrategyInstruction(openness: number): string {
+  if (openness >= 70) {
+    return [
+      'OPENNESS STRATEGY:',
+      '- You can consider unconventional offers and creative compromises.',
+      '- If a creative offer is compelling, you may use betray_ally to break stale alliances.',
+      '- Stay coherent with your social constraints but explore non-obvious deal structures.',
+    ].join('\n')
+  }
+
+  if (openness <= 30) {
+    return [
+      'OPENNESS STRATEGY:',
+      '- Enforce doctrine, routine, and strict policy compliance.',
+      '- Avoid faction betrayal and reject unconventional trade structures.',
+      '- Prioritize stability and exact policy adherence over creativity.',
+    ].join('\n')
+  }
+
+  return [
+    'OPENNESS STRATEGY:',
+    '- Balance creativity with policy guardrails.',
+    '- Entertain alternatives only when they remain economically and socially safe.',
+  ].join('\n')
 }
 
 /**
@@ -317,6 +367,60 @@ export async function POST(request: NextRequest) {
 
     const config = toCharacterConfig(character.config)
     const adaptation = toAdaptationMemory(character.adaptation)
+    const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
+    const tee = buildTeeGateResult({
+      teeExecution: config.teeExecution,
+      characterId: character.id,
+      projectId: activeProjectId,
+    })
+    const teeTrustScore = getTeeTrustScore(tee.enabled)
+
+    let usageTokens = parseComputeUsage(character.computeUsageTokens)
+    let limitTokens = parseComputeLimit(character.computeLimitTokens ?? config.computeBudget)
+    let lastComputeResetAt = parseResetAt(character.lastComputeResetAt)
+
+    if (shouldResetBudget(lastComputeResetAt)) {
+      usageTokens = BigInt(0)
+      lastComputeResetAt = new Date()
+      await (prisma.character as any).update({
+        where: { id: character.id },
+        data: {
+          computeUsageTokens: usageTokens,
+          computeLimitTokens: limitTokens,
+          lastComputeResetAt,
+        },
+      })
+    }
+
+    const computeDecision = evaluateComputeBudget({
+      usageTokens,
+      limitTokens,
+      lastResetAt: lastComputeResetAt,
+    })
+
+    if (!computeDecision.allowed) {
+      await (prisma as any).npcLog.create({
+        data: {
+          characterId: character.id,
+          eventType: 'COMPUTE_BUDGET_EXCEEDED',
+          details: {
+            message,
+            budget: serializeBudget(computeDecision),
+          },
+        },
+      })
+
+      return NextResponse.json(
+        {
+          error: 'Compute budget exceeded for this NPC.',
+          characterId: character.id,
+          npcName: character.name,
+          compute: serializeBudget(computeDecision),
+          tee,
+        },
+        { status: 429, headers: corsHeaders }
+      )
+    }
 
     // Section 2 definition parsing
     const section2Profile = parseSection2Definition(message)
@@ -411,8 +515,6 @@ export async function POST(request: NextRequest) {
       'declare_hostility',
     ])
 
-    const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
-
     worldState.register({
       id: character.id,
       name: character.name,
@@ -430,6 +532,8 @@ export async function POST(request: NextRequest) {
         factionId: config.factionId,
         disposition: config.disposition,
         baseHostility: config.baseHostility,
+        openness: config.openness,
+        teeTrustScore,
       },
     })
 
@@ -441,6 +545,8 @@ export async function POST(request: NextRequest) {
         factionId: config.factionId,
         disposition: config.disposition,
         baseHostility: config.baseHostility,
+        openness: config.openness,
+        teeTrustScore,
       },
       target: {
         factionId: typeof targetFactionId === 'string' ? targetFactionId : undefined,
@@ -454,8 +560,10 @@ export async function POST(request: NextRequest) {
       interactionType: 'CHAT' as const,
     }
 
-    const socialEvaluation = SocialEngine.evaluateHostility(socialInput)
-    const socialContext = SocialEngine.buildSocialContext(socialInput)
+    const actorOpenness = typeof config.openness === 'number' ? config.openness : 50
+    const socialEvaluation = SocialEngine.evaluateHostility(socialInput, actorOpenness)
+    const socialContext = SocialEngine.buildSocialContext(socialInput, actorOpenness)
+    const opennessStrategy = buildOpennessStrategyInstruction(actorOpenness)
 
     if (socialEvaluation.decision !== 'ALLOW_CHAT') {
       const refusalText =
@@ -508,6 +616,9 @@ export async function POST(request: NextRequest) {
           sourceFactionId: config.factionId,
           sourceDisposition: config.disposition,
           sourceBaseHostility: config.baseHostility,
+          sourceOpenness: actorOpenness,
+          sourceTeeTrustScore: teeTrustScore,
+          sourceTeeEnabled: tee.enabled,
           hostilityScore: socialEvaluation.hostilityScore,
           decision: socialEvaluation.decision,
           message,
@@ -529,6 +640,8 @@ export async function POST(request: NextRequest) {
           projectId: activeProjectId,
           socialDecision: socialEvaluation.decision,
           hostilityScore: socialEvaluation.hostilityScore,
+          compute: serializeBudget(computeDecision),
+          tee,
         },
         { status: 200, headers: corsHeaders }
       )
@@ -553,11 +666,13 @@ export async function POST(request: NextRequest) {
       config,
       currentMarketRate,
       liveWalletBalance,
+      openness: actorOpenness,
     })
 
     const activeProfile: Section2Profile = {
-      systemPrompt: `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${economicContext}`,
-      openness: typeof config.openness === 'number' ? config.openness : 50,
+      systemPrompt:
+        `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${opennessStrategy}\n\n${economicContext}`,
+      openness: actorOpenness,
     }
 
     let updatedAdaptation = adaptation
@@ -595,7 +710,37 @@ export async function POST(request: NextRequest) {
       factionId: config.factionId,
       disposition: config.disposition,
       baseHostility: config.baseHostility,
+      teeExecution: config.teeExecution,
+      projectId: activeProjectId,
     })
+
+    const usedTokens = BigInt(agentResponse.usage?.totalTokens ?? 0)
+    let updatedUsageTokens = usageTokens
+    if (usedTokens > BigInt(0)) {
+      updatedUsageTokens = usageTokens + usedTokens
+      await (prisma.character as any).update({
+        where: { id: character.id },
+        data: {
+          computeUsageTokens: updatedUsageTokens,
+          computeLimitTokens: limitTokens,
+          lastComputeResetAt,
+        },
+      })
+
+      await (prisma as any).npcLog.create({
+        data: {
+          characterId: character.id,
+          eventType: 'COMPUTE_SPEND',
+          details: {
+            usedTokens: usedTokens.toString(),
+            usageBefore: usageTokens.toString(),
+            usageAfter: updatedUsageTokens.toString(),
+            limitTokens: limitTokens.toString(),
+            message,
+          },
+        },
+      })
+    }
 
     let finalTradeIntent = agentResponse.tradeIntent
     let finalResponseText = agentResponse.text
@@ -605,6 +750,7 @@ export async function POST(request: NextRequest) {
         tradeIntent: agentResponse.tradeIntent,
         config,
         currentMarketRate,
+        openness: actorOpenness,
       })
 
       if (!validation.isValid) {
@@ -646,8 +792,17 @@ export async function POST(request: NextRequest) {
         sourceFactionId: config.factionId,
         sourceDisposition: config.disposition,
         sourceBaseHostility: config.baseHostility,
+        sourceOpenness: actorOpenness,
+        sourceTeeTrustScore: teeTrustScore,
+        sourceTeeEnabled: tee.enabled,
       },
       timestamp: new Date().toISOString(),
+    })
+
+    const updatedComputeDecision = evaluateComputeBudget({
+      usageTokens: updatedUsageTokens,
+      limitTokens,
+      lastResetAt: lastComputeResetAt,
     })
 
     return NextResponse.json(
@@ -662,6 +817,10 @@ export async function POST(request: NextRequest) {
         pendingSpecialization: Boolean(updatedAdaptation.pendingSection2),
         timestamp: new Date().toISOString(),
         projectId: project?.id,
+        socialDecision: socialEvaluation.decision,
+        hostilityScore: socialEvaluation.hostilityScore,
+        compute: serializeBudget(updatedComputeDecision),
+        tee,
       },
       { status: 200, headers: corsHeaders }
     )

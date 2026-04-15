@@ -20,18 +20,22 @@ export interface EconomicValidationInput {
   tradeIntent: TradeIntent
   config: CharacterConfig
   currentMarketRate?: number
+  openness?: number
 }
 
 export interface EconomicValidationResult {
   isValid: boolean
   reason?: string
   minPrice?: number
+  acceptedMinPrice?: number
+  discountTolerancePct?: number
 }
 
 export interface EconomicPromptContext {
   config: CharacterConfig
   currentMarketRate?: number
   liveWalletBalance?: string
+  openness?: number
 }
 
 const KNOWN_ALGORITHMS: PricingAlgorithm[] = [
@@ -48,6 +52,21 @@ function asFiniteNumber(value: unknown): number | undefined {
 
 function roundToTwo(value: number): number {
   return Math.round(value * 100) / 100
+}
+
+function normalizeOpenness(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.min(Math.max(value, 0), 100)
+  }
+  return 50
+}
+
+function getDiscountTolerance(openness?: number): number {
+  const normalized = normalizeOpenness(openness)
+  if (normalized <= 30) return 0
+  if (normalized < 70) return 0
+  // At maximum openness, allow up to 8% discount from target min price.
+  return ((normalized - 70) / 30) * 0.08
 }
 
 export class EconomicEngine {
@@ -94,6 +113,9 @@ export class EconomicEngine {
       return { isValid: false, reason: 'Trade price must be greater than zero.' }
     }
 
+    const openness = normalizeOpenness(input.openness)
+    const discountTolerance = getDiscountTolerance(openness)
+
     const pricingAlgorithm =
       typeof input.config.pricingAlgorithm === 'string' &&
       KNOWN_ALGORITHMS.includes(input.config.pricingAlgorithm as PricingAlgorithm)
@@ -137,18 +159,30 @@ export class EconomicEngine {
       return {
         isValid: true,
         reason: 'Market rate unavailable; validation ran in lenient mode.',
+        discountTolerancePct: roundToTwo(discountTolerance * 100),
       }
     }
 
-    if (price < minPrice) {
+    const acceptedMinPrice = roundToTwo(minPrice * (1 - discountTolerance))
+
+    if (price < acceptedMinPrice) {
       return {
         isValid: false,
-        reason: `Trade price ${price} is below the minimum allowed price ${minPrice}.`,
+        reason:
+          `Trade price ${price} is below the minimum accepted price ${acceptedMinPrice} ` +
+          `(target baseline ${minPrice}, openness ${openness}).`,
         minPrice,
+        acceptedMinPrice,
+        discountTolerancePct: roundToTwo(discountTolerance * 100),
       }
     }
 
-    return { isValid: true, minPrice }
+    return {
+      isValid: true,
+      minPrice,
+      acceptedMinPrice,
+      discountTolerancePct: roundToTwo(discountTolerance * 100),
+    }
   }
 
   static buildEconomicContext(input: EconomicPromptContext): string {
@@ -158,6 +192,8 @@ export class EconomicEngine {
         : 'DYNAMIC_MARKET'
     const margin = asFiniteNumber(input.config.marginPercentage)
     const baseCapital = asFiniteNumber(input.config.baseCapital)
+    const openness = normalizeOpenness(input.openness)
+    const discountTolerance = getDiscountTolerance(openness)
     const minPrice = EconomicEngine.calculateMinPrice(input.config, input.currentMarketRate)
 
     const lines: string[] = [
@@ -173,6 +209,8 @@ export class EconomicEngine {
       lines.push(`- Margin percentage: ${margin}%`)
     }
 
+    lines.push(`- Openness-adjusted negotiation mode: ${openness <= 30 ? 'strict' : openness >= 70 ? 'flexible' : 'balanced'}`)
+
     if (input.currentMarketRate !== undefined) {
       lines.push(`- Current market rate: ${roundToTwo(input.currentMarketRate)} KITE`)
     } else {
@@ -185,7 +223,13 @@ export class EconomicEngine {
 
     if (minPrice !== null) {
       lines.push(`- Minimum allowed listing price: ${minPrice} KITE`)
-      lines.push('- Never propose a trade below the minimum allowed listing price.')
+      if (discountTolerance > 0) {
+        lines.push(`- Openness discount tolerance: up to ${roundToTwo(discountTolerance * 100)}% below target floor`)
+        lines.push(`- Effective accepted minimum price: ${roundToTwo(minPrice * (1 - discountTolerance))} KITE`)
+      } else {
+        lines.push('- Openness discount tolerance: 0% (strict margin enforcement)')
+      }
+      lines.push('- Never propose a trade below the effective accepted minimum price.')
     } else {
       lines.push('- Market rate unavailable. Keep offers conservative and avoid deep discounting.')
     }

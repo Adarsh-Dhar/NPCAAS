@@ -92,12 +92,15 @@ async function handleEvent(profile: NpcReactiveProfile, event: WorldEvent): Prom
     event.actionType === 'TRADE_PROPOSED' ? 'TRADE_PROPOSED' : 'CHAT'
 
   const sourceFactionId = asString(event.payload.sourceFactionId)
+  const sourceTeeTrustScore = typeof event.payload.sourceTeeTrustScore === 'number'
+    ? event.payload.sourceTeeTrustScore
+    : undefined
   const evaluation = SocialEngine.evaluateHostility({
     actor: profile.social,
-    target: { factionId: sourceFactionId },
+    target: { factionId: sourceFactionId, teeTrustScore: sourceTeeTrustScore },
     targetName: event.sourceName,
     interactionType,
-  })
+  }, profile.social.openness)
 
   if (!evaluation.isRival) return
   if (evaluation.decision === 'ALLOW_CHAT') return

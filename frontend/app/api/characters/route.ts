@@ -6,6 +6,8 @@ import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@/lib/generated/prisma/client'
 import { TreasuryService } from '@/lib/treasury'
+import { parseComputeLimit } from '@/lib/compute-budget'
+import { buildTeeGateResult } from '@/lib/tee-gate'
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
@@ -24,6 +26,16 @@ function getBaseCapital(config: unknown): number {
     if (Number.isFinite(parsed)) return parsed
   }
   return 0
+}
+
+function getComputeLimit(config: unknown): bigint {
+  const payload = asRecord(config)
+  return parseComputeLimit(payload.computeBudget)
+}
+
+function getTeeExecution(config: unknown): string | undefined {
+  const payload = asRecord(config)
+  return typeof payload.teeExecution === 'string' ? payload.teeExecution : undefined
 }
 
 function normalizeAdaptation(config: unknown, existing: unknown = {}) {
@@ -59,9 +71,16 @@ function toApiCharacter(character: {
   adaptation: unknown
   isDeployedOnChain: boolean
   deploymentTxHash: string | null
+  computeUsageTokens?: bigint | number | string
+  computeLimitTokens?: bigint | number | string
+  lastComputeResetAt?: Date | string
+  teeAttestationProof?: string | null
   createdAt: Date
   projects: Array<{ id: string }>
 }) {
+  const asStringOrNull = (value: unknown) =>
+    typeof value === 'bigint' ? value.toString() : typeof value === 'number' ? String(value) : typeof value === 'string' ? value : null
+
   return {
     id: character.id,
     name: character.name,
@@ -74,6 +93,15 @@ function toApiCharacter(character: {
     adaptation: asRecord(character.adaptation),
     isDeployedOnChain: character.isDeployedOnChain,
     deploymentTxHash: character.deploymentTxHash ?? undefined,
+    computeUsageTokens: asStringOrNull(character.computeUsageTokens),
+    computeLimitTokens: asStringOrNull(character.computeLimitTokens),
+    lastComputeResetAt:
+      character.lastComputeResetAt instanceof Date
+        ? character.lastComputeResetAt.toISOString()
+        : typeof character.lastComputeResetAt === 'string'
+          ? character.lastComputeResetAt
+          : undefined,
+    teeAttestationProof: character.teeAttestationProof ?? undefined,
     projectIds: character.projects.map((project) => project.id),
     createdAt: character.createdAt.toISOString(),
   }
@@ -175,6 +203,13 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    const computeLimitTokens = getComputeLimit(config)
+    const teeGate = buildTeeGateResult({
+      teeExecution: getTeeExecution(config),
+      characterId,
+      projectId: games[0]?.id,
+    })
+
     const characterData = {
       id: characterId,
       name,
@@ -183,6 +218,12 @@ export async function POST(request: NextRequest) {
       aaProvider: smartAccount.provider,
       smartAccountId: smartAccount.smartAccountId,
       smartAccountStatus: 'created',
+      computeUsageTokens: BigInt(0),
+      computeLimitTokens,
+      lastComputeResetAt: new Date(),
+      teeAttestationProof: teeGate.attestation
+        ? JSON.stringify(teeGate.attestation)
+        : undefined,
       config: toInputJson(config),
       adaptation: {
         specializationActive: false,
@@ -218,7 +259,7 @@ export async function POST(request: NextRequest) {
       | null = null
 
     try {
-      character = await prisma.character.create({
+      character = await (prisma.character as any).create({
         data: characterData,
         include: {
           projects: { select: { id: true } },
@@ -255,6 +296,10 @@ export async function POST(request: NextRequest) {
               aaProvider: string
               smartAccountId: string | null
               smartAccountStatus: string
+              computeUsageTokens: bigint
+              computeLimitTokens: bigint
+              lastComputeResetAt: Date
+              teeAttestationProof?: string | null
               config: Prisma.InputJsonValue
               adaptation: Prisma.InputJsonValue
               isDeployedOnChain: boolean
@@ -286,6 +331,12 @@ export async function POST(request: NextRequest) {
           aaProvider: smartAccount.provider,
           smartAccountId: smartAccount.smartAccountId,
           smartAccountStatus: 'created',
+          computeUsageTokens: BigInt(0),
+          computeLimitTokens,
+          lastComputeResetAt: new Date(),
+          teeAttestationProof: teeGate.attestation
+            ? JSON.stringify(teeGate.attestation)
+            : undefined,
           config: toInputJson(config),
           adaptation: {
             specializationActive: false,
@@ -303,6 +354,13 @@ export async function POST(request: NextRequest) {
         ...legacyCharacter,
         projects: legacyCharacter.projectId ? [{ id: legacyCharacter.projectId }] : [],
       }
+    }
+
+    if (!character) {
+      return NextResponse.json(
+        { error: 'Character deployment failed' },
+        { status: 500 }
+      )
     }
 
     const provisioning = await TreasuryService.provisionNpcWallet(
@@ -383,7 +441,7 @@ export async function PATCH(request: NextRequest) {
     // Build update data — only patch fields that have meaningful content
     const hasConfigFields = Object.keys(config).length > 0
 
-    const updateData: Prisma.CharacterUpdateInput = {}
+    const updateData: Record<string, unknown> = {}
 
     if (name) {
       updateData.name = name
@@ -392,9 +450,19 @@ export async function PATCH(request: NextRequest) {
     if (hasConfigFields) {
       updateData.config = toInputJson(config)
       updateData.adaptation = normalizeAdaptation(config, character.adaptation) as Prisma.InputJsonValue
+      updateData.computeLimitTokens = getComputeLimit(config)
+
+      const teeGate = buildTeeGateResult({
+        teeExecution: getTeeExecution(config),
+        characterId,
+        projectId: authorizedProject?.id,
+      })
+      updateData.teeAttestationProof = teeGate.attestation
+        ? JSON.stringify(teeGate.attestation)
+        : null
     }
 
-    const updated = await prisma.character.update({
+    const updated = await (prisma.character as any).update({
       where: { id: characterId },
       data: updateData,
       include: { projects: { select: { id: true } } },

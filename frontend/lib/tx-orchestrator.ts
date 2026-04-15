@@ -17,6 +17,7 @@
 import { kiteAAProvider } from '@/lib/aa-sdk'
 import type { SponsoredTx } from '@/lib/aa-sdk'
 import { ethers } from 'ethers'
+import { buildTeeGateResult } from '@/lib/tee-gate'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -27,6 +28,8 @@ export interface WriteTransactionInput {
   value: string    // decimal string, e.g. "1000000"
   data?: string    // hex calldata; defaults to '0x'
   ownerId: string  // NPC owner string used at creation time
+  teeExecution?: string
+  projectId?: string
 }
 
 export type ExecutionMode = 'sponsored' | 'fallback' | 'server_bypass'
@@ -38,6 +41,7 @@ export interface SponsoredExecutionResult {
   status: SponsoredTx['status'] | 'pending'
   sponsored: boolean
   sponsorError?: string
+  tee?: ReturnType<typeof buildTeeGateResult>
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +59,12 @@ function allowFallback(): boolean {
 export async function executeWriteTransaction(
   input: WriteTransactionInput
 ): Promise<SponsoredExecutionResult> {
+  const tee = buildTeeGateResult({
+    teeExecution: input.teeExecution,
+    characterId: input.ownerId,
+    projectId: input.projectId,
+  })
+
   try {
     // Pre-check: estimate the UserOp so we can log paymaster/estimation details
     try {
@@ -88,6 +98,7 @@ export async function executeWriteTransaction(
       userOpHash: result.userOpHash,
       status: result.status,
       sponsored: true,
+      tee,
     }
   } catch (err) {
     const reason = err instanceof Error ? (err.stack ?? err.message) : JSON.stringify(err)
@@ -127,6 +138,7 @@ export async function executeWriteTransaction(
           userOpHash: undefined,
           status: 'pending',
           sponsored: false,
+          tee,
         }
       } catch (bypassErr) {
         console.error('[tx-orchestrator] Dev Bypass failed:', bypassErr)
@@ -141,6 +153,7 @@ export async function executeWriteTransaction(
       status: 'pending',
       sponsored: false,
       sponsorError: reason,
+      tee,
     }
   }
 }

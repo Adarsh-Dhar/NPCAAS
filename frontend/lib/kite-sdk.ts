@@ -59,10 +59,17 @@ export interface TradeIntent {
   currency: string
 }
 
+export interface TokenUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
 export interface ChatResponse {
   text: string
   action?: string
   tradeIntent?: TradeIntent
+  usage?: TokenUsage
 }
 
 export interface AgentContext {
@@ -83,6 +90,8 @@ export interface AgentContext {
   factionId?: string
   disposition?: 'FRIENDLY' | 'NEUTRAL' | 'HOSTILE'
   baseHostility?: number
+  teeExecution?: 'ENABLED' | 'DISABLED'
+  projectId?: string
 }
 
 /** SSE event shape emitted by chatStream(). */
@@ -91,6 +100,7 @@ export interface StreamEvent {
   delta?: string       // incremental text token (type=text_delta)
   action?: string      // physical action (type=action)
   tradeIntent?: TradeIntent // (type=trade_intent)
+  usage?: TokenUsage
   error?: string       // (type=error)
   final?: ChatResponse // (type=done) — full assembled response
 }
@@ -204,6 +214,13 @@ function buildSystemPrompt(ctx: AgentContext): string {
         ? 'You prefer conservative, predictable deals and avoid risk.'
         : 'You balance practicality with occasional creativity.'
 
+  const actionStyleLine =
+    openness >= 70
+      ? 'Action style: use expressive, curious physical actions (e.g., "gestures animatedly", "inspects gear with intrigue").'
+      : openness <= 30
+        ? 'Action style: use formal, restrained physical actions (e.g., "stands at attention", "nods curtly").'
+        : 'Action style: use measured, practical physical actions.'
+
   const tradeLine = ctx.canTrade !== false
     ? 'When a player wants to buy, sell, or trade something, use the propose_trade function.'
     : 'Trading is currently disabled. Politely redirect trade requests.'
@@ -260,7 +277,7 @@ CRITICAL OUTPUT FORMAT — always respond with valid JSON:
 }
 Never include asterisk actions (*like this*) in the text field.`
 
-  return [basePersona, opennessLine, tradeLine, specializationNote, turnNote, socialNote, economicNote,
+  return [basePersona, opennessLine, actionStyleLine, tradeLine, specializationNote, turnNote, socialNote, economicNote,
     'Stay in character. Do not mention being an AI.', jsonFormatInstructions]
     .filter(Boolean)
     .join('\n\n')
@@ -283,6 +300,15 @@ function parseStructuredResponse(content: string): { text: string; action?: stri
     const action = actionMatch ? actionMatch[0].replace(/\*/g, '').trim() : undefined
     const text   = content.replace(/\*[^*]+\*/g, '').trim()
     return { text: text || content, action }
+  }
+}
+
+function toTokenUsage(usage: OpenAI.Completions.CompletionUsage | null | undefined): TokenUsage | undefined {
+  if (!usage) return undefined
+  return {
+    promptTokens: usage.prompt_tokens,
+    completionTokens: usage.completion_tokens,
+    totalTokens: usage.total_tokens,
   }
 }
 
@@ -365,6 +391,7 @@ export class KiteAgentClient {
     }
 
     const choice = completion.choices[0]
+    const usage = toTokenUsage(completion.usage)
 
     if (
       choice.finish_reason === 'tool_calls' &&
@@ -385,14 +412,21 @@ export class KiteAgentClient {
           const amountStr = typeof args.amount === 'number' ? String(args.amount) : (args.amount ?? '0')
           const ownerId = ctx.characterId
           if (!ownerId) {
-            return { text: 'Transaction aborted: I do not know my own identity.', action: 'shakes head' }
+            return { text: 'Transaction aborted: I do not know my own identity.', action: 'shakes head', usage }
           }
           try {
-            const txResult = await executeWriteTransaction({ to: targetAddress, value: amountStr, data: '0x', ownerId })
-            return { text: `Transaction successful. Hash: ${txResult.txHash}`, action: 'nods approvingly' }
+            const txResult = await executeWriteTransaction({
+              to: targetAddress,
+              value: amountStr,
+              data: '0x',
+              ownerId,
+              teeExecution: ctx.teeExecution,
+              projectId: ctx.projectId,
+            })
+            return { text: `Transaction successful. Hash: ${txResult.txHash}`, action: 'nods approvingly', usage }
           } catch (err) {
             const msg = err instanceof Error ? err.message : 'Unknown transaction error'
-            return { text: `Transaction failed: ${msg}`, action: 'shakes head sadly' }
+            return { text: `Transaction failed: ${msg}`, action: 'shakes head sadly', usage }
           }
         } catch { /* fall through */ }
       }
@@ -406,6 +440,7 @@ export class KiteAgentClient {
             text:   args.message,
             action: args.action ?? 'presents item with a flourish',
             tradeIntent: { item: args.item, price: args.price, currency: args.currency },
+            usage,
           }
         } catch { /* fall through */ }
       }
@@ -414,19 +449,20 @@ export class KiteAgentClient {
         try {
           const args = JSON.parse(toolCall.function.arguments) as { factionId?: string }
           if (!ctx.characterId) {
-            return { text: 'Cannot join faction: missing character identity.', action: 'pauses cautiously' }
+            return { text: 'Cannot join faction: missing character identity.', action: 'pauses cautiously', usage }
           }
           if (!args.factionId) {
-            return { text: 'Cannot join faction: factionId missing.', action: 'tilts head in confusion' }
+            return { text: 'Cannot join faction: factionId missing.', action: 'tilts head in confusion', usage }
           }
           const snapshot = await joinFaction(ctx.characterId, args.factionId)
           return {
             text: `Joined faction ${snapshot.factionId ?? 'UNALIGNED'} and updated social standing.`,
             action: 'marks allegiance in ledger',
+            usage,
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Unknown social mutation error'
-          return { text: `Failed to join faction: ${msg}`, action: 'grimaces slightly' }
+          return { text: `Failed to join faction: ${msg}`, action: 'grimaces slightly', usage }
         }
       }
 
@@ -434,19 +470,20 @@ export class KiteAgentClient {
         try {
           const args = JSON.parse(toolCall.function.arguments) as { factionId?: string; reason?: string }
           if (!ctx.characterId) {
-            return { text: 'Cannot betray ally: missing character identity.', action: 'steps back silently' }
+            return { text: 'Cannot betray ally: missing character identity.', action: 'steps back silently', usage }
           }
           if (!args.factionId) {
-            return { text: 'Cannot betray ally: factionId missing.', action: 'stares in silence' }
+            return { text: 'Cannot betray ally: factionId missing.', action: 'stares in silence', usage }
           }
           const snapshot = await betrayAlly(ctx.characterId, args.factionId, args.reason)
           return {
             text: `Alliance with ${args.factionId} is broken. Disposition is now ${snapshot.disposition}.`,
             action: 'burns an old pact',
+            usage,
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Unknown social mutation error'
-          return { text: `Failed to betray ally: ${msg}`, action: 'looks conflicted' }
+          return { text: `Failed to betray ally: ${msg}`, action: 'looks conflicted', usage }
         }
       }
 
@@ -457,10 +494,10 @@ export class KiteAgentClient {
             severity?: number
           }
           if (!ctx.characterId) {
-            return { text: 'Cannot declare hostility: missing character identity.', action: 'crosses arms' }
+            return { text: 'Cannot declare hostility: missing character identity.', action: 'crosses arms', usage }
           }
           if (!args.targetFactionId) {
-            return { text: 'Cannot declare hostility: targetFactionId missing.', action: 'narrows gaze' }
+            return { text: 'Cannot declare hostility: targetFactionId missing.', action: 'narrows gaze', usage }
           }
           const snapshot = await declareHostility(
             ctx.characterId,
@@ -470,17 +507,18 @@ export class KiteAgentClient {
           return {
             text: `Hostility declared toward ${args.targetFactionId}. Hostility is now ${snapshot.baseHostility}/100.`,
             action: 'issues a public threat',
+            usage,
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Unknown social mutation error'
-          return { text: `Failed to declare hostility: ${msg}`, action: 'clenches jaw' }
+          return { text: `Failed to declare hostility: ${msg}`, action: 'clenches jaw', usage }
         }
       }
     }
 
     const rawContent = choice.message.content?.trim() ?? ''
     const { text, action } = parseStructuredResponse(rawContent)
-    return { text, action }
+    return { text, action, usage }
   }
 
   // ── Streaming chat ────────────────────────────────────────────────────────
@@ -528,6 +566,7 @@ export class KiteAgentClient {
             })
 
             const choice = completion.choices[0]
+            const usage = toTokenUsage(completion.usage)
 
             if (
               choice.finish_reason === 'tool_calls' &&
@@ -541,14 +580,21 @@ export class KiteAgentClient {
                 const ownerId = ctx.characterId
                 const amountStr = typeof args.amount === 'number' ? String(args.amount) : (args.amount ?? '0')
                 if (!ownerId) {
-                  const final: ChatResponse = { text: 'Transaction aborted: I do not know my own identity.', action: 'shakes head' }
+                  const final: ChatResponse = { text: 'Transaction aborted: I do not know my own identity.', action: 'shakes head', usage }
                   enqueue({ type: 'done', final })
                   controller.close()
                   return
                 }
                 try {
-                  const txResult = await executeWriteTransaction({ to: args.targetAddress ?? '', value: amountStr, data: '0x', ownerId })
-                  const final: ChatResponse = { text: `Transaction successful. Hash: ${txResult.txHash}`, action: 'nods approvingly' }
+                  const txResult = await executeWriteTransaction({
+                    to: args.targetAddress ?? '',
+                    value: amountStr,
+                    data: '0x',
+                    ownerId,
+                    teeExecution: ctx.teeExecution,
+                    projectId: ctx.projectId,
+                  })
+                  const final: ChatResponse = { text: `Transaction successful. Hash: ${txResult.txHash}`, action: 'nods approvingly', usage }
                   if (final.action) enqueue({ type: 'action', action: final.action })
                   enqueue({ type: 'text_delta', delta: final.text })
                   enqueue({ type: 'done', final })
@@ -556,7 +602,7 @@ export class KiteAgentClient {
                   return
                 } catch (err) {
                   const errorMsg = err instanceof Error ? err.message : 'Transaction error'
-                  const final: ChatResponse = { text: `Transaction failed: ${errorMsg}`, action: 'shakes head' }
+                  const final: ChatResponse = { text: `Transaction failed: ${errorMsg}`, action: 'shakes head', usage }
                   enqueue({ type: 'done', final })
                   controller.close()
                   return
@@ -570,6 +616,7 @@ export class KiteAgentClient {
                   text:   args.message,
                   action: args.action ?? 'presents item with a flourish',
                   tradeIntent: { item: args.item, price: args.price, currency: args.currency },
+                  usage,
                 }
                 if (final.action) enqueue({ type: 'action', action: final.action })
                 // Emit the text as a single delta so clients render it progressively
@@ -585,6 +632,7 @@ export class KiteAgentClient {
                   const final: ChatResponse = {
                     text: 'Cannot join faction: character identity or factionId missing.',
                     action: 'hesitates briefly',
+                    usage,
                   }
                   enqueue({ type: 'done', final })
                   controller.close()
@@ -594,6 +642,7 @@ export class KiteAgentClient {
                 const final: ChatResponse = {
                   text: `Joined faction ${snapshot.factionId ?? 'UNALIGNED'} and updated social standing.`,
                   action: 'marks allegiance in ledger',
+                  usage,
                 }
                 enqueue({ type: 'action', action: final.action })
                 enqueue({ type: 'text_delta', delta: final.text })
@@ -608,6 +657,7 @@ export class KiteAgentClient {
                   const final: ChatResponse = {
                     text: 'Cannot betray ally: character identity or factionId missing.',
                     action: 'looks conflicted',
+                    usage,
                   }
                   enqueue({ type: 'done', final })
                   controller.close()
@@ -617,6 +667,7 @@ export class KiteAgentClient {
                 const final: ChatResponse = {
                   text: `Alliance with ${args.factionId} is broken. Disposition is now ${snapshot.disposition}.`,
                   action: 'burns an old pact',
+                  usage,
                 }
                 enqueue({ type: 'action', action: final.action })
                 enqueue({ type: 'text_delta', delta: final.text })
@@ -634,6 +685,7 @@ export class KiteAgentClient {
                   const final: ChatResponse = {
                     text: 'Cannot declare hostility: character identity or targetFactionId missing.',
                     action: 'narrows gaze',
+                    usage,
                   }
                   enqueue({ type: 'done', final })
                   controller.close()
@@ -647,6 +699,7 @@ export class KiteAgentClient {
                 const final: ChatResponse = {
                   text: `Hostility declared toward ${args.targetFactionId}. Hostility is now ${snapshot.baseHostility}/100.`,
                   action: 'issues a public threat',
+                  usage,
                 }
                 enqueue({ type: 'action', action: final.action })
                 enqueue({ type: 'text_delta', delta: final.text })
@@ -661,7 +714,7 @@ export class KiteAgentClient {
             const { text, action } = parseStructuredResponse(rawContent)
             if (action) enqueue({ type: 'action', action })
             enqueue({ type: 'text_delta', delta: text })
-            const final: ChatResponse = { text, action }
+            const final: ChatResponse = { text, action, usage }
             enqueue({ type: 'done', final })
             controller.close()
             return
@@ -678,11 +731,16 @@ export class KiteAgentClient {
             ],
             stream: true,
             response_format: { type: 'json_object' },
+            stream_options: { include_usage: true },
           })
 
           let accumulated = ''
+          let streamUsage: TokenUsage | undefined
 
           for await (const chunk of stream) {
+            if (chunk.usage) {
+              streamUsage = toTokenUsage(chunk.usage)
+            }
             const delta = chunk.choices[0]?.delta?.content ?? ''
             if (!delta) continue
 
@@ -694,7 +752,7 @@ export class KiteAgentClient {
           // Parse the fully assembled JSON to extract action + clean text
           const { text, action } = parseStructuredResponse(accumulated)
           if (action) enqueue({ type: 'action', action })
-          const final: ChatResponse = { text, action }
+          const final: ChatResponse = { text, action, usage: streamUsage }
           enqueue({ type: 'done', final })
           controller.close()
         } catch (err) {

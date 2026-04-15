@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { validateApiKey } from '@/lib/api-key-store'
+import { parseComputeLimit, parseComputeUsage } from '@/lib/compute-budget'
 
 async function resolveAuthorizedProject(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
@@ -44,6 +45,8 @@ export async function GET(request: NextRequest) {
     let activeLoops = 0
     let pendingActions = 0
     let specializationActiveCount = 0
+    let totalComputeUsageTokens = BigInt(0)
+    let totalComputeLimitTokens = BigInt(0)
 
     for (const character of characters) {
       const adaptation = asRecord(character.adaptation)
@@ -63,10 +66,19 @@ export async function GET(request: NextRequest) {
 
       const queue = Array.isArray(config.actionQueue) ? config.actionQueue : []
       pendingActions += queue.length
+
+      totalComputeUsageTokens += parseComputeUsage(character.computeUsageTokens)
+      totalComputeLimitTokens += parseComputeLimit(character.computeLimitTokens ?? config.computeBudget)
     }
 
-    // Estimated token usage: each chat turn ≈ ~800 tokens avg (system + user + response)
-    const estimatedTokensConsumed = totalTurnCount * 800
+    const remainingComputeTokens =
+      totalComputeLimitTokens > totalComputeUsageTokens
+        ? totalComputeLimitTokens - totalComputeUsageTokens
+        : BigInt(0)
+    const usageRatio =
+      totalComputeLimitTokens > BigInt(0)
+        ? Number(totalComputeUsageTokens) / Number(totalComputeLimitTokens)
+        : 0
 
     return NextResponse.json({
       projectId: authorizedProject?.id ?? 'global',
@@ -77,11 +89,14 @@ export async function GET(request: NextRequest) {
       },
       compute: {
         totalChatTurns: totalTurnCount,
-        estimatedLLMTokensConsumed: estimatedTokensConsumed,
-        estimatedCost: `~$${(estimatedTokensConsumed * 0.00000015).toFixed(4)} USD`,
+        llmTokensConsumed: totalComputeUsageTokens.toString(),
+        llmTokensLimit: totalComputeLimitTokens.toString(),
+        llmTokensRemaining: remainingComputeTokens.toString(),
+        usageRatio: Number.isFinite(usageRatio) ? Number(usageRatio.toFixed(4)) : 0,
+        estimatedCost: `~$${(Number(totalComputeUsageTokens) * 0.00000015).toFixed(4)} USD`,
         totalPreferencesStored: totalPreferences,
         pendingActionsInQueue: pendingActions,
-        note: 'Token estimates based on gpt-4o-mini pricing. Actual costs depend on your LLM provider.',
+        note: 'Token counters are sourced from runtime usage accounting. Cost estimate still depends on provider pricing.',
       },
       period: {
         since: 'all-time',
