@@ -6,6 +6,7 @@ export interface NpcPublicProfile {
   id: string
   name: string
   walletAddress: string
+  projectId?: string
   factionAffiliations?: string
   role?: string          // "scavenger", "crafter", etc.
   canTrade: boolean
@@ -32,6 +33,12 @@ class NpcWorldState {
     return this.getAll().filter(p => p.id !== excludeId)
   }
 
+  getOthersInProject(excludeId: string, projectId?: string): NpcPublicProfile[] {
+    const others = this.getOthers(excludeId)
+    if (!projectId) return others
+    return others.filter((profile) => profile.projectId === projectId)
+  }
+
   updateLastAction(id: string, action: string) {
     const profile = this.registry.get(id)
     if (profile) {
@@ -40,12 +47,13 @@ class NpcWorldState {
     }
   }
 
-  buildWorldContextPrompt(forNpcId: string): string {
-    const others = this.getOthers(forNpcId)
+  buildWorldContextPrompt(forNpcId: string, projectId?: string): string {
+    const others = this.getOthersInProject(forNpcId, projectId)
     if (others.length === 0) return ''
 
     const lines = others.map(npc =>
-      `- ${npc.name} (role: ${npc.role ?? 'unknown'}, wallet: ${npc.walletAddress.slice(0, 8)}…, ` +
+      `- ${npc.name} [Faction: ${npc.factionAffiliations ?? 'None'}] ` +
+      `(role: ${npc.role ?? 'unknown'}, wallet: ${npc.walletAddress.slice(0, 8)}..., ` +
       `canTrade: ${npc.canTrade}${npc.lastAction ? `, last action: ${npc.lastAction}` : ''})`
     )
 

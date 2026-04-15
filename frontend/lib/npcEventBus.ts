@@ -7,7 +7,14 @@ import { EventEmitter } from 'events'
 export interface WorldEvent {
   sourceId: string       // character.id of the NPC that acted
   sourceName: string     // character.name for display
-  actionType: 'CHAT' | 'PAYMENT_SENT' | 'TRADE_PROPOSED' | 'TRADE_ACCEPTED' | 'ITEM_TRANSFERRED' | 'BROADCAST'
+  actionType:
+    | 'CHAT'
+    | 'PAYMENT_SENT'
+    | 'TRADE_PROPOSED'
+    | 'TRADE_ACCEPTED'
+    | 'ITEM_TRANSFERRED'
+    | 'BROADCAST'
+    | 'HOSTILITY_TRIGGERED'
   payload: Record<string, unknown>
   timestamp: string
 }

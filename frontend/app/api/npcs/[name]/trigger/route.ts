@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@/lib/generated/prisma/client'
 import { kiteAgentClient } from '@/lib/kite-sdk'
 import { resolveProjectAndCharacter, asRecord } from '@/lib/npc-resolver'
+import { eventBus } from '@/lib/npcEventBus'
 
 /**
  * POST /api/npcs/[name]/trigger
@@ -17,7 +18,7 @@ export async function POST(
     const result = await resolveProjectAndCharacter(request, name)
     if (result instanceof NextResponse) return result
 
-    const { character } = result
+    const { character, project } = result
     const body = await request.json()
     const { event, asset, data = {}, recordInMemory = true } = body
 
@@ -75,6 +76,34 @@ export async function POST(
         data: { adaptation: updatedAdaptation as Prisma.InputJsonValue },
       })
     }
+
+    const factionId =
+      typeof config.factionId === 'string'
+        ? config.factionId
+        : typeof config.factions === 'string'
+          ? config.factions
+          : undefined
+
+    const normalizedActionType =
+      event.toUpperCase() === 'TRADE_PROPOSED'
+        ? 'TRADE_PROPOSED'
+        : event.toUpperCase() === 'CHAT'
+          ? 'CHAT'
+          : 'BROADCAST'
+
+    eventBus.broadcast({
+      sourceId: character.id,
+      sourceName: character.name,
+      actionType: normalizedActionType,
+      payload: {
+        projectId: project.id,
+        sourceFactionId: factionId,
+        event,
+        asset: asset ?? null,
+        data,
+      },
+      timestamp: new Date().toISOString(),
+    })
 
     return NextResponse.json({
       npcId: character.id,

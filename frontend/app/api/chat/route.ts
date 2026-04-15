@@ -7,6 +7,8 @@ import type { Prisma } from '@/lib/generated/prisma/client'
 import { eventBus } from '@/lib/npcEventBus'
 import { worldState } from '@/lib/npcWorldState'
 import { EconomicEngine } from '@/lib/economic-engine'
+import { ensureNpcSocialSubscription } from '@/lib/npcSocialReactivity'
+import { SocialEngine, normalizeBaseHostility, normalizeDisposition } from '@/lib/social-engine'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -33,6 +35,9 @@ interface CharacterConfig {
   baseCapital?: number
   pricingAlgorithm?: string
   marginPercentage?: number
+  factionId?: string
+  disposition?: 'FRIENDLY' | 'NEUTRAL' | 'HOSTILE'
+  baseHostility?: number
 }
 
 interface Section2Profile {
@@ -87,6 +92,9 @@ async function fetchCurrentMarketRate(): Promise<number | undefined> {
 
 function toCharacterConfig(value: unknown): CharacterConfig {
   const payload = asRecord(value)
+  const rawFaction = payload.factionId ?? payload.factions
+  const factionId = typeof rawFaction === 'string' && rawFaction.trim() ? rawFaction.trim() : undefined
+
   return {
     systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : undefined,
     openness: typeof payload.openness === 'number' ? payload.openness : undefined,
@@ -95,6 +103,9 @@ function toCharacterConfig(value: unknown): CharacterConfig {
     pricingAlgorithm:
       typeof payload.pricingAlgorithm === 'string' ? payload.pricingAlgorithm : undefined,
     marginPercentage: asNumber(payload.marginPercentage),
+    factionId,
+    disposition: normalizeDisposition(payload.disposition),
+    baseHostility: normalizeBaseHostility(payload.baseHostility ?? payload.hostility),
   }
 }
 
@@ -226,7 +237,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Support both npcName (new semantic API) and characterId (legacy)
-    const { npcName, characterId: legacyCharacterId, message } = body
+    const {
+      npcName,
+      characterId: legacyCharacterId,
+      message,
+      targetFactionId,
+      targetDisposition,
+      targetBaseHostility,
+    } = body
 
     if (!message) {
       return NextResponse.json(
@@ -385,10 +403,136 @@ export async function POST(request: NextRequest) {
 
     // Normal chat
     const agent = kiteAgentClient
-    agent.registerTools(['get_payer_addr', 'approve_payment', 'check_inventory', 'execute_trade'])
+    agent.registerTools([
+      'propose_trade',
+      'execute_trade',
+      'join_faction',
+      'betray_ally',
+      'declare_hostility',
+    ])
+
+    const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
+
+    worldState.register({
+      id: character.id,
+      name: character.name,
+      walletAddress: character.walletAddress,
+      projectId: activeProjectId,
+      factionAffiliations: config.factionId,
+      canTrade: config.canTrade !== false,
+    })
+
+    ensureNpcSocialSubscription({
+      npcId: character.id,
+      npcName: character.name,
+      projectId: activeProjectId,
+      social: {
+        factionId: config.factionId,
+        disposition: config.disposition,
+        baseHostility: config.baseHostility,
+      },
+    })
 
     // 1. Fetch the live context of other NPCs in the project
-    const dynamicWorldContext = worldState.buildWorldContextPrompt(character.id)
+    const dynamicWorldContext = worldState.buildWorldContextPrompt(character.id, activeProjectId)
+
+    const socialInput = {
+      actor: {
+        factionId: config.factionId,
+        disposition: config.disposition,
+        baseHostility: config.baseHostility,
+      },
+      target: {
+        factionId: typeof targetFactionId === 'string' ? targetFactionId : undefined,
+        disposition:
+          typeof targetDisposition === 'string'
+            ? normalizeDisposition(targetDisposition)
+            : undefined,
+        baseHostility: targetBaseHostility,
+      },
+      targetName: 'message sender',
+      interactionType: 'CHAT' as const,
+    }
+
+    const socialEvaluation = SocialEngine.evaluateHostility(socialInput)
+    const socialContext = SocialEngine.buildSocialContext(socialInput)
+
+    if (socialEvaluation.decision !== 'ALLOW_CHAT') {
+      const refusalText =
+        socialEvaluation.decision === 'INTERRUPT_OR_ATTACK'
+          ? `${character.name} rejects diplomacy and escalates aggressively.`
+          : `${character.name} refuses to engage due to hostile social standing.`
+      const refusalAction =
+        socialEvaluation.decision === 'INTERRUPT_OR_ATTACK'
+          ? 'reaches for weapons and advances'
+          : 'turns away with visible distrust'
+
+      if (socialEvaluation.decision === 'INTERRUPT_OR_ATTACK') {
+        await (prisma as any).actionQueue.create({
+          data: {
+            characterId: character.id,
+            actionType: 'COMBAT_INIT',
+            payload: {
+              description: `Escalated due to social hostility score ${socialEvaluation.hostilityScore}.`,
+              hostilityScore: socialEvaluation.hostilityScore,
+              trigger: 'CHAT',
+            },
+            status: 'PENDING',
+            executeAt: new Date(),
+          },
+        })
+      }
+
+      await (prisma as any).npcLog.create({
+        data: {
+          characterId: character.id,
+          eventType: 'CHAT_BLOCKED_SOCIAL',
+          details: {
+            message,
+            response: refusalText,
+            action: refusalAction,
+            hostilityScore: socialEvaluation.hostilityScore,
+            decision: socialEvaluation.decision,
+          },
+        },
+      })
+
+      worldState.updateLastAction(character.id, `hostility:${socialEvaluation.decision}`)
+
+      eventBus.broadcast({
+        sourceId: character.id,
+        sourceName: character.name,
+        actionType: 'HOSTILITY_TRIGGERED',
+        payload: {
+          projectId: activeProjectId,
+          sourceFactionId: config.factionId,
+          sourceDisposition: config.disposition,
+          sourceBaseHostility: config.baseHostility,
+          hostilityScore: socialEvaluation.hostilityScore,
+          decision: socialEvaluation.decision,
+          message,
+        },
+        timestamp: new Date().toISOString(),
+      })
+
+      return NextResponse.json(
+        {
+          success: true,
+          response: refusalText,
+          action: refusalAction,
+          characterId: character.id,
+          npcName: character.name,
+          tradeIntent: null,
+          specializationActive: adaptation.specializationActive,
+          pendingSpecialization: Boolean(adaptation.pendingSection2),
+          timestamp: new Date().toISOString(),
+          projectId: activeProjectId,
+          socialDecision: socialEvaluation.decision,
+          hostilityScore: socialEvaluation.hostilityScore,
+        },
+        { status: 200, headers: corsHeaders }
+      )
+    }
 
     // 2. Append it to the base system prompt
     const basePrompt = typeof config.systemPrompt === 'string' && config.systemPrompt.trim()
@@ -412,7 +556,7 @@ export async function POST(request: NextRequest) {
     })
 
     const activeProfile: Section2Profile = {
-      systemPrompt: `${basePrompt}\n\n${dynamicWorldContext}\n\n${economicContext}`,
+      systemPrompt: `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${economicContext}`,
       openness: typeof config.openness === 'number' ? config.openness : 50,
     }
 
@@ -448,6 +592,9 @@ export async function POST(request: NextRequest) {
       marginPercentage: config.marginPercentage,
       currentMarketRate,
       liveWalletBalance,
+      factionId: config.factionId,
+      disposition: config.disposition,
+      baseHostility: config.baseHostility,
     })
 
     let finalTradeIntent = agentResponse.tradeIntent
@@ -481,6 +628,11 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    worldState.updateLastAction(
+      character.id,
+      finalTradeIntent ? 'trade_proposed' : 'chat_replied'
+    )
+
     // Broadcast to the Event Bus so other NPCs "hear" this interaction
     eventBus.broadcast({
       sourceId: character.id,
@@ -490,7 +642,10 @@ export async function POST(request: NextRequest) {
         message: message,
         response: finalResponseText,
         tradeIntent: finalTradeIntent,
-        projectId: project?.id,
+        projectId: activeProjectId,
+        sourceFactionId: config.factionId,
+        sourceDisposition: config.disposition,
+        sourceBaseHostility: config.baseHostility,
       },
       timestamp: new Date().toISOString(),
     })

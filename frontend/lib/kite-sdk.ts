@@ -14,6 +14,7 @@
 
 import OpenAI from 'openai'
 import { executeWriteTransaction } from '@/lib/tx-orchestrator'
+import { betrayAlly, declareHostility, joinFaction } from '@/lib/social-state-store'
 
 type FunctionToolCall = OpenAI.Chat.Completions.ChatCompletionMessageFunctionToolCall
 
@@ -79,6 +80,9 @@ export interface AgentContext {
   marginPercentage?: number
   currentMarketRate?: number
   liveWalletBalance?: string
+  factionId?: string
+  disposition?: 'FRIENDLY' | 'NEUTRAL' | 'HOSTILE'
+  baseHostility?: number
 }
 
 /** SSE event shape emitted by chatStream(). */
@@ -129,6 +133,53 @@ const EXECUTE_TRADE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
         amount: { type: 'number', description: 'The amount of currency to send' },
       },
       required: ['targetAddress', 'amount'],
+    },
+  },
+}
+
+const JOIN_FACTION_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'join_faction',
+    description: 'Join or align with a specific faction and persist it to NPC social state.',
+    parameters: {
+      type: 'object',
+      properties: {
+        factionId: { type: 'string', description: 'Faction identifier to join.' },
+      },
+      required: ['factionId'],
+    },
+  },
+}
+
+const BETRAY_ALLY_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'betray_ally',
+    description: 'Break alignment with a faction and increase hostility.',
+    parameters: {
+      type: 'object',
+      properties: {
+        factionId: { type: 'string', description: 'Faction identifier that is being betrayed.' },
+        reason: { type: 'string', description: 'Short reason for betrayal.' },
+      },
+      required: ['factionId'],
+    },
+  },
+}
+
+const DECLARE_HOSTILITY_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'declare_hostility',
+    description: 'Declare hostility toward a faction and increase hostility threshold.',
+    parameters: {
+      type: 'object',
+      properties: {
+        targetFactionId: { type: 'string', description: 'Faction to mark as hostile.' },
+        severity: { type: 'number', description: 'Hostility intensity from 0 to 100.' },
+      },
+      required: ['targetFactionId', 'severity'],
     },
   },
 }
@@ -190,6 +241,17 @@ function buildSystemPrompt(ctx: AgentContext): string {
   }
   const economicNote = economicLines.join(' ')
 
+  const socialLines: string[] = []
+  if (ctx.factionId) socialLines.push(`Faction: ${ctx.factionId}.`)
+  if (ctx.disposition) socialLines.push(`Disposition: ${ctx.disposition}.`)
+  if (typeof ctx.baseHostility === 'number') {
+    socialLines.push(`Base hostility: ${ctx.baseHostility}/100.`)
+  }
+  if (socialLines.length > 0) {
+    socialLines.push('Respect this social state when deciding whether to trade or escalate.')
+  }
+  const socialNote = socialLines.join(' ')
+
   const jsonFormatInstructions = `
 CRITICAL OUTPUT FORMAT — always respond with valid JSON:
 {
@@ -198,7 +260,7 @@ CRITICAL OUTPUT FORMAT — always respond with valid JSON:
 }
 Never include asterisk actions (*like this*) in the text field.`
 
-  return [basePersona, opennessLine, tradeLine, specializationNote, turnNote, economicNote,
+  return [basePersona, opennessLine, tradeLine, specializationNote, turnNote, socialNote, economicNote,
     'Stay in character. Do not mention being an AI.', jsonFormatInstructions]
     .filter(Boolean)
     .join('\n\n')
@@ -244,14 +306,36 @@ export class KiteAgentClient {
     this.registeredTools = tools
   }
 
+  private resolveTools(ctx: AgentContext): OpenAI.Chat.Completions.ChatCompletionTool[] {
+    const allowed = new Set(this.registeredTools)
+    const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = []
+
+    if (ctx.canTrade !== false && allowed.has('propose_trade')) {
+      tools.push(PROPOSE_TRADE_TOOL)
+    }
+    if (allowed.has('execute_trade')) {
+      tools.push(EXECUTE_TRADE_TOOL)
+    }
+    if (allowed.has('join_faction')) {
+      tools.push(JOIN_FACTION_TOOL)
+    }
+    if (allowed.has('betray_ally')) {
+      tools.push(BETRAY_ALLY_TOOL)
+    }
+    if (allowed.has('declare_hostility')) {
+      tools.push(DECLARE_HOSTILITY_TOOL)
+    }
+
+    return tools
+  }
+
   // ── Standard (blocking) chat ─────────────────────────────────────────────
 
   async chat(userMessage: string, ctx: AgentContext = {}): Promise<ChatResponse> {
     const client = getClient()
     const model  = getModel()
     const systemPrompt = buildSystemPrompt(ctx)
-    const tools: OpenAI.Chat.Completions.ChatCompletionTool[] =
-      ctx.canTrade !== false ? [PROPOSE_TRADE_TOOL, EXECUTE_TRADE_TOOL] : []
+    const tools = this.resolveTools(ctx)
 
     const responseFormat = tools.length === 0
       ? { response_format: { type: 'json_object' as const } }
@@ -325,6 +409,73 @@ export class KiteAgentClient {
           }
         } catch { /* fall through */ }
       }
+
+      if (isFunctionToolCall(toolCall) && toolCall.function.name === 'join_faction') {
+        try {
+          const args = JSON.parse(toolCall.function.arguments) as { factionId?: string }
+          if (!ctx.characterId) {
+            return { text: 'Cannot join faction: missing character identity.', action: 'pauses cautiously' }
+          }
+          if (!args.factionId) {
+            return { text: 'Cannot join faction: factionId missing.', action: 'tilts head in confusion' }
+          }
+          const snapshot = await joinFaction(ctx.characterId, args.factionId)
+          return {
+            text: `Joined faction ${snapshot.factionId ?? 'UNALIGNED'} and updated social standing.`,
+            action: 'marks allegiance in ledger',
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Unknown social mutation error'
+          return { text: `Failed to join faction: ${msg}`, action: 'grimaces slightly' }
+        }
+      }
+
+      if (isFunctionToolCall(toolCall) && toolCall.function.name === 'betray_ally') {
+        try {
+          const args = JSON.parse(toolCall.function.arguments) as { factionId?: string; reason?: string }
+          if (!ctx.characterId) {
+            return { text: 'Cannot betray ally: missing character identity.', action: 'steps back silently' }
+          }
+          if (!args.factionId) {
+            return { text: 'Cannot betray ally: factionId missing.', action: 'stares in silence' }
+          }
+          const snapshot = await betrayAlly(ctx.characterId, args.factionId, args.reason)
+          return {
+            text: `Alliance with ${args.factionId} is broken. Disposition is now ${snapshot.disposition}.`,
+            action: 'burns an old pact',
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Unknown social mutation error'
+          return { text: `Failed to betray ally: ${msg}`, action: 'looks conflicted' }
+        }
+      }
+
+      if (isFunctionToolCall(toolCall) && toolCall.function.name === 'declare_hostility') {
+        try {
+          const args = JSON.parse(toolCall.function.arguments) as {
+            targetFactionId?: string
+            severity?: number
+          }
+          if (!ctx.characterId) {
+            return { text: 'Cannot declare hostility: missing character identity.', action: 'crosses arms' }
+          }
+          if (!args.targetFactionId) {
+            return { text: 'Cannot declare hostility: targetFactionId missing.', action: 'narrows gaze' }
+          }
+          const snapshot = await declareHostility(
+            ctx.characterId,
+            args.targetFactionId,
+            typeof args.severity === 'number' ? args.severity : 75
+          )
+          return {
+            text: `Hostility declared toward ${args.targetFactionId}. Hostility is now ${snapshot.baseHostility}/100.`,
+            action: 'issues a public threat',
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Unknown social mutation error'
+          return { text: `Failed to declare hostility: ${msg}`, action: 'clenches jaw' }
+        }
+      }
     }
 
     const rawContent = choice.message.content?.trim() ?? ''
@@ -352,8 +503,7 @@ export class KiteAgentClient {
     const client = getClient()
     const model  = getModel()
     const systemPrompt = buildSystemPrompt(ctx)
-    const tools: OpenAI.Chat.Completions.ChatCompletionTool[] =
-      ctx.canTrade !== false ? [PROPOSE_TRADE_TOOL, EXECUTE_TRADE_TOOL] : []
+    const tools = this.resolveTools(ctx)
     const temp = this.opennessToTemperature(ctx.openness)
 
     return new ReadableStream<string>({
@@ -425,6 +575,81 @@ export class KiteAgentClient {
                 // Emit the text as a single delta so clients render it progressively
                 enqueue({ type: 'text_delta', delta: final.text })
                 if (final.tradeIntent) enqueue({ type: 'trade_intent', tradeIntent: final.tradeIntent })
+                enqueue({ type: 'done', final })
+                controller.close()
+                return
+              }
+              if (isFunctionToolCall(toolCall) && toolCall.function.name === 'join_faction') {
+                const args = JSON.parse(toolCall.function.arguments) as { factionId?: string }
+                if (!ctx.characterId || !args.factionId) {
+                  const final: ChatResponse = {
+                    text: 'Cannot join faction: character identity or factionId missing.',
+                    action: 'hesitates briefly',
+                  }
+                  enqueue({ type: 'done', final })
+                  controller.close()
+                  return
+                }
+                const snapshot = await joinFaction(ctx.characterId, args.factionId)
+                const final: ChatResponse = {
+                  text: `Joined faction ${snapshot.factionId ?? 'UNALIGNED'} and updated social standing.`,
+                  action: 'marks allegiance in ledger',
+                }
+                enqueue({ type: 'action', action: final.action })
+                enqueue({ type: 'text_delta', delta: final.text })
+                enqueue({ type: 'done', final })
+                controller.close()
+                return
+              }
+
+              if (isFunctionToolCall(toolCall) && toolCall.function.name === 'betray_ally') {
+                const args = JSON.parse(toolCall.function.arguments) as { factionId?: string; reason?: string }
+                if (!ctx.characterId || !args.factionId) {
+                  const final: ChatResponse = {
+                    text: 'Cannot betray ally: character identity or factionId missing.',
+                    action: 'looks conflicted',
+                  }
+                  enqueue({ type: 'done', final })
+                  controller.close()
+                  return
+                }
+                const snapshot = await betrayAlly(ctx.characterId, args.factionId, args.reason)
+                const final: ChatResponse = {
+                  text: `Alliance with ${args.factionId} is broken. Disposition is now ${snapshot.disposition}.`,
+                  action: 'burns an old pact',
+                }
+                enqueue({ type: 'action', action: final.action })
+                enqueue({ type: 'text_delta', delta: final.text })
+                enqueue({ type: 'done', final })
+                controller.close()
+                return
+              }
+
+              if (isFunctionToolCall(toolCall) && toolCall.function.name === 'declare_hostility') {
+                const args = JSON.parse(toolCall.function.arguments) as {
+                  targetFactionId?: string
+                  severity?: number
+                }
+                if (!ctx.characterId || !args.targetFactionId) {
+                  const final: ChatResponse = {
+                    text: 'Cannot declare hostility: character identity or targetFactionId missing.',
+                    action: 'narrows gaze',
+                  }
+                  enqueue({ type: 'done', final })
+                  controller.close()
+                  return
+                }
+                const snapshot = await declareHostility(
+                  ctx.characterId,
+                  args.targetFactionId,
+                  typeof args.severity === 'number' ? args.severity : 75
+                )
+                const final: ChatResponse = {
+                  text: `Hostility declared toward ${args.targetFactionId}. Hostility is now ${snapshot.baseHostility}/100.`,
+                  action: 'issues a public threat',
+                }
+                enqueue({ type: 'action', action: final.action })
+                enqueue({ type: 'text_delta', delta: final.text })
                 enqueue({ type: 'done', final })
                 controller.close()
                 return

@@ -12,6 +12,9 @@ import { kiteAgentClient, encodeSSEFrame } from '@/lib/kite-sdk'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
 import { EconomicEngine } from '@/lib/economic-engine'
+import { worldState } from '@/lib/npcWorldState'
+import { ensureNpcSocialSubscription } from '@/lib/npcSocialReactivity'
+import { SocialEngine, normalizeBaseHostility, normalizeDisposition } from '@/lib/social-engine'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -28,6 +31,9 @@ interface CharacterConfig {
   baseCapital?: number
   pricingAlgorithm?: string
   marginPercentage?: number
+  factionId?: string
+  disposition?: 'FRIENDLY' | 'NEUTRAL' | 'HOSTILE'
+  baseHostility?: number
 }
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
@@ -55,6 +61,9 @@ function asNumber(value: unknown): number | undefined {
 
 function toCharacterConfig(value: unknown): CharacterConfig {
   const config = asRecord(value)
+  const rawFaction = config.factionId ?? config.factions
+  const factionId = typeof rawFaction === 'string' && rawFaction.trim() ? rawFaction.trim() : undefined
+
   return {
     systemPrompt: typeof config.systemPrompt === 'string' ? config.systemPrompt : undefined,
     openness: asNumber(config.openness),
@@ -63,6 +72,9 @@ function toCharacterConfig(value: unknown): CharacterConfig {
     pricingAlgorithm:
       typeof config.pricingAlgorithm === 'string' ? config.pricingAlgorithm : undefined,
     marginPercentage: asNumber(config.marginPercentage),
+    factionId,
+    disposition: normalizeDisposition(config.disposition),
+    baseHostility: normalizeBaseHostility(config.baseHostility ?? config.hostility),
   }
 }
 
@@ -85,6 +97,18 @@ function errorStream(message: string): ReadableStream<Uint8Array> {
   return new ReadableStream({
     start(controller) {
       controller.enqueue(encoder.encode(encodeSSEFrame({ type: 'error', error: message })))
+      controller.close()
+    },
+  })
+}
+
+function socialBlockStream(message: string, action: string): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(encodeSSEFrame({ type: 'action', action })))
+      controller.enqueue(encoder.encode(encodeSSEFrame({ type: 'text_delta', delta: message })))
+      controller.enqueue(encoder.encode(encodeSSEFrame({ type: 'done', final: { text: message, action } })))
       controller.close()
     },
   })
@@ -146,7 +170,14 @@ export async function POST(request: NextRequest) {
   }
 
   // Parse body
-  let body: { npcName?: string; characterId?: string; message?: string }
+  let body: {
+    npcName?: string
+    characterId?: string
+    message?: string
+    targetFactionId?: string
+    targetDisposition?: string
+    targetBaseHostility?: number
+  }
   try {
     body = await request.json()
   } catch {
@@ -210,6 +241,65 @@ export async function POST(request: NextRequest) {
   // Build agent context
   const config = toCharacterConfig(character.config)
   const adaptation = asRecord(character.adaptation)
+  const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
+
+  worldState.register({
+    id: character.id,
+    name: character.name,
+    walletAddress: character.walletAddress,
+    projectId: activeProjectId,
+    factionAffiliations: config.factionId,
+    canTrade: config.canTrade !== false,
+  })
+
+  ensureNpcSocialSubscription({
+    npcId: character.id,
+    npcName: character.name,
+    projectId: activeProjectId,
+    social: {
+      factionId: config.factionId,
+      disposition: config.disposition,
+      baseHostility: config.baseHostility,
+    },
+  })
+
+  const socialInput = {
+    actor: {
+      factionId: config.factionId,
+      disposition: config.disposition,
+      baseHostility: config.baseHostility,
+    },
+    target: {
+      factionId: typeof body.targetFactionId === 'string' ? body.targetFactionId : undefined,
+      disposition:
+        typeof body.targetDisposition === 'string'
+          ? normalizeDisposition(body.targetDisposition)
+          : undefined,
+      baseHostility: body.targetBaseHostility,
+    },
+    targetName: 'message sender',
+    interactionType: 'CHAT' as const,
+  }
+
+  const socialEvaluation = SocialEngine.evaluateHostility(socialInput)
+  if (socialEvaluation.decision !== 'ALLOW_CHAT') {
+    const responseText =
+      socialEvaluation.decision === 'INTERRUPT_OR_ATTACK'
+        ? `${character.name} rejects diplomacy and escalates aggressively.`
+        : `${character.name} refuses to engage due to hostile social standing.`
+    const responseAction =
+      socialEvaluation.decision === 'INTERRUPT_OR_ATTACK'
+        ? 'reaches for weapons and advances'
+        : 'turns away with visible distrust'
+
+    return new NextResponse(socialBlockStream(responseText, responseAction), {
+      status: 200,
+      headers: sseHeaders,
+    })
+  }
+
+  const socialContext = SocialEngine.buildSocialContext(socialInput)
+  const dynamicWorldContext = worldState.buildWorldContextPrompt(character.id, activeProjectId)
 
   let liveWalletBalance: string | undefined
   try {
@@ -233,7 +323,7 @@ export async function POST(request: NextRequest) {
 
   const ctx = {
     characterName: character.name,
-    systemPrompt: `${basePrompt}\n\n${economicContext}`,
+    systemPrompt: `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${economicContext}`,
     openness: config.openness,
     canTrade: config.canTrade !== false,
     specializationActive: Boolean(adaptation.specializationActive),
@@ -245,9 +335,18 @@ export async function POST(request: NextRequest) {
     marginPercentage: config.marginPercentage,
     currentMarketRate,
     liveWalletBalance,
+    factionId: config.factionId,
+    disposition: config.disposition,
+    baseHostility: config.baseHostility,
   }
 
-  kiteAgentClient.registerTools(['get_payer_addr', 'approve_payment', 'check_inventory', 'execute_trade'])
+  kiteAgentClient.registerTools([
+    'propose_trade',
+    'execute_trade',
+    'join_faction',
+    'betray_ally',
+    'declare_hostility',
+  ])
 
   const rawStream = kiteAgentClient.chatStream(message, ctx)
 
