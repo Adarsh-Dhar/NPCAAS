@@ -7,15 +7,28 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { ethers } from 'ethers'
 import { kiteAgentClient, encodeSSEFrame } from '@/lib/kite-sdk'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
+import { EconomicEngine } from '@/lib/economic-engine'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:8080',
   'https://your-game-studio.com',
 ]
+
+const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
+
+interface CharacterConfig {
+  systemPrompt?: string
+  openness?: number
+  canTrade?: boolean
+  baseCapital?: number
+  pricingAlgorithm?: string
+  marginPercentage?: number
+}
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin =
@@ -29,6 +42,42 @@ function getCorsHeaders(origin: string | null): Record<string, string> {
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
+}
+
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+function toCharacterConfig(value: unknown): CharacterConfig {
+  const config = asRecord(value)
+  return {
+    systemPrompt: typeof config.systemPrompt === 'string' ? config.systemPrompt : undefined,
+    openness: asNumber(config.openness),
+    canTrade: typeof config.canTrade === 'boolean' ? config.canTrade : undefined,
+    baseCapital: asNumber(config.baseCapital ?? config.capital),
+    pricingAlgorithm:
+      typeof config.pricingAlgorithm === 'string' ? config.pricingAlgorithm : undefined,
+    marginPercentage: asNumber(config.marginPercentage),
+  }
+}
+
+async function fetchCurrentMarketRate(): Promise<number | undefined> {
+  const endpoint = process.env.KITE_MARKET_RATE_API_URL
+  if (!endpoint) return undefined
+
+  try {
+    const response = await fetch(endpoint, { method: 'GET', cache: 'no-store' })
+    if (!response.ok) return undefined
+    const payload = (await response.json()) as Record<string, unknown>
+    return asNumber(payload.currentMarketRate ?? payload.rate ?? payload.price)
+  } catch {
+    return undefined
+  }
 }
 
 function errorStream(message: string): ReadableStream<Uint8Array> {
@@ -159,18 +208,43 @@ export async function POST(request: NextRequest) {
   }
 
   // Build agent context
-  const config = asRecord(character.config)
+  const config = toCharacterConfig(character.config)
   const adaptation = asRecord(character.adaptation)
+
+  let liveWalletBalance: string | undefined
+  try {
+    const provider = new ethers.JsonRpcProvider(KITE_RPC)
+    const rawBalance = await provider.getBalance(character.walletAddress)
+    liveWalletBalance = ethers.formatEther(rawBalance)
+  } catch (error) {
+    console.warn('[chat/stream] Failed to fetch live wallet balance:', error)
+  }
+
+  const currentMarketRate = await fetchCurrentMarketRate()
+  const economicContext = EconomicEngine.buildEconomicContext({
+    config,
+    currentMarketRate,
+    liveWalletBalance,
+  })
+
+  const basePrompt = config.systemPrompt?.trim()
+    ? config.systemPrompt.trim()
+    : 'You are an autonomous NPC that negotiates fairly and builds reputation.'
 
   const ctx = {
     characterName: character.name,
-    systemPrompt: typeof config.systemPrompt === 'string' ? config.systemPrompt : undefined,
-    openness: typeof config.openness === 'number' ? config.openness : undefined,
+    systemPrompt: `${basePrompt}\n\n${economicContext}`,
+    openness: config.openness,
     canTrade: config.canTrade !== false,
     specializationActive: Boolean(adaptation.specializationActive),
     adaptationSummary: typeof adaptation.summary === 'string' ? adaptation.summary : undefined,
     preferences: Array.isArray(adaptation.preferences) ? adaptation.preferences : [],
     turnCount: typeof adaptation.turnCount === 'number' ? adaptation.turnCount : 0,
+    baseCapital: config.baseCapital,
+    pricingAlgorithm: config.pricingAlgorithm,
+    marginPercentage: config.marginPercentage,
+    currentMarketRate,
+    liveWalletBalance,
   }
 
   kiteAgentClient.registerTools(['get_payer_addr', 'approve_payment', 'check_inventory', 'execute_trade'])

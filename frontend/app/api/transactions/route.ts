@@ -11,6 +11,7 @@ import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
 import { executeWriteTransaction } from '@/lib/tx-orchestrator'
 import { parseEther } from 'ethers' // <--- ADD THIS IMPORT
+import { EconomicEngine } from '@/lib/economic-engine'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -30,6 +31,12 @@ interface DirectWriteTransaction {
   data?: string
 }
 
+interface CharacterConfig {
+  baseCapital?: number
+  pricingAlgorithm?: string
+  marginPercentage?: number
+}
+
 function getCorsHeaders(origin: string | null) {
   const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
   return {
@@ -41,6 +48,39 @@ function getCorsHeaders(origin: string | null) {
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
+}
+
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+function toCharacterConfig(value: unknown): CharacterConfig {
+  const payload = asRecord(value)
+  return {
+    baseCapital: asNumber(payload.baseCapital ?? payload.capital),
+    pricingAlgorithm:
+      typeof payload.pricingAlgorithm === 'string' ? payload.pricingAlgorithm : undefined,
+    marginPercentage: asNumber(payload.marginPercentage),
+  }
+}
+
+async function fetchCurrentMarketRate(): Promise<number | undefined> {
+  const endpoint = process.env.KITE_MARKET_RATE_API_URL
+  if (!endpoint) return undefined
+
+  try {
+    const response = await fetch(endpoint, { method: 'GET', cache: 'no-store' })
+    if (!response.ok) return undefined
+    const payload = (await response.json()) as Record<string, unknown>
+    return asNumber(payload.currentMarketRate ?? payload.rate ?? payload.price)
+  } catch {
+    return undefined
+  }
 }
 
 function toTradeIntent(v: unknown): TradeIntent | null {
@@ -136,6 +176,26 @@ export async function POST(request: NextRequest) {
     
     // CASE 1: Player Trade (User must send funds to the NPC)
     if (tradeIntent) {
+      const config = toCharacterConfig(character.config)
+      const currentMarketRate = await fetchCurrentMarketRate()
+      const validation = EconomicEngine.validateTradeDetailed({
+        tradeIntent,
+        config,
+        currentMarketRate,
+      })
+
+      if (!validation.isValid) {
+        return NextResponse.json(
+          {
+            error:
+              validation.reason ??
+              'Trade intent violates economic constraints and cannot be executed.',
+            minAllowedPrice: validation.minPrice,
+          },
+          { status: 400, headers: cors }
+        )
+      }
+
       const txRequest = {
         to: character.walletAddress, // Receiver is the NPC
         // Converts decimal KITE amount to Wei string

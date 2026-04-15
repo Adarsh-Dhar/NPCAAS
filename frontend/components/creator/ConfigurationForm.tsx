@@ -12,8 +12,10 @@ interface ConfigurationFormProps {
   characterName?: string
   characterId?: string | null
   initialConfig?: Partial<{
+    baseCapital: string
     capital: string
     pricingAlgorithm: string
+    marginPercentage: string
     systemPrompt: string
     openness: number
     factions: string
@@ -59,6 +61,7 @@ export default function ConfigurationForm({
     name: characterName,
     capital: '1000',
     pricingAlgorithm: 'DYNAMIC_MARKET',
+    marginPercentage: '15',
     systemPrompt:
       'You are an autonomous NPC. Negotiate fairly. Build reputation.',
     openness: 50,
@@ -82,8 +85,9 @@ export default function ConfigurationForm({
       ...prev,
       name: characterName ?? prev.name,
       ...(initialConfig ? {
-        capital: initialConfig.capital ?? prev.capital,
+        capital: initialConfig.baseCapital ?? initialConfig.capital ?? prev.capital,
         pricingAlgorithm: initialConfig.pricingAlgorithm ?? prev.pricingAlgorithm,
+        marginPercentage: initialConfig.marginPercentage ?? prev.marginPercentage,
         systemPrompt: initialConfig.systemPrompt ?? prev.systemPrompt,
         openness: initialConfig.openness ?? prev.openness,
         factions: initialConfig.factions ?? prev.factions,
@@ -107,6 +111,20 @@ export default function ConfigurationForm({
     })
   }
 
+  const buildConfigPayload = () => {
+    const { name: _name, capital, marginPercentage, ...rest } = formData
+    const payload: Record<string, unknown> = {
+      ...rest,
+      baseCapital: capital,
+    }
+
+    if (formData.pricingAlgorithm === 'FIXED_MARGIN') {
+      payload.marginPercentage = marginPercentage
+    }
+
+    return payload
+  }
+
   const handleDeploy = async () => {
     if (!formData.name.trim()) {
       setDeployError('Character name is required')
@@ -117,14 +135,14 @@ export default function ConfigurationForm({
     setDeployError('')
 
     try {
-      const { name, ...config } = formData
+      const { name } = formData
       const response = await fetch('/api/characters', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           gameIds: projectId ? [projectId] : undefined,
           name: name.trim(),
-          config,
+          config: buildConfigPayload(),
         }),
       })
 
@@ -155,14 +173,14 @@ export default function ConfigurationForm({
     setDeployError('')
 
     try {
-      const { name, ...config } = formData
+      const { name } = formData
       const response = await fetch('/api/characters', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           characterId,
           name: name.trim() || undefined,
-          config,
+          config: buildConfigPayload(),
         }),
       })
 
@@ -214,6 +232,9 @@ export default function ConfigurationForm({
           value={formData.capital}
           onChange={(e) => handleInputChange('capital', e.target.value)}
         />
+        <p className="-mt-2 text-xs text-orange-200">
+          This amount will be sent to your NPC's wallet on deployment.
+        </p>
 
         <div className="flex flex-col gap-2">
           <label className="text-xs font-bold uppercase text-white">
@@ -230,6 +251,19 @@ export default function ConfigurationForm({
             <option>REPUTATION_SCALED</option>
           </select>
         </div>
+
+        {formData.pricingAlgorithm === 'FIXED_MARGIN' && (
+          <RetroInput
+            borderColor="orange"
+            label="Margin Percentage (%)"
+            type="number"
+            min={0}
+            max={100}
+            step={0.1}
+            value={formData.marginPercentage}
+            onChange={(e) => handleInputChange('marginPercentage', e.target.value)}
+          />
+        )}
       </FormSection>
 
       {/* Section 2: COGNITIVE LAYER */}

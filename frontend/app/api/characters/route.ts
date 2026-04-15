@@ -5,6 +5,7 @@ import { kiteAAProvider } from '@/lib/aa-sdk'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@/lib/generated/prisma/client'
+import { TreasuryService } from '@/lib/treasury'
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
@@ -12,6 +13,17 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function toInputJson(value: unknown): Prisma.InputJsonValue {
   return asRecord(value) as Prisma.InputJsonValue
+}
+
+function getBaseCapital(config: unknown): number {
+  const payload = asRecord(config)
+  const raw = payload.baseCapital ?? payload.capital
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  if (typeof raw === 'string') {
+    const parsed = Number(raw)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return 0
 }
 
 function normalizeAdaptation(config: unknown, existing: unknown = {}) {
@@ -293,11 +305,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const provisioning = await TreasuryService.provisionNpcWallet(
+      character.walletAddress,
+      getBaseCapital(config)
+    )
+
+    try {
+      await (prisma as any).npcLog.create({
+        data: {
+          characterId: character.id,
+          eventType: 'TREASURY_PROVISION',
+          details: {
+            status: provisioning.status,
+            txHash: provisioning.txHash ?? null,
+            amountKite: provisioning.amountKite,
+            reason: provisioning.reason ?? null,
+          },
+        },
+      })
+    } catch (logError) {
+      console.warn('[API] Failed to write TREASURY_PROVISION log:', logError)
+    }
+
     return NextResponse.json(
       {
         message: `Deployed ${name} to Kite Chain with wallet ${smartAccount.address.slice(0, 6)}...`,
         character: toApiCharacter(character),
         walletAddress: smartAccount.address,
+        treasuryProvision: provisioning,
       },
       { status: 201 }
     )

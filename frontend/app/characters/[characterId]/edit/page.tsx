@@ -29,8 +29,10 @@ interface CharacterLookupResponse {
 }
 
 interface FormConfigSnapshot {
+  baseCapital?: string
   capital?: string
   pricingAlgorithm?: string
+  marginPercentage?: string
   systemPrompt?: string
   openness?: number
   factions?: string
@@ -73,8 +75,10 @@ function normalizeInitialConfig(config?: Record<string, unknown> | null): FormCo
     'summary' in config
 
   return {
+    baseCapital: asString(config.baseCapital ?? config.capital),
     capital: asString(config.capital),
     pricingAlgorithm: asString(config.pricingAlgorithm),
+    marginPercentage: asString(config.marginPercentage),
     systemPrompt:
       asString(config.systemPrompt) ??
       (isAdaptationShape ? asString(snapshot?.systemPrompt) : undefined),

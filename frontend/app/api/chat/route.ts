@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ethers } from 'ethers'
 import { kiteAgentClient } from '@/lib/kite-sdk'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@/lib/generated/prisma/client'
 import { eventBus } from '@/lib/npcEventBus'
 import { worldState } from '@/lib/npcWorldState'
+import { EconomicEngine } from '@/lib/economic-engine'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:8080',
   'https://your-game-studio.com',
 ]
+
+const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
 
 function getCorsHeaders(origin: string | null) {
   const allowedOrigin =
@@ -26,6 +30,9 @@ interface CharacterConfig {
   systemPrompt?: string
   openness?: number
   canTrade?: boolean
+  baseCapital?: number
+  pricingAlgorithm?: string
+  marginPercentage?: number
 }
 
 interface Section2Profile {
@@ -45,6 +52,7 @@ interface AdaptationMemory {
 interface StoredCharacter {
   id: string
   name: string
+  walletAddress: string
   config: unknown
   adaptation: unknown
   projects: Array<{ id: string }>
@@ -54,12 +62,39 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+async function fetchCurrentMarketRate(): Promise<number | undefined> {
+  const endpoint = process.env.KITE_MARKET_RATE_API_URL
+  if (!endpoint) return undefined
+
+  try {
+    const response = await fetch(endpoint, { method: 'GET', cache: 'no-store' })
+    if (!response.ok) return undefined
+    const payload = (await response.json()) as Record<string, unknown>
+    return asNumber(payload.currentMarketRate ?? payload.rate ?? payload.price)
+  } catch {
+    return undefined
+  }
+}
+
 function toCharacterConfig(value: unknown): CharacterConfig {
   const payload = asRecord(value)
   return {
     systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : undefined,
     openness: typeof payload.openness === 'number' ? payload.openness : undefined,
     canTrade: typeof payload.canTrade === 'boolean' ? payload.canTrade : undefined,
+    baseCapital: asNumber(payload.baseCapital ?? payload.capital),
+    pricingAlgorithm:
+      typeof payload.pricingAlgorithm === 'string' ? payload.pricingAlgorithm : undefined,
+    marginPercentage: asNumber(payload.marginPercentage),
   }
 }
 
@@ -360,8 +395,24 @@ export async function POST(request: NextRequest) {
       ? config.systemPrompt
       : 'You are an autonomous NPC that negotiates fairly and builds reputation.'
 
+    let liveWalletBalance: string | undefined
+    try {
+      const provider = new ethers.JsonRpcProvider(KITE_RPC)
+      const rawBalance = await provider.getBalance(character.walletAddress)
+      liveWalletBalance = ethers.formatEther(rawBalance)
+    } catch (error) {
+      console.warn('[chat] Failed to fetch live wallet balance:', error)
+    }
+
+    const currentMarketRate = await fetchCurrentMarketRate()
+    const economicContext = EconomicEngine.buildEconomicContext({
+      config,
+      currentMarketRate,
+      liveWalletBalance,
+    })
+
     const activeProfile: Section2Profile = {
-      systemPrompt: `${basePrompt}\n\n${dynamicWorldContext}`,
+      systemPrompt: `${basePrompt}\n\n${dynamicWorldContext}\n\n${economicContext}`,
       openness: typeof config.openness === 'number' ? config.openness : 50,
     }
 
@@ -392,7 +443,29 @@ export async function POST(request: NextRequest) {
       adaptationSummary: updatedAdaptation.summary,
       preferences: updatedAdaptation.preferences,
       turnCount: updatedAdaptation.turnCount,
+      baseCapital: config.baseCapital,
+      pricingAlgorithm: config.pricingAlgorithm,
+      marginPercentage: config.marginPercentage,
+      currentMarketRate,
+      liveWalletBalance,
     })
+
+    let finalTradeIntent = agentResponse.tradeIntent
+    let finalResponseText = agentResponse.text
+
+    if (agentResponse.tradeIntent) {
+      const validation = EconomicEngine.validateTradeDetailed({
+        tradeIntent: agentResponse.tradeIntent,
+        config,
+        currentMarketRate,
+      })
+
+      if (!validation.isValid) {
+        finalTradeIntent = undefined
+        finalResponseText =
+          `${agentResponse.text}\n\n[System Notice] Proposed trade was blocked by economic policy: ${validation.reason ?? 'invalid pricing.'}`
+      }
+    }
 
     // Log the chat interaction in NpcLog table
     await (prisma as any).npcLog.create({
@@ -401,9 +474,9 @@ export async function POST(request: NextRequest) {
         eventType: 'CHAT',
         details: {
           message,
-          response: agentResponse.text,
+          response: finalResponseText,
           action: agentResponse.action ?? null,
-          hasTrade: !!agentResponse.tradeIntent,
+          hasTrade: !!finalTradeIntent,
         },
       },
     })
@@ -412,11 +485,11 @@ export async function POST(request: NextRequest) {
     eventBus.broadcast({
       sourceId: character.id,
       sourceName: character.name,
-      actionType: agentResponse.tradeIntent ? 'TRADE_PROPOSED' : 'CHAT',
+      actionType: finalTradeIntent ? 'TRADE_PROPOSED' : 'CHAT',
       payload: {
         message: message,
-        response: agentResponse.text,
-        tradeIntent: agentResponse.tradeIntent,
+        response: finalResponseText,
+        tradeIntent: finalTradeIntent,
         projectId: project?.id,
       },
       timestamp: new Date().toISOString(),
@@ -425,11 +498,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        response: agentResponse.text,
+        response: finalResponseText,
         action: agentResponse.action ?? null,
         characterId: character.id,
         npcName: character.name,
-        tradeIntent: agentResponse.tradeIntent,
+        tradeIntent: finalTradeIntent ?? null,
         specializationActive: updatedAdaptation.specializationActive,
         pendingSpecialization: Boolean(updatedAdaptation.pendingSection2),
         timestamp: new Date().toISOString(),

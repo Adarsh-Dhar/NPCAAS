@@ -74,6 +74,11 @@ export interface AgentContext {
   turnCount?: number
   canTrade?: boolean
   characterId?: string
+  baseCapital?: number
+  pricingAlgorithm?: string
+  marginPercentage?: number
+  currentMarketRate?: number
+  liveWalletBalance?: string
 }
 
 /** SSE event shape emitted by chatStream(). */
@@ -164,6 +169,27 @@ function buildSystemPrompt(ctx: AgentContext): string {
       ? `This is turn ${ctx.turnCount} of your conversation. Be progressively more specific.`
       : ''
 
+  const economicLines: string[] = []
+  if (ctx.pricingAlgorithm) {
+    economicLines.push(`Pricing algorithm: ${ctx.pricingAlgorithm}.`)
+  }
+  if (typeof ctx.marginPercentage === 'number') {
+    economicLines.push(`Margin target: ${ctx.marginPercentage}%.`)
+  }
+  if (typeof ctx.baseCapital === 'number') {
+    economicLines.push(`Starting treasury: ${ctx.baseCapital} KITE.`)
+  }
+  if (typeof ctx.currentMarketRate === 'number') {
+    economicLines.push(`Live market rate: ${ctx.currentMarketRate} KITE.`)
+  }
+  if (ctx.liveWalletBalance) {
+    economicLines.push(`Live wallet balance: ${ctx.liveWalletBalance} KITE.`)
+  }
+  if (economicLines.length > 0) {
+    economicLines.push('Follow these economic constraints and do not propose underpriced trades.')
+  }
+  const economicNote = economicLines.join(' ')
+
   const jsonFormatInstructions = `
 CRITICAL OUTPUT FORMAT — always respond with valid JSON:
 {
@@ -172,7 +198,7 @@ CRITICAL OUTPUT FORMAT — always respond with valid JSON:
 }
 Never include asterisk actions (*like this*) in the text field.`
 
-  return [basePersona, opennessLine, tradeLine, specializationNote, turnNote,
+  return [basePersona, opennessLine, tradeLine, specializationNote, turnNote, economicNote,
     'Stay in character. Do not mention being an AI.', jsonFormatInstructions]
     .filter(Boolean)
     .join('\n\n')
