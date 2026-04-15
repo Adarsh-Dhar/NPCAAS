@@ -252,7 +252,19 @@ export function ChatWindow({
         }
       } catch (err) {
         console.error("[ChatWindow] SDK stream error:", err);
-        return false;
+        const errText =
+          err instanceof Error
+            ? err.message
+            : "Chat stream failed. Check backend logs for details.";
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "system",
+            text: `Chat stream error: ${errText}`,
+            timestamp: new Date(),
+          },
+        ]);
+        return true;
       } finally {
         setIsStreaming(false);
         setStreamBuffer("");
@@ -272,7 +284,7 @@ export function ChatWindow({
       ]);
       return true;
     },
-    [characterId, npcId, onTradeIntent]
+    [characterId, npcId, npcName, onTradeIntent]
   );
 
   // NOTE: local API fallbacks removed — demo uses the GuildCraft SDK exclusively.

@@ -303,27 +303,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Base-chat fallback — no NPC target
+    // Require explicit NPC target for chat requests.
     if (!npcName && !legacyCharacterId) {
-      const agent = kiteAgentClient
-      agent.registerTools([])
-      const agentResponse = await agent.chat(message, {
-        characterName: 'NPC Assistant',
-        canTrade: false,
-        systemPrompt:
-          'You are a helpful NPC assistant. Chat naturally and ask for Section 2 details when the user wants deeper specialization.',
-      })
       return NextResponse.json(
-        {
-          success: true,
-          response: agentResponse.text,
-          action: agentResponse.action ?? null,
-          specializationActive: false,
-          pendingSpecialization: false,
-          timestamp: new Date().toISOString(),
-          projectId: project?.id,
-        },
-        { status: 200, headers: corsHeaders }
+        { error: 'npcName or characterId is required' },
+        { status: 400, headers: corsHeaders }
       )
     }
 

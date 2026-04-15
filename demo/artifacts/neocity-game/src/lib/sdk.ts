@@ -36,10 +36,6 @@ export const GuildCraftError =
     }
   }
 
-function getSdkCtor(): any | null {
-  return _normalizedSdk?.GuildCraftClient ?? null
-}
-
 // ---------------------------------------------------------------------------
 // Runtime config helpers (read at call-time so localStorage/window changes
 // are picked up without a full page reload).
@@ -48,11 +44,9 @@ function getRuntimeApiKey(): string | undefined {
   const viteKey = (import.meta.env?.VITE_GC_API_KEY as string | undefined) ?? undefined;
   if (viteKey) return viteKey;
   if (typeof window !== "undefined") {
-    return (
-      (window as any).__VITE_GC_API_KEY as string | null ??
-      (localStorage.getItem("VITE_GC_API_KEY") as string | null) ??
-      undefined
-    );
+    const windowKey = (window as any).__VITE_GC_API_KEY as string | null;
+    const localKey = localStorage.getItem("VITE_GC_API_KEY") as string | null;
+    return windowKey ?? localKey ?? undefined;
   }
   return undefined;
 }
@@ -64,10 +58,10 @@ function getRuntimeBaseUrl(): string {
     return (
       (window as any).__VITE_GC_BASE_URL as string | null ??
       (localStorage.getItem("VITE_GC_BASE_URL") as string | null) ??
-      "http://localhost:3000/api"
+      "http://localhost:3002/api"
     );
   }
-  return "http://localhost:3000/api";
+  return "http://localhost:3002/api";
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +76,7 @@ let _clientKey: string | null = null;
 class HttpGuildCraftClient {
   apiKey: string
   baseUrl: string
-  constructor(apiKey: string, baseUrl = 'http://localhost:3000/api') {
+  constructor(apiKey: string, baseUrl = 'http://localhost:3002/api') {
     this.apiKey = apiKey
     this.baseUrl = baseUrl.replace(/\/$/, '')
   }
@@ -93,9 +87,16 @@ class HttpGuildCraftClient {
 
   async _request(path: string, options: any = {}) {
     const url = `${this.baseUrl}${path}`
-    const res = await fetch(url, { ...options, headers: { ...this._authHeaders(), ...(options.headers ?? {}) } })
+    const headers = { ...this._authHeaders(), ...(options.headers ?? {}) }
+    console.log(`[GuildCraft] 🔗 ${options.method || 'GET'} ${url}`)
+    console.log(`[GuildCraft] Headers:`, headers)
+    const res = await fetch(url, { ...options, headers })
+    console.log(`[GuildCraft] Response status:`, res.status)
     const body = await res.json().catch(() => ({}))
-    if (!res.ok) throw new GuildCraftError(body?.error ?? `HTTP ${res.status}`, res.status, body)
+    if (!res.ok) {
+      console.error(`[GuildCraft] ❌ API Error:`, body)
+      throw new GuildCraftError(body?.error ?? `HTTP ${res.status}`, res.status, body)
+    }
     return body
   }
 
@@ -106,6 +107,12 @@ class HttpGuildCraftClient {
   async getCharacter(characterId: string) {
     if (!characterId) throw new GuildCraftError('characterId is required', 400, null)
     return this._request(`/characters/${encodeURIComponent(characterId)}`)
+  }
+
+  async getWalletBalances(npcId: string, tokenAddresses: string[] = []) {
+    if (!npcId) throw new GuildCraftError('npcId is required', 400, null)
+    const qs = tokenAddresses.length ? `?tokens=${tokenAddresses.join(',')}` : ''
+    return this._request(`/npcs/${encodeURIComponent(npcId)}/wallet/balances${qs}`)
   }
 
   async chat(characterId: string, message: string) {
@@ -180,15 +187,16 @@ class HttpGuildCraftClient {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getClient(): any | null {
   const key = getRuntimeApiKey();
-  if (!key) return null;
+  if (!key) {
+    console.warn("[GuildCraft] No API key configured. Set VITE_GC_API_KEY in demo/.env or localStorage.");
+    return null;
+  }
   const base = getRuntimeBaseUrl();
   if (!_client || _clientKey !== key) {
-    const Ctor = getSdkCtor();
-    if (Ctor) {
-      _client = new Ctor(key, base);
-    } else {
-      _client = new HttpGuildCraftClient(key, base);
-    }
+    // The demo targets local Next.js API routes and relies on methods not
+    // guaranteed across packaged SDK builds, so use the local HTTP client
+    // consistently for deterministic behavior.
+    _client = new HttpGuildCraftClient(key, base);
     _clientKey = key;
   }
   return _client;
@@ -225,10 +233,6 @@ export async function loadCharacters(): Promise<Map<string, Character>> {
         map.set(char.name.toLowerCase(), char);
       }
       _characterCache = map;
-      console.log(
-        `[GuildCraft] Loaded ${map.size} character(s):`,
-        [...map.keys()]
-      );
       return map;
     })
     .catch((err: unknown) => {

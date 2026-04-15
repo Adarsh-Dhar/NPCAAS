@@ -249,19 +249,12 @@ export async function POST(request: NextRequest) {
 
   const encoder = new TextEncoder()
 
-  // No NPC target — base chat stream
+  // Require explicit NPC target for streaming requests.
   if (!npcName && !characterId) {
-    kiteAgentClient.registerTools([])
-    const rawStream = kiteAgentClient.chatStream(message, {
-      characterName: 'NPC Assistant',
-      canTrade: false,
-      systemPrompt:
-        'You are a helpful NPC assistant. Chat naturally and ask for Section 2 details when the user wants deeper specialization.',
-    })
-    const encodedStream = rawStream.pipeThrough(
-      new TransformStream({ transform(chunk, ctrl) { ctrl.enqueue(encoder.encode(chunk)) } })
+    return new NextResponse(
+      errorStream('npcName or characterId is required'),
+      { status: 400, headers: sseHeaders }
     )
-    return new NextResponse(encodedStream, { status: 200, headers: sseHeaders })
   }
 
   // Resolve character
