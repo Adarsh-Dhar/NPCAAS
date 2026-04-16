@@ -95,6 +95,7 @@ export interface AgentContext {
   allowedTradeTokens?: string[]
   currentTradeCurrency?: string
   marketRateForCurrentToken?: number
+  characterConfig?: unknown
 }
 
 /** SSE event shape emitted by chatStream(). */
@@ -154,6 +155,7 @@ const EXECUTE_TRADE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
       properties: {
         targetAddress: { type: 'string', description: 'The blockchain wallet address of the recipient' },
         amount: { type: 'number', description: 'The amount of currency to send' },
+        currency: { type: 'string', description: 'The currency to transfer (e.g., KITE_USD, SOL, USDC, BTC). Defaults to KITE_USD.' },
       },
       required: ['targetAddress', 'amount'],
     },
@@ -425,11 +427,13 @@ export class KiteAgentClient {
           const args = JSON.parse(toolCall.function.arguments) as {
             targetAddress?: string
             amount?: number | string
+            currency?: string
             memo?: string
             ownerId?: string
           }
           const targetAddress = args.targetAddress ?? (args as any).to ?? ''
           const amountStr = typeof args.amount === 'number' ? String(args.amount) : (args.amount ?? '0')
+          const currency = typeof args.currency === 'string' ? args.currency : undefined
           const ownerId = ctx.characterId
           if (!ownerId) {
             return { text: 'Transaction aborted: I do not know my own identity.', action: 'shakes head', usage }
@@ -440,6 +444,8 @@ export class KiteAgentClient {
               value: amountStr,
               data: '0x',
               ownerId,
+              currency,
+              characterConfig: ctx.characterConfig,
               teeExecution: ctx.teeExecution,
               projectId: ctx.projectId,
             })
@@ -595,10 +601,11 @@ export class KiteAgentClient {
               const toolCall = choice.message.tool_calls[0]
               if (isFunctionToolCall(toolCall) && toolCall.function.name === 'execute_trade') {
                 const args = JSON.parse(toolCall.function.arguments) as {
-                  targetAddress?: string; amount?: number | string; memo?: string; ownerId?: string
+                  targetAddress?: string; amount?: number | string; currency?: string; memo?: string; ownerId?: string
                 }
                 const ownerId = ctx.characterId
                 const amountStr = typeof args.amount === 'number' ? String(args.amount) : (args.amount ?? '0')
+                const currency = typeof args.currency === 'string' ? args.currency : undefined
                 if (!ownerId) {
                   const final: ChatResponse = { text: 'Transaction aborted: I do not know my own identity.', action: 'shakes head', usage }
                   enqueue({ type: 'done', final })
@@ -611,6 +618,8 @@ export class KiteAgentClient {
                     value: amountStr,
                     data: '0x',
                     ownerId,
+                    currency,
+                    characterConfig: ctx.characterConfig,
                     teeExecution: ctx.teeExecution,
                     projectId: ctx.projectId,
                   })

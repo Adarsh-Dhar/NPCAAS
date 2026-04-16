@@ -25,6 +25,8 @@ export interface WriteTransactionInput {
   value: string    // decimal string, e.g. "1000000"
   data?: string    // hex calldata; defaults to '0x'
   ownerId: string  // NPC owner string used at creation time
+  currency?: string  // Currency/token to transfer (e.g., KITE_USD, SOL, USDC)
+  characterConfig?: unknown  // Character configuration with token contract addresses
   teeExecution?: string
   projectId?: string
 }
@@ -46,51 +48,13 @@ export interface SponsoredExecutionResult {
 // ---------------------------------------------------------------------------
 
 /**
- * MULTI-TOKEN SUPPORT (Phase 6.5 Future Enhancement):
- * ───────────────────────────────────────────────────────────────────────
- * This function currently only supports native KITE transfers via `value` field.
+ * Execute a blockchain transaction with optional multi-token support.
  * 
- * To support trading in alternative tokens (SOL, USDC, BTC on Kite testnet),
- * implement the following pattern:
+ * For native KITE transfers: pass currency as undefined or 'KITE_USD'
+ * For ERC-20 token transfers: pass currency (e.g., 'SOL', 'USDC') and ensure
+ *   characterConfig contains tokenContractAddresses mapping
  * 
- * 1. CHARACTER CONFIG EXTENSION:
- *    Add tokenContractAddresses object to character config:
- *    { SOL: "0x...", USDC: "0x...", BTC: "0x..." }
- * 
- * 2. DYNAMIC CALLDATA ENCODING:
- *    If tradeIntent.currency !== 'KITE_USD':
- *      a) Resolve tokenAddress from character config
- *      b) Encode ERC-20 transfer() call:
- *         const iface = new ethers.Interface(['function transfer(address to, uint256 amount)'])
- *         const callData = iface.encodeFunctionData('transfer', [recipient, amountInDecimals])
- *      c) Submit with callData pointing to token contract, NOT KITE native transfer
- * 
- * 3. GAS REMAINS SPONSORED:
- *    - All UserOps continue using KITE EIP-4337 for gas
- *    - Only the transfer target changes (from native → token contract)
- *    - Paymaster continues covering all fees in KITE
- * 
- * 4. TOKEN DECIMALS:
- *    - Most Kite testnet tokens use 18 decimals (match ETH standard)
- *    - Fetch from token contract if needed: contract.decimals()
- *    - Convert user amount: tradeAmount * (10 ** decimals)
- * 
- * 5. EXAMPLE IMPLEMENTATION:
- *    if (tradeIntent.currency && tradeIntent.currency !== 'KITE_USD') {
- *      const tokenAddress = character.config.tokenContractAddresses?.[tradeIntent.currency]
- *      if (!tokenAddress) throw new Error(`No contract address for ${tradeIntent.currency}`)
- *      
- *      const iface = new ethers.Interface([...ERC20_ABI])
- *      const amountInDecimals = parseEther(tradeIntentAmount) // assuming 18 decimals
- *      const callData = iface.encodeFunctionData('transfer', [recipient, amountInDecimals])
- *      
- *      return kiteAAProvider.sponsorTransaction({
- *        to: tokenAddress,    // ← target is token contract, not recipient
- *        value: '0',          // ← no native value
- *        data: callData,      // ← encoded ERC-20 call
- *        ownerId,
- *      })
- *    }
+ * Gas is always sponsored via KITE EIP-4337 bundler.
  */
 export async function executeWriteTransaction(
   input: WriteTransactionInput
@@ -101,13 +65,59 @@ export async function executeWriteTransaction(
     projectId: input.projectId,
   })
 
+  // Determine if this is an ERC-20 transfer or native KITE
+  const isMultiToken = input.currency && input.currency.toUpperCase() !== 'KITE_USD'
+  
+  let finalTo = input.to
+  let finalValue = input.value
+  let finalData = input.data ?? '0x'
+
+  if (isMultiToken) {
+    // ERC-20 multi-token transfer
+    const { ethers } = await import('ethers')
+    
+    // Extract token contract address from character config
+    const config = input.characterConfig as Record<string, unknown> | undefined
+    const tokenContractAddresses = config?.tokenContractAddresses as Record<string, string> | undefined
+    
+    if (!tokenContractAddresses) {
+      throw new Error(`No tokenContractAddresses mapping found in character config. Cannot transfer ${input.currency}.`)
+    }
+    
+    const tokenAddress = tokenContractAddresses[input.currency!]
+    if (!tokenAddress) {
+      throw new Error(`No contract address configured for token: ${input.currency}. Available tokens: ${Object.keys(tokenContractAddresses).join(', ')}`)
+    }
+    
+    // Encode ERC-20 transfer() call
+    const erc20ABI = ['function transfer(address to, uint256 amount) returns (bool)']
+    const iface = new ethers.Interface(erc20ABI)
+    
+    // Convert amount to wei (assuming 18 decimals - standard for most tokens)
+    const amountInWei = ethers.parseEther(input.value)
+    
+    // Encode the transfer call
+    finalData = iface.encodeFunctionData('transfer', [input.to, amountInWei])
+    
+    // Target the token contract, not the recipient
+    finalTo = tokenAddress
+    
+    // No native value transfer for ERC-20
+    finalValue = '0'
+    
+    console.debug(`[tx-orchestrator] Encoding ${input.currency} transfer to ${input.to}, amount: ${input.value}`, {
+      tokenContract: tokenAddress,
+      encodedData: finalData,
+    })
+  }
+
   try {
     // Pre-check: estimate the UserOp so we can log paymaster/estimation details
     try {
       const estimate = await kiteAAProvider.estimateTransaction({
-        to: input.to,
-        value: input.value,
-        data: input.data,
+        to: finalTo,
+        value: finalValue,
+        data: finalData,
         ownerId: input.ownerId,
       })
       // Helpful debug for paymaster/bundler issues
@@ -117,9 +127,9 @@ export async function executeWriteTransaction(
     }
 
     const result = await kiteAAProvider.sponsorTransaction({
-      to: input.to,
-      value: input.value,
-      data: input.data,
+      to: finalTo,
+      value: finalValue,
+      data: finalData,
       ownerId: input.ownerId,
     })
 

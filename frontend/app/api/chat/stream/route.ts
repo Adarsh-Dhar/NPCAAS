@@ -480,6 +480,7 @@ export async function POST(request: NextRequest) {
     baseHostility: config.baseHostility,
     teeExecution: config.teeExecution,
     projectId: activeProjectId,
+    characterConfig: config,
     teeTrustScore,
   }
 
