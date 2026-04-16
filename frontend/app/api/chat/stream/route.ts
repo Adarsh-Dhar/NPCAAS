@@ -328,6 +328,13 @@ export async function POST(request: NextRequest) {
   const config = toCharacterConfig(character.config)
   const adaptation = asRecord(character.adaptation)
   const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
+  const projectContext =
+    activeProjectId === 'global'
+      ? null
+      : await prisma.project.findUnique({
+          where: { id: activeProjectId },
+          select: { globalContext: true },
+        })
   const tee = buildTeeGateResult({
     teeExecution: config.teeExecution,
     characterId: character.id,
@@ -464,6 +471,10 @@ export async function POST(request: NextRequest) {
   const basePrompt = config.systemPrompt?.trim()
     ? config.systemPrompt.trim()
     : 'You are an autonomous NPC that negotiates fairly and builds reputation.'
+  const globalWorldContext =
+    typeof projectContext?.globalContext === 'string' && projectContext.globalContext.trim()
+      ? `[GLOBAL WORLD CONTEXT]\n${projectContext.globalContext.trim()}`
+      : ''
 
   // Build DB access instruction when the feature is enabled
   let dbInstruction = ''
@@ -474,7 +485,7 @@ export async function POST(request: NextRequest) {
   }
 
   const systemPrompt =
-    `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}`.trim()
+    `${basePrompt}\n\n${globalWorldContext}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}`.trim()
 
   const ctx = {
     characterName: character.name,

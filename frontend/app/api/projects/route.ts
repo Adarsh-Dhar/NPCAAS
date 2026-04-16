@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
         id: project.id,
         name: project.name,
         apiKey: project.apiKey,
+        globalContext: project.globalContext,
         createdAt: project.createdAt.toISOString(),
       },
       { status: 201 }
@@ -50,6 +51,7 @@ export async function GET() {
         id: project.id,
         name: project.name,
         apiKey: project.apiKey,
+        globalContext: project.globalContext,
         createdAt: project.createdAt.toISOString(),
       }))
     )

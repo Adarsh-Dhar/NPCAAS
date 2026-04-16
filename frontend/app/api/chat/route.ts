@@ -398,6 +398,13 @@ export async function POST(request: NextRequest) {
     const config = toCharacterConfig(character.config)
     const adaptation = toAdaptationMemory(character.adaptation)
     const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
+    const projectContext =
+      activeProjectId === 'global'
+        ? null
+        : await prisma.project.findUnique({
+            where: { id: activeProjectId },
+            select: { globalContext: true },
+          })
 
     if (isLikelyPolicyTriggerMessage(message)) {
       return NextResponse.json(
@@ -709,6 +716,10 @@ export async function POST(request: NextRequest) {
     const basePrompt = typeof config.systemPrompt === 'string' && config.systemPrompt.trim()
       ? config.systemPrompt
       : 'You are an autonomous NPC that negotiates fairly and builds reputation.'
+    const globalWorldContext =
+      typeof projectContext?.globalContext === 'string' && projectContext.globalContext.trim()
+        ? `[GLOBAL WORLD CONTEXT]\n${projectContext.globalContext.trim()}`
+        : ''
 
     let liveWalletBalance: string | undefined
     try {
@@ -742,7 +753,7 @@ export async function POST(request: NextRequest) {
 
     const activeProfile: Section2Profile = {
       systemPrompt:
-        `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}`.trim(),
+        `${basePrompt}\n\n${globalWorldContext}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}`.trim(),
       openness: actorOpenness,
     }
 

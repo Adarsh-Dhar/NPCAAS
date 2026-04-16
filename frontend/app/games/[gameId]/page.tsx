@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import TopNav from '@/components/TopNav'
 import RetroButton from '@/components/ui/RetroButton'
+import RetroTextarea from '@/components/ui/RetroTextarea'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -31,12 +32,23 @@ interface GameResponse {
   characters: Character[]
 }
 
+interface ProjectDetailResponse {
+  id: string
+  name: string
+  globalContext: string | null
+}
+
 export default function GameCharactersPage() {
   const params = useParams()
   const gameId = String(params.gameId)
 
   const [gameName, setGameName] = useState('Game')
   const [characters, setCharacters] = useState<Character[]>([])
+  const [globalContext, setGlobalContext] = useState('')
+  const [initialGlobalContext, setInitialGlobalContext] = useState('')
+  const [isSavingContext, setIsSavingContext] = useState(false)
+  const [contextError, setContextError] = useState('')
+  const [contextSaved, setContextSaved] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -47,15 +59,27 @@ export default function GameCharactersPage() {
       setLoading(true)
       setError('')
       try {
-        const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/characters`)
-        if (!response.ok) {
+        const [gameResponse, projectResponse] = await Promise.all([
+          fetch(`/api/games/${encodeURIComponent(gameId)}/characters`),
+          fetch(`/api/projects/${encodeURIComponent(gameId)}`),
+        ])
+
+        if (!gameResponse.ok) {
           throw new Error('Failed to load game characters')
         }
-        const payload = (await response.json()) as GameResponse
+        if (!projectResponse.ok) {
+          throw new Error('Failed to load game settings')
+        }
+
+        const payload = (await gameResponse.json()) as GameResponse
+        const projectPayload = (await projectResponse.json()) as ProjectDetailResponse
 
         if (!cancelled) {
           setGameName(payload.game?.name ?? 'Game')
           setCharacters(Array.isArray(payload.characters) ? payload.characters : [])
+          const nextGlobalContext = projectPayload.globalContext ?? ''
+          setGlobalContext(nextGlobalContext)
+          setInitialGlobalContext(nextGlobalContext)
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -78,6 +102,41 @@ export default function GameCharactersPage() {
       cancelled = true
     }
   }, [gameId])
+
+  const hasContextChanges = globalContext !== initialGlobalContext
+
+  const saveGlobalContext = async () => {
+    setIsSavingContext(true)
+    setContextError('')
+    setContextSaved('')
+
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(gameId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ globalContext }),
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string }
+        throw new Error(payload.error ?? 'Failed to save global world context')
+      }
+
+      const payload = (await response.json()) as ProjectDetailResponse
+      const nextGlobalContext = payload.globalContext ?? ''
+      setGlobalContext(nextGlobalContext)
+      setInitialGlobalContext(nextGlobalContext)
+      setContextSaved('Global world context saved.')
+    } catch (saveError) {
+      const message =
+        saveError instanceof Error ? saveError.message : 'Failed to save global world context'
+      setContextError(message)
+    } finally {
+      setIsSavingContext(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -112,6 +171,38 @@ export default function GameCharactersPage() {
             <RetroButton variant="green" size="md">ADD AGENT</RetroButton>
           </Link>
         </div>
+
+        <section className="mb-8 border-4 border-cyan-400 bg-black p-6">
+          <h2 className="text-cyan-300 text-xl font-bold uppercase mb-2">Global World Context</h2>
+          <p className="text-gray-300 text-sm font-mono mb-4">
+            This text is injected into every NPC in this game. Use it for shared lore, rules,
+            currencies, and live world events.
+          </p>
+
+          <RetroTextarea
+            borderColor="cyan"
+            value={globalContext}
+            onChange={(event) => {
+              setGlobalContext(event.target.value)
+              setContextSaved('')
+            }}
+            rows={8}
+            placeholder="You are in Protocol Babel, Sector 0. The currency is Compute Units (CU)..."
+          />
+
+          <div className="mt-4 flex items-center gap-4">
+            <RetroButton
+              variant="cyan"
+              size="md"
+              onClick={saveGlobalContext}
+              disabled={isSavingContext || !hasContextChanges}
+            >
+              {isSavingContext ? 'SAVING...' : 'SAVE GLOBAL CONTEXT'}
+            </RetroButton>
+            {contextSaved ? <p className="text-green-400 text-sm font-mono">{contextSaved}</p> : null}
+            {contextError ? <p className="text-red-400 text-sm font-mono">{contextError}</p> : null}
+          </div>
+        </section>
 
         {loading ? (
           <div className="text-center py-12 text-cyan-400 font-mono">Loading game data...</div>

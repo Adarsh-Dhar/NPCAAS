@@ -5,6 +5,7 @@ export interface StoredProject {
   id: string
   name: string
   apiKey: string
+  globalContext: string | null
   createdAt: string
 }
 
@@ -25,6 +26,7 @@ export async function validateApiKey(apiKey: string): Promise<StoredProject | nu
     id: project.id,
     name: project.name,
     apiKey: project.apiKey,
+    globalContext: project.globalContext,
     createdAt: project.createdAt.toISOString(),
   }
 }
