@@ -5,6 +5,7 @@
 // cache. All callers use getCharacterByName(npcName) to resolve.
 
 import type { Character } from "../../../../../frontend/sdk";
+export type { Character } from "../../../../../frontend/sdk";
 
 // ---------------------------------------------------------------------------
 // CJS interop — use ESM `import` and normalise CommonJS default exports
@@ -58,10 +59,10 @@ function getRuntimeBaseUrl(): string {
     return (
       (window as any).__VITE_GC_BASE_URL as string | null ??
       (localStorage.getItem("VITE_GC_BASE_URL") as string | null) ??
-      "/api"
+      "http://localhost:3000/api"
     );
   }
-  return "/api";
+  return "http://localhost:3000/api";
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +142,40 @@ class HttpGuildCraftClient {
     if (!npcId) throw new GuildCraftError('npcId is required', 400, null)
     const qs = tokenAddresses.length ? `?tokens=${tokenAddresses.join(',')}` : ''
     return this._request(`/npcs/${encodeURIComponent(npcId)}/wallet/balances${qs}`)
+  }
+
+  async getNpcLogs(npcName: string, opts: { limit?: number; type?: string; since?: string } = {}) {
+    if (!npcName) throw new GuildCraftError('npcName is required', 400, null)
+    const qs = new URLSearchParams()
+    if (opts.limit) qs.set('limit', String(opts.limit))
+    if (opts.type) qs.set('type', opts.type)
+    if (opts.since) qs.set('since', opts.since)
+    const query = qs.toString() ? `?${qs.toString()}` : ''
+    return this._request(`/npcs/${encodeURIComponent(npcName)}/logs${query}`)
+  }
+
+  async startNpcLoop(npcName: string, config: { schedule?: string; events?: string[]; tasks?: string[] } = {}) {
+    if (!npcName) throw new GuildCraftError('npcName is required', 400, null)
+    return this._request(`/npcs/${encodeURIComponent(npcName)}/loop`, {
+      method: 'POST',
+      body: JSON.stringify(config),
+    })
+  }
+
+  async queueNpcAction(
+    npcName: string,
+    action: { type: string; description: string; payload?: Record<string, unknown>; scheduledFor?: string }
+  ) {
+    if (!npcName) throw new GuildCraftError('npcName is required', 400, null)
+    return this._request(`/npcs/${encodeURIComponent(npcName)}/actions/queue`, {
+      method: 'POST',
+      body: JSON.stringify(action),
+    })
+  }
+
+  async getNpcActionQueue(npcName: string) {
+    if (!npcName) throw new GuildCraftError('npcName is required', 400, null)
+    return this._request(`/npcs/${encodeURIComponent(npcName)}/actions/queue`)
   }
 
   async chat(characterId: string, message: string) {

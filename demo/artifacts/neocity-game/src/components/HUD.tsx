@@ -12,7 +12,7 @@ import {
   getCharacterByName,
   isSdkReady,
 } from "@/lib/sdk";
-import type { TradeIntent } from "./ChatWindow";
+import type { TradeIntent } from "@/components/ChatWindow";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,23 +45,6 @@ export interface HUDProps {
   onTradeExecuted?: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// NPC color map
-// ---------------------------------------------------------------------------
-const NPC_COLORS: Record<string, string> = {
-  SILAS_VANCE: "#ff6600",
-  ARCHIVE_NODE_819: "#00ffcc",
-  SCRAP_ENFORCER: "#ff0066",
-};
-
-const NPC_LABELS: Record<string, string> = {
-  SILAS_VANCE: "The Wire Scavenger",
-  ARCHIVE_NODE_819: "The Root-Key Crafter",
-  SCRAP_ENFORCER: "The Rival Hunter",
-};
-
-// ---------------------------------------------------------------------------
-// Component
 // ---------------------------------------------------------------------------
 export function HUD({
   activeNpc,
@@ -154,7 +137,9 @@ export function HUD({
     }
   }, [resolvedCharId, pendingTrade, fetchBalances, onTradeExecuted]);
 
-  const npcColor = activeNpc ? (NPC_COLORS[activeNpc] ?? "#00ffff") : "#00ffff";
+  const npcColor = activeNpcName
+    ? `#${Array.from(activeNpcName).reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(16).slice(-6).padStart(6, "0")}`
+    : "#00ffff";
 
   return (
     <>
@@ -205,21 +190,22 @@ export function HUD({
         className="absolute top-4 right-4 z-10 text-xs select-none"
         style={{ fontFamily: "monospace" }}
       >
-        {/* NPC legend */}
-        <div style={{ color: "#334466" }}>
-          {(["SILAS_VANCE", "ARCHIVE_NODE_819", "SCRAP_ENFORCER"] as const).map((id, idx) => (
-            <div key={id} className="flex items-center gap-2 mb-1">
-              <div
-                className="w-2 h-2 rounded-full animate-pulse"
-                style={{
-                  background: NPC_COLORS[id],
-                  animationDelay: `${idx * 0.5}s`,
-                }}
-              />
-              <span style={{ color: NPC_COLORS[id] }}>{id.toUpperCase()}</span>
-              <span>· {NPC_LABELS[id]}</span>
-            </div>
-          ))}
+        <div
+          className="rounded p-3 mb-3"
+          style={{
+            background: "rgba(5,5,15,0.92)",
+            border: "1px solid rgba(0,255,255,0.12)",
+            minWidth: "180px",
+          }}
+        >
+          <div className="text-xs font-bold mb-2" style={{ color: "#00ffff", letterSpacing: 2 }}>
+            PROTOCOL BABEL
+          </div>
+          <div style={{ color: "#445566" }}>
+            <div className="mb-1">NODES ACTIVE</div>
+            <div className="text-cyan-300">Forge-9 · The Weaver · Aegis-Prime · Vex · Silicate · Node-Alpha · Node-Omega</div>
+            <div className="mt-2 text-white/60">TAB — macro dashboard</div>
+          </div>
         </div>
 
         {/* Wallet panel — only when SDK is live and character resolved */}

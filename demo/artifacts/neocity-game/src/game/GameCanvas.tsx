@@ -1,15 +1,22 @@
 import { useEffect, useRef } from "react";
 import Phaser from "phaser";
 import { MainScene } from "./scenes/MainScene";
+import type { Character } from "../lib/sdk";
+import { setSceneCharacters } from "@/lib/npcSceneState";
 
 interface GameCanvasProps {
   onOpenChat: (npcId: string, npcName: string) => void;
   onCloseChat: () => void;
+  characters: Character[];
 }
 
-export function GameCanvas({ onOpenChat, onCloseChat }: GameCanvasProps) {
+export function GameCanvas({ onOpenChat, onCloseChat, characters }: GameCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
+
+  useEffect(() => {
+    setSceneCharacters(characters);
+  }, [characters]);
 
   useEffect(() => {
     if (!containerRef.current || gameRef.current) return;
@@ -57,7 +64,7 @@ export function GameCanvas({ onOpenChat, onCloseChat }: GameCanvasProps) {
         gameRef.current = null;
       }
     };
-  }, []);
+  }, [onCloseChat, onOpenChat]);
 
   return (
     <div

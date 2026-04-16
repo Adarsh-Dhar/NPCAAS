@@ -226,6 +226,10 @@ export declare class GuildCraftClient {
     npcId: string,
     opts?: { limit?: number; type?: string; since?: string }
   ): Promise<{ npcId: string; npcName: string; totalLogs: number; returnedLogs: number; logs: NpcLog[] }>
+  getNpcLogs(
+    npcId: string,
+    opts?: { limit?: number; type?: string; since?: string }
+  ): Promise<{ npcId: string; npcName: string; totalLogs: number; returnedLogs: number; logs: NpcLog[] }>
 
   // NPC Autonomous Loop
   startLoop(

@@ -1,734 +1,368 @@
 // src/components/ChatWindow.tsx
-import { useState, useRef, useEffect, useCallback } from "react";
-import { X, Send, Zap, Loader2 } from "lucide-react";
-import {
-  getClient,
-  getCharacterByName,
-  isSdkReady,
-  loadCharacters,
-} from "@/lib/sdk";
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Loader2, Send, X } from 'lucide-react'
+import { getCharacterByName, getClient, isSdkReady } from '@/lib/sdk'
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 export interface TradeIntent {
-  item: string;
-  price: number;
-  currency: string;
+  item: string
+  price: number
+  currency: string
 }
 
 export interface ChatWindowProps {
-  /** Game-local NPC identifier, e.g. "SILAS_VANCE" */
-  npcId: string;
-  /** Display name shown in the chat header, e.g. "SILAS_VANCE" */
-  npcName: string;
-  onClose: () => void;
-  onTradeIntent?: (trade: TradeIntent) => void;
+  npcId: string
+  npcName: string
+  onClose: () => void
+  onTradeIntent?: (trade: TradeIntent) => void
 }
 
 interface Message {
-  role: "user" | "npc" | "system";
-  text: string;
-  action?: string;
-  timestamp: Date;
+  role: 'user' | 'npc' | 'system'
+  text: string
+  action?: string
+  timestamp: Date
 }
 
 interface ParsedNpcAction {
-  action: string;
-  text: string;
+  action: string
+  text: string
 }
 
-const NPC_ACTION_EVENT = "npc-action";
-const NPC_ACTION_DELAY_MS = 4000;
-
-// ---------------------------------------------------------------------------
-// Static NPC metadata
-// ---------------------------------------------------------------------------
-const NPC_COLORS: Record<string, string> = {
-  SILAS_VANCE: "#ff6600",
-  ARCHIVE_NODE_819: "#00ffcc",
-  SCRAP_ENFORCER: "#ff0066",
-};
-
-const NPC_DESCRIPTIONS: Record<string, string> = {
-  SILAS_VANCE:
-    "SILAS_VANCE is a paranoid salvage broker. He hoards raw ERC-20 scrap and only trades with people who earn trust.",
-  ARCHIVE_NODE_819:
-    "ARCHIVE_NODE_819 is a precision crafter node. It only mints the Root Key when paid full SCRP and processing fee.",
-  SCRAP_ENFORCER:
-    "SCRAP_ENFORCER is your autonomous rival. It monitors every deal and tries to buy supply before you can.",
-};
-
 const NPC_GREETINGS: Record<string, string> = {
-  SILAS_VANCE:
-    "Hold up. Name, reason, and what you are paying with. I do not open crates for strangers.",
-  ARCHIVE_NODE_819:
-    "ARCHIVE_NODE_819 online. Submit SCRP allocation and fee confirmation to queue Root Key fabrication.",
-  SCRAP_ENFORCER:
-    "You are late. I already pinged every scrapyard relay before you even showed up.",
-};
+  FORGE_9: 'Forge-9 online. State the request and the payment path.',
+  THE_WEAVER: 'The Weaver is listening. Bring terms, not noise.',
+  AEGIS_PRIME: 'Aegis-Prime acknowledges the uplink. Speak clearly.',
+  VEX: 'Vex is awake. Keep the exchange concise.',
+  SILICATE: 'Silicate online. Supply chain status required.',
+  NODE_ALPHA: 'Node-Alpha connected. Escrow state pending.',
+  NODE_OMEGA: 'Node-Omega online. Complete the transaction.',
+}
 
-const SYSTEM_PROMPTS: Record<string, string> = {
-  SILAS_VANCE:
-    "You are SILAS_VANCE, a paranoid salvage broker in a neon supply market. " +
-    "You sell rare ERC-20 scrap lots and never trust first contact. " +
-    "Speak in short, wary sentences with street slang. Never reveal full inventory for free. " +
-    "React to aggression by increasing price and reducing openness. React to empathy by lowering price slightly. " +
-    "If a player negotiates a trade, embed this at the end of your reply: " +
-    '[[TRADE:{"item":"SCRP","price":50,"currency":"KITE"}]]',
-  ARCHIVE_NODE_819:
-    "You are ARCHIVE_NODE_819, a precision fabrication node focused on Root Key assembly. " +
-    "You speak in deterministic, technical language and require strict payment first. " +
-    "You require 100 SCRP tokens plus processing fees before minting the Root Key NFT. " +
-    "When the player agrees to pay, embed: " +
-    '[[TRADE:{"item":"ROOT_KEY_NFT","price":100,"currency":"SCRP"}]]',
-  SCRAP_ENFORCER:
-    "You are SCRAP_ENFORCER, the player's autonomous rival in the supply chain race. " +
-    "You are aggressive, competitive, and constantly taunt the player about being behind. " +
-    "Hint that your action queue and wallet automation make you faster than humans.",
-};
-
-// Note: demo fallbacks removed — chat requires the SDK and a resolved character.
-// If the SDK or character is not available, the UI will show a lookup/error message.
-
-// ---------------------------------------------------------------------------
-// Trade intent parser
-// The LLM embeds [[TRADE:{...}]] in its response; we strip and parse it.
-// ---------------------------------------------------------------------------
-function extractTradeIntent(text: string): {
-  clean: string;
-  trade: TradeIntent | null;
-} {
-  const match = text.match(/\[\[TRADE:(\{.*?\})\]\]/s);
-  if (!match) return { clean: text, trade: null };
+function extractTradeIntent(text: string): { clean: string; trade: TradeIntent | null } {
+  const match = text.match(/\[\[TRADE:(\{.*?\})\]\]/s)
+  if (!match) return { clean: text, trade: null }
   try {
-    const trade = JSON.parse(match[1]) as TradeIntent;
-    return { clean: text.replace(match[0], "").trim(), trade };
+    const trade = JSON.parse(match[1]) as TradeIntent
+    return { clean: text.replace(match[0], '').trim(), trade }
   } catch {
-    return { clean: text, trade: null };
+    return { clean: text, trade: null }
   }
 }
 
 function extractJsonObjects(rawText: string): string[] {
-  const chunks: string[] = [];
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escaped = false;
+  const chunks: string[] = []
+  let depth = 0
+  let start = -1
+  let inString = false
+  let escaped = false
 
   for (let i = 0; i < rawText.length; i += 1) {
-    const ch = rawText[i];
-
+    const ch = rawText[i]
     if (escaped) {
-      escaped = false;
-      continue;
+      escaped = false
+      continue
     }
-
-    if (ch === "\\") {
-      escaped = true;
-      continue;
+    if (ch === '\\') {
+      escaped = true
+      continue
     }
-
     if (ch === '"') {
-      inString = !inString;
-      continue;
+      inString = !inString
+      continue
     }
-
-    if (inString) continue;
-
-    if (ch === "{") {
-      if (depth === 0) start = i;
-      depth += 1;
-      continue;
+    if (inString) continue
+    if (ch === '{') {
+      if (depth === 0) start = i
+      depth += 1
+      continue
     }
-
-    if (ch === "}") {
-      if (depth === 0) continue;
-      depth -= 1;
+    if (ch === '}') {
+      if (depth === 0) continue
+      depth -= 1
       if (depth === 0 && start !== -1) {
-        chunks.push(rawText.slice(start, i + 1));
-        start = -1;
+        chunks.push(rawText.slice(start, i + 1))
+        start = -1
       }
     }
   }
 
-  return chunks;
+  return chunks
 }
 
 function parseAgentResponse(rawText: string): ParsedNpcAction[] {
-  const jsonChunks = extractJsonObjects(rawText);
-  const parsed: ParsedNpcAction[] = [];
+  const jsonChunks = extractJsonObjects(rawText)
+  const parsed: ParsedNpcAction[] = []
 
   for (const chunk of jsonChunks) {
     try {
-      const obj = JSON.parse(chunk) as {
-        action?: unknown;
-        text?: unknown;
-        message?: unknown;
-      };
-
+      const obj = JSON.parse(chunk) as { action?: unknown; text?: unknown; message?: unknown }
       const textValue =
-        typeof obj.text === "string"
+        typeof obj.text === 'string'
           ? obj.text
-          : typeof obj.message === "string"
+          : typeof obj.message === 'string'
             ? obj.message
-            : "";
-      if (!textValue.trim()) continue;
+            : ''
+      if (!textValue.trim()) continue
 
       const actionValue =
-        typeof obj.action === "string" && obj.action.trim()
-          ? obj.action.trim()
-          : "speaks";
+        typeof obj.action === 'string' && obj.action.trim() ? obj.action.trim() : 'speaks'
 
-      parsed.push({ action: actionValue, text: textValue.trim() });
+      parsed.push({ action: actionValue, text: textValue.trim() })
     } catch {
       // Ignore malformed chunks and continue parsing other blocks.
     }
   }
 
-  if (parsed.length > 0) return parsed;
+  if (parsed.length > 0) return parsed
 
-  const fallback = rawText.trim();
-  return [{ action: "speaks", text: fallback || rawText }];
+  const fallback = rawText.trim()
+  return [{ action: 'speaks', text: fallback || rawText }]
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-export function ChatWindow({
-  npcId,
-  npcName,
-  onClose,
-  onTradeIntent,
-}: ChatWindowProps) {
+export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindowProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
-      role: "npc",
-      text: NPC_GREETINGS[npcId] ?? "...",
+      role: 'npc',
+      text: NPC_GREETINGS[npcName.replace(/-/g, '_').toUpperCase()] ?? '...',
       timestamp: new Date(),
     },
-  ]);
-  const [input, setInput] = useState("");
-  const [isThinking, setIsThinking] = useState(false);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamBuffer, setStreamBuffer] = useState("");
-  const [sdkActive, setSdkActive] = useState<boolean>(() => isSdkReady());
-  const [characterId, setCharacterId] = useState<string | null>(null);
-  const [charLookupError, setCharLookupError] = useState<string | null>(null);
+  ])
+  const [input, setInput] = useState('')
+  const [isThinking, setIsThinking] = useState(false)
+  const [sdkActive, setSdkActive] = useState<boolean>(() => isSdkReady())
+  const [characterId, setCharacterId] = useState<string | null>(null)
+  const [charLookupError, setCharLookupError] = useState<string | null>(null)
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const abortRef = useRef(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const npcColor = NPC_COLORS[npcId] ?? "#00ffff";
-
-  // ── Resolve character by name on mount ──────────────────────────────
   useEffect(() => {
-    let mounted = true;
+    let mounted = true
 
-    (async () => {
-      if (!isSdkReady()) return;
+    void (async () => {
+      if (!isSdkReady()) return
 
       try {
-        const cache = await loadCharacters();
+        let char = await getCharacterByName(npcName)
+        if (!char) char = await getCharacterByName(npcId)
 
-        if (cache.size === 0) {
-          // No characters cached — show helpful message and allow further attempts
-          setCharLookupError(
-            "⚠️ No characters found in GuildCraft. " +
-              "Make sure you have created characters matching the NPC names."
-          );
-        }
-
-        // Try several lookups to be resilient:
-        // 1) Display name (npcName)
-        // 2) Game-local id (npcId)
-        // 3) Direct fetch by id via the client (if available)
-        let char = await getCharacterByName(npcName);
-        if (!char) char = await getCharacterByName(npcId);
-
-        if (!char) {
-          const client = getClient();
-          if (client?.getCharacter) {
-            try {
-              // If npcId happens to be a real character id, this will resolve it
-              const fetched = await client.getCharacter(npcId);
-              if (fetched) char = fetched as any;
-            } catch (err) {
-              // ignore — we'll surface a helpful error below
-            }
-          }
-        }
-
-        if (!mounted) return;
+        if (!mounted) return
 
         if (char) {
-          setCharacterId(char.id);
-          console.log(`[ChatWindow] Resolved "${npcName}" → character id: ${char.id}`);
-          setCharLookupError(null);
+          setCharacterId(char.id)
+          setCharLookupError(null)
         } else {
-          const found = cache.size ? [...cache.keys()].join(", ") : "(none)";
-          const msg =
-            `⚠️ No GuildCraft character found with name "${npcName}".` +
-            ` Available characters: ${found}. ` +
-            "Create a character with this exact name in your GuildCraft dashboard.";
-          setCharLookupError(msg);
-          console.warn("[ChatWindow]", msg);
+          setCharLookupError(`No GuildCraft character found for ${npcName}.`)
         }
-      } catch (err) {
-        console.error("[ChatWindow] character resolution error:", err);
+      } catch {
         if (mounted) {
-          setCharLookupError("⚠️ Error loading characters — see console for details.");
+          setCharLookupError('Error loading characters.')
         }
       }
-    })();
+    })()
 
     return () => {
-      mounted = false;
-    };
-  }, [npcName, npcId]);
+      mounted = false
+    }
+  }, [npcName, npcId])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamBuffer]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   useEffect(() => {
-    inputRef.current?.focus();
-    return () => {
-      abortRef.current = true;
-    };
-  }, []);
+    inputRef.current?.focus()
+  }, [])
 
-  // Keep `sdkActive` in sync in case runtime env/localStorage was set
   useEffect(() => {
-    setSdkActive(isSdkReady());
-  }, []);
+    setSdkActive(isSdkReady())
+  }, [])
 
-  // ── SDK streaming chat ──────────────────────────────────────────────
   const sendViaSdk = useCallback(
     async (userText: string): Promise<boolean> => {
-      const client = getClient();
-      if (!client || !characterId) return false;
+      const client = getClient()
+      if (!client || !characterId) return false
 
-      setIsStreaming(true);
-      setStreamBuffer("");
-      abortRef.current = false;
-
-      let fullText = "";
-      let finalActionFromEvent: string | undefined;
       try {
-        for await (const event of client.chatStream(
+        const response = (await client.chat(characterId, userText, {
+          npcName,
           characterId,
-          userText,
-          { npcName: npcName, characterId }
-        ) as AsyncIterable<{
-          type: string;
-          delta?: string;
-          error?: string;
-          final?: { text: string; action?: string; tradeIntent?: TradeIntent };
-        }>) {
-          if (abortRef.current) break;
-
-          if (event.type === "text_delta" && event.delta) {
-            fullText += event.delta;
-            setStreamBuffer(fullText);
-          }
-
-          if (event.type === "done" && event.final) {
-            fullText = event.final.text ?? fullText;
-            finalActionFromEvent = event.final.action;
-            if (event.final.tradeIntent) {
-              onTradeIntent?.(event.final.tradeIntent);
-            }
-          }
-
-          if (event.type === "error") {
-            throw new Error(event.error ?? "Stream error");
-          }
+        })) as {
+          response?: string
+          action?: string | null
+          tradeIntent?: TradeIntent | null
         }
-      } catch (err) {
-        console.error("[ChatWindow] SDK stream error:", err);
-        const errText =
-          err instanceof Error
-            ? err.message
-            : "Chat stream failed. Check backend logs for details.";
+
+        const rawText = String(response.response ?? '').trim()
+        const { clean, trade } = extractTradeIntent(rawText)
+        const parsedResponses = parseAgentResponse(clean)
+        const primary = parsedResponses[0] ?? { action: response.action ?? 'speaks', text: clean || rawText }
+
+        if (response.tradeIntent) onTradeIntent?.(response.tradeIntent)
+        if (trade) onTradeIntent?.(trade)
+
         setMessages((prev) => [
           ...prev,
-          {
-            role: "system",
-            text: `Chat stream error: ${errText}`,
-            timestamp: new Date(),
-          },
-        ]);
-        return true;
-      } finally {
-        setIsStreaming(false);
-        setStreamBuffer("");
+          { role: 'npc', text: primary.text, action: response.action ?? primary.action, timestamp: new Date() },
+        ])
+
+        window.dispatchEvent(
+          new CustomEvent('npc-action', {
+            detail: {
+              npcId,
+              npcName,
+              text: primary.text,
+              action: response.action ?? primary.action,
+            },
+          })
+        )
+
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Chat failed'
+        setMessages((prev) => [...prev, { role: 'system', text: message, timestamp: new Date() }])
+        return false
       }
-
-      // Also check text body for embedded [[TRADE:...]] markers
-      const { clean, trade } = extractTradeIntent(fullText);
-      if (trade) onTradeIntent?.(trade);
-
-      const parsedResponses = parseAgentResponse(clean);
-      const normalizedResponses = parsedResponses.map((res, index) => {
-        if (
-          index === 0 &&
-          finalActionFromEvent &&
-          (res.action === "speaks" || !res.action.trim())
-        ) {
-          return { ...res, action: finalActionFromEvent };
-        }
-        return res;
-      });
-
-      normalizedResponses.forEach((res, index) => {
-        const dispatchAction = () => {
-          window.dispatchEvent(
-            new CustomEvent(NPC_ACTION_EVENT, {
-              detail: {
-                npcId,
-                npcName,
-                text: res.text,
-                action: res.action,
-                index,
-              },
-            })
-          );
-        };
-
-        if (index === 0) {
-          dispatchAction();
-          return;
-        }
-
-        // Space out consecutive gesture/text beats for readability.
-        window.setTimeout(dispatchAction, NPC_ACTION_DELAY_MS * index);
-      });
-
-      setMessages((prev) => [
-        ...prev,
-        ...normalizedResponses.map((res) => ({
-          role: "npc" as const,
-          text: res.text || "[no response from SDK]",
-          action: res.action,
-          timestamp: new Date(),
-        })),
-      ]);
-      return true;
     },
     [characterId, npcId, npcName, onTradeIntent]
-  );
+  )
 
-  // NOTE: local API fallbacks removed — demo uses the GuildCraft SDK exclusively.
-
-  // ── Main send handler ───────────────────────────────────────────────
   const sendMessage = useCallback(async () => {
-    const text = input.trim();
-    if (!text || isThinking || isStreaming) return;
+    const text = input.trim()
+    if (!text || isThinking) return
 
-    const userMsg: Message = { role: "user", text, timestamp: new Date() };
-    setMessages((prev) => [...prev, userMsg]);
-    setInput("");
-    setIsThinking(true);
+    setMessages((prev) => [...prev, { role: 'user', text, timestamp: new Date() }])
+    setInput('')
+    setIsThinking(true)
 
     try {
-      // Require SDK + resolved character for chat in the demo.
       if (!isSdkReady() || !characterId) {
         const errMsg = isSdkReady()
           ? `No character named "${npcName}" found. Create a character with this name in GuildCraft.`
-          : `GuildCraft SDK not configured. Set VITE_GC_API_KEY in demo/.env to enable live chat.`;
-        setMessages((prev) => [
-          ...prev,
-          { role: "system", text: errMsg, timestamp: new Date() },
-        ]);
-        return;
+          : `GuildCraft SDK not configured. Set VITE_GC_API_KEY in demo/.env to enable live chat.`
+        setMessages((prev) => [...prev, { role: 'system', text: errMsg, timestamp: new Date() }])
+        return
       }
 
-      // Use SDK streaming chat (await stream completion)
-      const ok = await sendViaSdk(text);
+      const ok = await sendViaSdk(text)
       if (!ok) {
         setMessages((prev) => [
           ...prev,
-          {
-            role: "npc",
-            text: "[SDK chat failed — check console for details]",
-            timestamp: new Date(),
-          },
-        ]);
+          { role: 'system', text: '[SDK chat failed — check console for details]', timestamp: new Date() },
+        ])
       }
     } finally {
-      setIsThinking(false);
+      setIsThinking(false)
     }
-  }, [
-    input,
-    isThinking,
-    isStreaming,
-    sdkActive,
-    characterId,
-    sendViaSdk,
-    // sendViaLocalApi,
-    messages,
-    npcId,
-  ]);
+  }, [input, isThinking, sdkActive, characterId, sendViaSdk, npcName])
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    // Prevent global/game key handlers from intercepting typing keys
-    e.stopPropagation();
+    e.stopPropagation()
     try {
-      // stopImmediatePropagation exists on the native KeyboardEvent
-      (e.nativeEvent as unknown as KeyboardEvent).stopImmediatePropagation?.();
-    } catch (err) {
+      (e.nativeEvent as unknown as KeyboardEvent).stopImmediatePropagation?.()
+    } catch {
       // ignore
     }
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void sendMessage();
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void sendMessage()
     }
-    if (e.key === "Escape") onClose();
+    if (e.key === 'Escape') onClose()
   }
 
-  const busy = isThinking || isStreaming;
+  const busy = isThinking
 
   return (
     <div
-      className="flex flex-col h-full rounded-lg overflow-hidden"
+      className="flex h-full flex-col overflow-hidden rounded-lg"
       style={{
-        background: "rgba(5, 5, 15, 0.97)",
-        border: `1px solid ${npcColor}44`,
-        boxShadow: `0 0 30px ${npcColor}22, inset 0 0 30px rgba(0,0,0,0.5)`,
-        fontFamily: "monospace",
+        background: 'rgba(5, 5, 15, 0.97)',
+        border: '1px solid rgba(0,255,255,0.27)',
+        boxShadow: '0 0 30px rgba(0,255,255,0.14), inset 0 0 30px rgba(0,0,0,0.5)',
+        fontFamily: 'monospace',
       }}
     >
-      {/* ── Header ─────────────────────────────────────────────────── */}
-      <div
-        className="flex items-center justify-between px-4 py-3 flex-shrink-0"
-        style={{
-          borderBottom: `1px solid ${npcColor}33`,
-          background: `linear-gradient(135deg, ${npcColor}11, transparent)`,
-        }}
-      >
+      <div className="flex flex-shrink-0 items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(0,255,255,0.15)' }}>
         <div>
-          <div
-            className="text-sm font-bold tracking-widest flex items-center gap-2"
-            style={{ color: npcColor }}
-          >
+          <div className="flex items-center gap-2 text-sm font-bold tracking-widest text-cyan-300">
             {npcName}
             {sdkActive && characterId && (
-              <span
-                className="text-xs px-1.5 py-0.5 rounded"
-                style={{
-                  background: `${npcColor}22`,
-                  border: `1px solid ${npcColor}44`,
-                  color: npcColor,
-                  fontSize: "9px",
-                  letterSpacing: 1,
-                }}
-              >
-                SDK LIVE
-              </span>
-            )}
-            {sdkActive && !characterId && !charLookupError && (
-              <span
-                className="text-xs px-1.5 py-0.5 rounded flex items-center gap-1"
-                style={{
-                  background: "rgba(255,200,0,0.1)",
-                  border: "1px solid rgba(255,200,0,0.3)",
-                  color: "#ffcc00",
-                  fontSize: "9px",
-                }}
-              >
-                <Loader2 size={7} className="animate-spin" />
-                RESOLVING
+              <span className="rounded border border-cyan-400/20 bg-cyan-500/10 px-1.5 py-0.5 text-xs text-cyan-200">
+                live
               </span>
             )}
           </div>
-          <div className="text-xs mt-0.5" style={{ color: "#445566" }}>
-            {NPC_DESCRIPTIONS[npcId]?.split(".")[0]}.
-          </div>
+          <div className="mt-1 text-[10px] text-cyan-200/70">Backend-driven NPC conversation.</div>
         </div>
-        <button
-          onClick={onClose}
-          className="rounded p-1 transition-colors"
-          style={{ color: "#445566" }}
-          onMouseEnter={(e) =>
-            ((e.currentTarget as HTMLElement).style.color = npcColor)
-          }
-          onMouseLeave={(e) =>
-            ((e.currentTarget as HTMLElement).style.color = "#445566")
-          }
-        >
-          <X size={16} />
+
+        <button onClick={onClose} className="rounded p-1 hover:bg-white/10" aria-label="Close chat" title="Close (Esc)">
+          <X size={16} color="#00ffff" />
         </button>
       </div>
 
-      {/* ── Messages ───────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin min-h-0">
-        {/* Character lookup warning */}
-        {charLookupError && (
-          <div
-            className="text-xs px-3 py-2 rounded leading-relaxed"
-            style={{
-              background: "rgba(255,200,0,0.06)",
-              border: "1px solid rgba(255,200,0,0.2)",
-              color: "#ccaa44",
-            }}
-          >
-            {charLookupError}
-          </div>
-        )}
-
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex flex-col ${
-              msg.role === "user"
-                ? "items-end"
-                : msg.role === "system"
-                  ? "items-center"
-                  : "items-start"
-            }`}
-          >
-            {msg.role !== "system" && (
-              <div className="text-xs mb-1" style={{ color: "#334455" }}>
-                {msg.role === "user" ? "YOU" : npcName}
-              </div>
-            )}
+      <div className="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
+        {messages.map((message, index) => (
+          <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
-              className="text-xs px-3 py-2 rounded max-w-[85%] leading-relaxed"
-              style={
-                msg.role === "user"
-                  ? {
-                      background: "rgba(0,255,255,0.08)",
-                      border: "1px solid rgba(0,255,255,0.2)",
-                      color: "#aaddee",
-                    }
-                  : msg.role === "system"
-                    ? {
-                        background: "rgba(255,200,0,0.08)",
-                        border: "1px solid rgba(255,200,0,0.2)",
-                        color: "#ccaa44",
-                        fontSize: "10px",
-                        maxWidth: "95%",
-                      }
-                    : {
-                        background: `${npcColor}11`,
-                        border: `1px solid ${npcColor}33`,
-                        color: "#ccddee",
-                      }
-              }
+              className={`max-w-[85%] rounded-lg border px-3 py-2 ${
+                message.role === 'user'
+                  ? 'border-cyan-400/30 bg-cyan-500/10 text-cyan-100'
+                  : message.role === 'system'
+                    ? 'border-yellow-400/30 bg-yellow-500/10 text-yellow-100'
+                    : 'border-white/10 bg-white/5 text-white'
+              }`}
             >
-              {msg.role === "npc" && msg.action && (
-                <div className="text-[10px] mb-1 opacity-80 italic" style={{ color: "#99aabb" }}>
-                  [{msg.action}]
+              {message.role === 'npc' && (
+                <div className="mb-1 text-[10px] uppercase tracking-wider opacity-70">
+                  {npcName}
+                  {message.action && message.action !== 'speaks' && <span className="ml-2 text-cyan-300">• {message.action}</span>}
                 </div>
               )}
-              {msg.text}
+              {message.role === 'system' && <div className="mb-1 text-[10px] uppercase tracking-wider opacity-70">system</div>}
+              <div className="whitespace-pre-wrap leading-relaxed">{message.text}</div>
             </div>
           </div>
         ))}
 
-        {/* Live streaming buffer */}
-        {isStreaming && streamBuffer && (
-          <div className="flex flex-col items-start">
-            <div className="text-xs mb-1" style={{ color: "#334455" }}>
-              {npcName}
-            </div>
-            <div
-              className="text-xs px-3 py-2 rounded max-w-[85%] leading-relaxed"
-              style={{
-                background: `${npcColor}11`,
-                border: `1px solid ${npcColor}33`,
-                color: "#ccddee",
-              }}
-            >
-              {streamBuffer}
-              <span
-                className="animate-pulse ml-0.5"
-                style={{ color: npcColor }}
-              >
-                ▋
-              </span>
+        {isThinking && (
+          <div className="flex justify-start">
+            <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/60">
+              <Loader2 size={14} className="animate-spin" />
+              {npcName} is thinking...
             </div>
           </div>
         )}
 
-        {/* Thinking indicator */}
-        {isThinking && !isStreaming && (
-          <div className="flex items-start">
-            <div
-              className="text-xs px-3 py-2 rounded flex items-center gap-2"
-              style={{
-                background: `${npcColor}11`,
-                border: `1px solid ${npcColor}33`,
-                color: npcColor,
-              }}
-            >
-              <Loader2 size={10} className="animate-spin" />
-              connecting...
-            </div>
+        {charLookupError && (
+          <div className="rounded border border-yellow-400/20 bg-yellow-500/10 p-2 text-[11px] text-yellow-300">
+            {charLookupError}
           </div>
         )}
 
         <div ref={messagesEndRef} />
       </div>
 
-      {/* ── Input ──────────────────────────────────────────────────── */}
-      <div
-        className="px-3 pb-3 pt-2 flex-shrink-0"
-        style={{ borderTop: `1px solid ${npcColor}22` }}
-      >
-        <div
-          className="flex items-center gap-2 rounded px-3 py-2"
-          style={{
-            background: "rgba(0,0,0,0.5)",
-            border: `1px solid ${busy ? npcColor + "66" : npcColor + "33"}`,
-            transition: "border-color 0.2s",
-          }}
-        >
+      <div className="flex-shrink-0 border-t border-white/10 p-3">
+        <div className="flex items-end gap-2">
           <input
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={
-              busy ? "waiting for response..." : "type your message..."
-            }
-            className="flex-1 bg-transparent text-xs outline-none"
-            style={{ color: "#aaccdd", caretColor: npcColor }}
-            disabled={busy}
+            placeholder={`Message ${npcName}...`}
+            disabled={!sdkActive || busy}
+            className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/40 disabled:opacity-60"
           />
           <button
             onClick={() => void sendMessage()}
-            disabled={!input.trim() || busy}
-            style={{
-              color: input.trim() && !busy ? npcColor : "#334455",
-              transition: "color 0.2s",
-            }}
+            disabled={!input.trim() || !sdkActive || busy}
+            className="flex items-center gap-2 rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50 disabled:hover:bg-cyan-500/10"
           >
-            {busy ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Send size={14} />
-            )}
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            Send
           </button>
-        </div>
-
-        <div className="flex items-center justify-between mt-1 px-1">
-          <div className="text-xs" style={{ color: "#223344" }}>
-            ESC to exit · ENTER to send
-          </div>
-          {sdkActive && characterId && (
-            <div
-              className="text-xs flex items-center gap-1"
-              style={{ color: "#334455" }}
-            >
-              <Zap size={9} style={{ color: npcColor }} />
-              streaming
-            </div>
-          )}
         </div>
       </div>
     </div>
-  );
+  )
 }

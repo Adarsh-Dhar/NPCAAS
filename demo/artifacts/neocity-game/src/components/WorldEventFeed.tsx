@@ -3,6 +3,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { worldLoop, type WorldEvent } from '@/lib/npcWorldLoop'
+import { subscribePlayerState } from '@/lib/playerState'
 import { Zap } from 'lucide-react'
 
 const ACTION_COLOR: Record<string, string> = {
@@ -12,6 +13,10 @@ const ACTION_COLOR: Record<string, string> = {
   TRADE_ACCEPTED:   '#00ff88',
   TRADE_PROPOSED:   '#ff9900',
   BROADCAST:        '#aaccdd',
+  BANKRUPTCY:       '#ff4466',
+  FIREWALL_CRACKED: '#7df9ff',
+  LOOP_TICK:        '#8888ff',
+  ACTION_QUEUED:    '#ffaa00',
 }
 
 export function WorldEventFeed() {
@@ -22,9 +27,24 @@ export function WorldEventFeed() {
     const unsub = worldLoop.subscribe(event => {
       setEvents(prev => [event, ...prev].slice(0, 30))
     })
+    const unsubState = subscribePlayerState((snapshot) => {
+      if (snapshot.lastEventType) {
+        setEvents((prev) => [
+          {
+            sourceId: 'local-player',
+            sourceName: 'PLAYER_STATE',
+            actionType: snapshot.lastEventType,
+            payload: snapshot,
+            timestamp: snapshot.lastEventAt ?? new Date().toISOString(),
+          },
+          ...prev,
+        ].slice(0, 30))
+      }
+    })
     worldLoop.start(5000)
     return () => {
       unsub()
+      unsubState()
       worldLoop.stop()
     }
   }, [])
@@ -68,6 +88,14 @@ export function WorldEventFeed() {
             ? `→ ${payload.to}: ${payload.amount} ${payload.currency} for ${payload.item}`
             : event.actionType === 'ITEM_TRANSFERRED'
             ? `→ ${payload.to}: transferred ${payload.item}`
+            : event.actionType === 'BANKRUPTCY'
+            ? 'Escrow depleted'
+            : event.actionType === 'FIREWALL_CRACKED'
+            ? 'Sector gate unlocked'
+            : event.actionType === 'LOOP_TICK'
+            ? 'Backend loop ticked'
+            : event.actionType === 'ACTION_QUEUED'
+            ? `Queued action for ${String(payload.target ?? 'NPC')}`
             : JSON.stringify(payload).slice(0, 50)
 
         return (

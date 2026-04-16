@@ -320,6 +320,10 @@ class GuildCraftClient {
     return this._request(`/npcs/${encodeURIComponent(npcId)}/logs${query}`)
   }
 
+  async getNpcLogs(npcId, opts = {}) {
+    return this.getLogs(npcId, opts)
+  }
+
   // ── NPC Autonomous Loop ──────────────────────────────────────────────────
 
   /**

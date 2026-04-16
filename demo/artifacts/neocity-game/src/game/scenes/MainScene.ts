@@ -1,6 +1,8 @@
 import Phaser from "phaser";
+import type { Character } from "../../lib/sdk";
+import { getSceneCharacters, subscribeSceneCharacters } from "@/lib/npcSceneState";
 
-interface NpcData {
+interface SceneNpcData {
   id: string;
   name: string;
   x: number;
@@ -55,35 +57,11 @@ export class MainScene extends Phaser.Scene {
   private lastPlayerX = 0;
   private lastPlayerY = 0;
   private playerDirection: "up" | "down" | "left" | "right" = "down";
-  private npcData: NpcData[] = [
-    {
-      id: "SILAS_VANCE",
-      name: "SILAS_VANCE",
-      x: 220,
-      y: 200,
-      color: 0xff6600,
-      glowColor: 0xff4400,
-      label: "The Wire Scavenger",
-    },
-    {
-      id: "ARCHIVE_NODE_819",
-      name: "ARCHIVE_NODE_819",
-      x: 680,
-      y: 380,
-      color: 0x00ffcc,
-      glowColor: 0x00ddaa,
-      label: "The Root-Key Crafter",
-    },
-    {
-      id: "SCRAP_ENFORCER",
-      name: "SCRAP_ENFORCER",
-      x: 440,
-      y: 520,
-      color: 0xff0066,
-      glowColor: 0xcc0044,
-      label: "The Rival Hunter",
-    },
-  ];
+  private npcData: SceneNpcData[] = [];
+  private barrier!: Phaser.GameObjects.Container;
+  private barrierDestroyed = false;
+  private unsubCharacters?: () => void;
+  private boundFirewallCracked?: () => void;
 
   constructor() {
     super("MainScene");
@@ -95,7 +73,7 @@ export class MainScene extends Phaser.Scene {
 
     this.createCyberpunkMap(W, H);
     this.createPlayer(W / 2, H / 2);
-    this.createNpcs();
+    this.createNpcs(getSceneCharacters());
     this.createScanlines(W, H);
 
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -113,9 +91,14 @@ export class MainScene extends Phaser.Scene {
     this.boundCloseChat = this.handleCloseChat.bind(this);
     this.boundGameResume = this.handleGameResume.bind(this);
     this.boundNpcAction = this.handleNpcAction.bind(this);
+    this.boundFirewallCracked = this.handleFirewallCracked.bind(this);
     window.addEventListener("CLOSE_CHAT", this.boundCloseChat);
     window.addEventListener("GAME_RESUME", this.boundGameResume);
     window.addEventListener("npc-action", this.boundNpcAction);
+    window.addEventListener("FIREWALL_CRACKED", this.boundFirewallCracked);
+    this.unsubCharacters = subscribeSceneCharacters((characters) => {
+      this.createNpcs(characters);
+    });
   }
 
   private createCyberpunkMap(W: number, H: number) {
@@ -235,7 +218,76 @@ export class MainScene extends Phaser.Scene {
     (this.physicsPlayer.body as Phaser.Physics.Arcade.Body).setCollideWorldBounds(true);
   }
 
-  private createNpcs() {
+  private getNpcColor(character: Character, index: number) {
+    const factionId = String((character.config as Record<string, unknown>)?.factionId ?? '');
+    const seed = `${character.name}:${index}:${factionId}`;
+    let hash = 0;
+    for (let i = 0; i < seed.length; i += 1) {
+      hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+    }
+    return hash & 0xffffff;
+  }
+
+  private buildNpcData(characters: Character[]): SceneNpcData[] {
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const radiusX = Math.min(W * 0.33, 260);
+    const radiusY = Math.min(H * 0.26, 180);
+    const centerX = W / 2;
+    const centerY = H / 2;
+
+    return characters.map((character, index) => {
+      const angle = (Math.PI * 2 * index) / Math.max(characters.length, 1);
+      const x = Phaser.Math.Clamp(centerX + Math.cos(angle) * radiusX, 90, W - 90);
+      const y = Phaser.Math.Clamp(centerY + Math.sin(angle) * radiusY, 120, H - 120);
+      const color = this.getNpcColor(character, index);
+
+      return {
+        id: character.id,
+        name: character.name,
+        x,
+        y,
+        color,
+        glowColor: (color & 0x00ffff) | 0x220000,
+        label: String((character.config as Record<string, unknown>)?.factionId ?? 'Active Node'),
+      };
+    });
+  }
+
+  private createFirewallBarrier() {
+    if (this.barrier) {
+      this.barrier.destroy(true);
+    }
+
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const barrierX = W - 44;
+    const barrier = this.add.container(barrierX, H / 2).setDepth(25);
+    const glow = this.add.rectangle(0, 0, 28, H - 120, 0x44ffff, 0.15);
+    const core = this.add.rectangle(0, 0, 12, H - 90, 0x9fffff, 0.7);
+    const text = this.add.text(0, -((H - 90) / 2) - 30, 'FIREWALL', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: '#aaffff',
+      backgroundColor: '#000000aa',
+      padding: { x: 6, y: 4 },
+    }).setOrigin(0.5);
+    barrier.add([glow, core, text]);
+    this.barrier = barrier;
+    this.barrierDestroyed = false;
+  }
+
+  private createNpcs(characters: Character[]) {
+    for (const npc of this.npcs) {
+      npc.container.destroy(true);
+      npc.label.destroy();
+      npc.promptText.destroy();
+    }
+
+    this.npcs = [];
+    this.npcData = this.buildNpcData(characters);
+    this.createFirewallBarrier();
+
     for (const npc of this.npcData) {
       const container = this.add.container(npc.x, npc.y);
 
@@ -261,10 +313,10 @@ export class MainScene extends Phaser.Scene {
 
       const nameText = this.add
         .text(0, -40, npc.name, {
-          fontSize: "9px",
+          fontSize: '9px',
           color: Phaser.Display.Color.IntegerToColor(npc.color).rgba,
-          fontFamily: "monospace",
-          stroke: "#000000",
+          fontFamily: 'monospace',
+          stroke: '#000000',
           strokeThickness: 2,
         })
         .setOrigin(0.5, 1);
@@ -274,19 +326,19 @@ export class MainScene extends Phaser.Scene {
 
       const labelText = this.add
         .text(npc.x, npc.y + 30, npc.label, {
-          fontSize: "8px",
-          color: "#445566",
-          fontFamily: "monospace",
+          fontSize: '8px',
+          color: '#445566',
+          fontFamily: 'monospace',
         })
         .setOrigin(0.5, 0)
         .setDepth(9);
 
       const promptText = this.add
-        .text(npc.x, npc.y - 55, "[E] INTERACT", {
-          fontSize: "10px",
-          color: "#ffffff",
-          fontFamily: "monospace",
-          backgroundColor: "#000000cc",
+        .text(npc.x, npc.y - 55, '[E] INTERACT', {
+          fontSize: '10px',
+          color: '#ffffff',
+          fontFamily: 'monospace',
+          backgroundColor: '#000000cc',
           padding: { x: 5, y: 3 },
         })
         .setOrigin(0.5, 1)
@@ -299,7 +351,7 @@ export class MainScene extends Phaser.Scene {
         scaleY: 1.4,
         alpha: 0,
         duration: 1500,
-        ease: "Sine.easeOut",
+        ease: 'Sine.easeOut',
         repeat: -1,
         yoyo: false,
       });
@@ -367,6 +419,18 @@ export class MainScene extends Phaser.Scene {
       detail.text ?? "...",
       detail.action ?? "speaks"
     );
+  }
+
+  private handleFirewallCracked() {
+    if (this.barrierDestroyed || !this.barrier) return;
+    this.barrierDestroyed = true;
+    this.tweens.add({
+      targets: this.barrier,
+      alpha: 0,
+      duration: 1200,
+      ease: 'Sine.easeOut',
+      onComplete: () => this.barrier.destroy(true),
+    });
   }
 
   private findNpcByKey(npcKey: string) {
@@ -709,6 +773,12 @@ export class MainScene extends Phaser.Scene {
     }
     if (this.boundNpcAction) {
       window.removeEventListener("npc-action", this.boundNpcAction);
+    }
+    if (this.boundFirewallCracked) {
+      window.removeEventListener("FIREWALL_CRACKED", this.boundFirewallCracked);
+    }
+    if (this.unsubCharacters) {
+      this.unsubCharacters();
     }
   }
 }

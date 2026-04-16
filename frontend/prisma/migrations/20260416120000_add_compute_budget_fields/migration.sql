@@ -1,0 +1,6 @@
+-- Add compute budget tracking fields to Character.
+ALTER TABLE "Character"
+ADD COLUMN IF NOT EXISTS "computeUsageTokens" BIGINT NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "computeLimitTokens" BIGINT NOT NULL DEFAULT 5000,
+ADD COLUMN IF NOT EXISTS "lastComputeResetAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN IF NOT EXISTS "teeAttestationProof" TEXT;

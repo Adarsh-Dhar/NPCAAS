@@ -23,6 +23,7 @@ const proxyTarget = process.env.GC_PROXY_TARGET || "http://localhost:3000";
 
 export default defineConfig({
   base: basePath,
+  envDir: path.resolve(import.meta.dirname, "..", ".."),
   plugins: [
     react(),
     tailwindcss(),

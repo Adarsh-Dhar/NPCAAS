@@ -2,7 +2,7 @@
 // Subscribes to world events from the server via polling, then injects
 // them into a local in-memory event store so the UI can react.
 
-import { getClient, isSdkReady, loadCharacters, getCharacterByName } from '@/lib/sdk'
+import { getClient } from '@/lib/sdk'
 import type { TradeIntent } from '@/components/ChatWindow'
 
 export interface WorldEvent {
@@ -18,7 +18,8 @@ type WorldEventHandler = (event: WorldEvent) => void
 class NpcWorldLoop {
   private handlers: WorldEventHandler[] = []
   private intervalId: ReturnType<typeof setInterval> | null = null
-  private lastPollAt: string | null = null
+  private tickCount = 0
+  private readonly loopNpcNames = ['Forge-9', 'The Weaver', 'Aegis-Prime']
 
   subscribe(handler: WorldEventHandler) {
     this.handlers.push(handler)
@@ -29,7 +30,7 @@ class NpcWorldLoop {
 
   start(pollIntervalMs = 4000) {
     if (this.intervalId) return
-    this.intervalId = setInterval(() => this.poll(), pollIntervalMs)
+    this.intervalId = setInterval(() => void this.poll(), pollIntervalMs)
   }
 
   stop() {
@@ -49,10 +50,41 @@ class NpcWorldLoop {
     if (!client) return
 
     try {
-      // Poll the environment state to pick up recent NPC logs
-      // In production you'd use WebSockets or SSE; polling is fine for a demo
-      const state = await client.getEnvironmentState(['npcs'])
-      // No-op for now — extend to fetch recent NpcLog entries
+      this.tickCount += 1
+
+      for (const npcName of this.loopNpcNames) {
+        const loopResult = await client.startNpcLoop(npcName, {
+          schedule: '*/10 * * * * *',
+          events: ['TRADE', 'ESCROW_CHECK'],
+          tasks: ['monitor-wallets', 'negotiate-trade'],
+        })
+
+        this.dispatch({
+          sourceId: npcName,
+          sourceName: npcName,
+          actionType: 'LOOP_TICK',
+          payload: { tick: this.tickCount, loop: loopResult.loop },
+          timestamp: new Date().toISOString(),
+        })
+
+        const actionQueue = await client.getNpcActionQueue(npcName)
+        if (actionQueue?.queueLength === 0 && this.tickCount % 2 === 0) {
+          const target = this.loopNpcNames[(this.tickCount + this.loopNpcNames.indexOf(npcName) + 1) % this.loopNpcNames.length]
+          await client.queueNpcAction(npcName, {
+            type: 'TRADE',
+            description: `Trade directive: ${npcName} should negotiate with ${target}`,
+            payload: { type: 'TRADE', target, item: 'Raw Data' },
+          })
+
+          this.dispatch({
+            sourceId: npcName,
+            sourceName: npcName,
+            actionType: 'ACTION_QUEUED',
+            payload: { target, item: 'Raw Data' },
+            timestamp: new Date().toISOString(),
+          })
+        }
+      }
     } catch {
       // ignore poll failures silently
     }

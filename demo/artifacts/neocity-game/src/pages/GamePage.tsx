@@ -1,11 +1,13 @@
 // src/pages/GamePage.tsx
 import { useState, useEffect, useCallback } from "react";
-import { GameCanvas } from "@/game/GameCanvas";
-import { ChatWindow, type TradeIntent } from "@/components/ChatWindow";
-import { HUD } from "@/components/HUD";
-import { WorldEventFeed } from "@/components/WorldEventFeed";
-import { worldLoop } from "@/lib/npcWorldLoop";
-import { getClient, isSdkReady, loadCharacters } from "@/lib/sdk";
+import { GameCanvas } from "../game/GameCanvas";
+import { ChatWindow, type TradeIntent } from "../components/ChatWindow";
+import { HUD } from "../components/HUD";
+import { WorldEventFeed } from "../components/WorldEventFeed";
+import DashboardPage from "./DashboardPage";
+import { worldLoop } from "../lib/npcWorldLoop";
+import { getClient, isSdkReady, loadCharacters } from "../lib/sdk";
+import type { Character } from "../lib/sdk";
 
 interface ActiveNpc {
   id: string;   // game-local key: "SILAS_VANCE" | "ARCHIVE_NODE_819" | "SCRAP_ENFORCER"
@@ -15,6 +17,8 @@ interface ActiveNpc {
 export default function GamePage() {
   const [activeNpc, setActiveNpc] = useState<ActiveNpc | null>(null);
   const [pendingTrade, setPendingTrade] = useState<TradeIntent | null>(null);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [showDashboard, setShowDashboard] = useState(false);
 
   // Pre-warm the character cache as soon as the page mounts
   useEffect(() => {
@@ -26,67 +30,31 @@ export default function GamePage() {
   useEffect(() => {
     if (!isSdkReady()) return;
 
-    let loopId: number | undefined;
     let cancelled = false;
 
-    loadCharacters()
-      .then(async (chars) => {
-        if (cancelled) return;
-        if (chars.size < 2) return;
-        const client = getClient();
-        if (!client) return;
+    const client = getClient();
+    if (!client) return undefined;
 
-        const allChars = await client.getCharacters();
-        if (allChars.length < 2) return;
+    void loadCharacters();
 
-        const silas =
-          allChars.find((c: { name: string; }) => c.name === "SILAS_VANCE") ??
-          allChars[0];
-        const archiveNode =
-          allChars.find((c: { name: string; }) => c.name === "ARCHIVE_NODE_819") ??
-          allChars[1];
-
-        // Kick off an initial NPC conversation
-        worldLoop
-          .npcSpeak(
-            silas.id,
-            archiveNode.name,
-            "ARCHIVE_NODE_819, I can move SCRP stock tonight. Quote me Root Key fabrication and gas."
-          )
-          .catch(() => {
-            /* demo may not have API key */
-          });
-
-        // Simulate autonomous trade negotiation loop
-        loopId = window.setInterval(async () => {
-          if (allChars.length < 2) return;
-          try {
-            const initiator = allChars[Math.floor(Math.random() * allChars.length)];
-            const others = allChars.filter((c: { id: any; }) => c.id !== initiator.id);
-            if (others.length === 0) return;
-            const target = others[Math.floor(Math.random() * others.length)];
-
-            const prompts = [
-              "SILAS_VANCE has salvage lots live. Send current inventory and slippage risk.",
-              "I can lock 100 SCRP now. Confirm Root Key queue slot and processing fee.",
-              "SCRAP_ENFORCER is sweeping this district. We settle terms before it front-runs us.",
-              "Need Root Key components and final mint ETA. Send terms in one packet.",
-            ];
-            const msg = prompts[Math.floor(Math.random() * prompts.length)];
-
-            await worldLoop.npcSpeak(initiator.id, target.name, msg);
-          } catch {
-            /* ignore */
-          }
-        }, 20000);
+    client
+      .getCharacters()
+      .then((allChars: Character[]) => {
+        if (!cancelled) {
+          setCharacters(Array.isArray(allChars) ? allChars : []);
+        }
       })
       .catch(() => {
-        /* ignore */
+        if (!cancelled) {
+          setCharacters([]);
+        }
       });
+
+    worldLoop.start(8000);
 
     return () => {
       cancelled = true;
-      if (loopId) clearInterval(loopId);
+      worldLoop.stop();
     };
   }, []);
 
@@ -110,6 +78,17 @@ export default function GamePage() {
   }, []);
 
   useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      event.preventDefault();
+      setShowDashboard((current) => !current);
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && activeNpc) handleCloseChat();
     };
@@ -123,7 +102,7 @@ export default function GamePage() {
       style={{ background: "#05050f", cursor: "crosshair" }}
     >
       {/* Layer 0: Phaser canvas */}
-      <GameCanvas onOpenChat={handleOpenChat} onCloseChat={handleCloseChat} />
+      <GameCanvas characters={characters} onOpenChat={handleOpenChat} onCloseChat={handleCloseChat} />
 
       {/* Layer 1: HUD — always visible */}
       <HUD
@@ -134,6 +113,13 @@ export default function GamePage() {
       />
 
       <WorldEventFeed />
+
+      {showDashboard && (
+        <DashboardPage
+          characters={characters.map((character) => ({ id: character.id, name: character.name }))}
+          onClose={() => setShowDashboard(false)}
+        />
+      )}
 
       {/* Layer 2: Chat window */}
       {activeNpc && (
