@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Activity, Wallet, Gauge, Lock, Unlock } from 'lucide-react'
 import { getClient } from '@/lib/sdk'
-import { emitPlayerEvent, setEscrowFunded, setPlayerInventory } from '@/lib/playerState'
+import { emitPlayerEvent, setEscrowFunded as setEscrowFundedEvent, setPlayerInventory } from '@/lib/playerState'
 import {
   formatNpcDisplayName,
   PROTOCOL_BABEL_NODE_NAMES,
   toCanonicalNpcName,
 } from '@/lib/protocolBabel'
+import { usePlayerState } from '@/context/PlayerStateContext'
 
 type CharacterSnapshot = {
   id: string
@@ -31,7 +32,7 @@ type LogPayload = {
 }
 
 interface DashboardPageProps {
-  characters: CharacterSnapshot[]
+  characters?: CharacterSnapshot[]
   onClose?: () => void
 }
 
@@ -42,18 +43,85 @@ function parseAmount(value: string) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-export default function DashboardPage({ characters, onClose }: DashboardPageProps) {
+export default function DashboardPage({ characters = [], onClose }: DashboardPageProps) {
   const [balances, setBalances] = useState<Record<string, WalletBalancePayload | null>>({})
   const [logs, setLogs] = useState<Record<string, LogPayload | null>>({})
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
+  const [fundingEscrow, setFundingEscrow] = useState(false)
+  const [fundEscrowMessage, setFundEscrowMessage] = useState<string | null>(null)
   const lastEscrowStateRef = useRef<boolean | null>(null)
   const lastAegisDownRef = useRef<boolean | null>(null)
   const lastTradeStateRef = useRef<boolean | null>(null)
+  const { credits, escrowFunded, escrowCost, canFundEscrow, fundEscrow, markEscrowFunded } = usePlayerState()
 
   const activeNames = useMemo(() => {
     const discovered = characters.map((character) => toCanonicalNpcName(character.name))
     return discovered.length ? discovered : [...PROTOCOL_BABEL_NODE_NAMES]
   }, [characters])
+
+  const dispatchFirewallCracked = useCallback(() => {
+    emitPlayerEvent('FIREWALL_CRACKED')
+    window.dispatchEvent(new CustomEvent('FIREWALL_CRACKED'))
+  }, [])
+
+  const handleFundEscrow = useCallback(async () => {
+    if (fundingEscrow) return
+
+    if (escrowFunded) {
+      setFundEscrowMessage('Escrow already funded.')
+      return
+    }
+
+    if (!canFundEscrow) {
+      setFundEscrowMessage(`Need ${escrowCost} credits to fund escrow.`)
+      return
+    }
+
+    const client = getClient()
+    if (!client) {
+      setFundEscrowMessage('GuildCraft client unavailable.')
+      return
+    }
+
+    setFundingEscrow(true)
+    setFundEscrowMessage(null)
+
+    try {
+      await client.triggerNpcEvent('Node_Alpha', {
+        event: 'ESCROW_FUNDED',
+        asset: 'Compute Escrow',
+        data: {
+          amount: escrowCost,
+          currency: 'KITE',
+          source: 'player_dashboard',
+        },
+      })
+
+      const funded = fundEscrow()
+      if (!funded) {
+        throw new Error(`Need ${escrowCost} credits to fund escrow.`)
+      }
+
+      lastEscrowStateRef.current = true
+      markEscrowFunded(true)
+      setEscrowFundedEvent(true)
+      dispatchFirewallCracked()
+      setFundEscrowMessage('Escrow funded. Node-Alpha trigger accepted.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Escrow funding failed.'
+      setFundEscrowMessage(message)
+    } finally {
+      setFundingEscrow(false)
+    }
+  }, [
+    canFundEscrow,
+    dispatchFirewallCracked,
+    escrowCost,
+    escrowFunded,
+    fundEscrow,
+    fundingEscrow,
+    markEscrowFunded,
+  ])
 
   useEffect(() => {
     const client = getClient()
@@ -94,16 +162,13 @@ export default function DashboardPage({ characters, onClose }: DashboardPageProp
         const omega = nextBalances['Node_Omega'] ?? null
         const aBalance = alpha ? parseAmount(alpha.native.balanceFormatted) : 0
         const oBalance = omega ? parseAmount(omega.native.balanceFormatted) : 0
-        const escrowFunded = aBalance >= ESCROW_THRESHOLD && oBalance >= ESCROW_THRESHOLD
+        const escrowFundedByBalances = aBalance >= ESCROW_THRESHOLD && oBalance >= ESCROW_THRESHOLD
         const previousEscrowState = lastEscrowStateRef.current
-        if (previousEscrowState !== escrowFunded) {
-          lastEscrowStateRef.current = escrowFunded
-          setEscrowFunded(escrowFunded)
-        }
-
-        if (!previousEscrowState && escrowFunded) {
-          emitPlayerEvent('FIREWALL_CRACKED')
-          window.dispatchEvent(new CustomEvent('FIREWALL_CRACKED'))
+        if (escrowFundedByBalances && previousEscrowState !== true) {
+          lastEscrowStateRef.current = true
+          markEscrowFunded(true)
+          setEscrowFundedEvent(true)
+          dispatchFirewallCracked()
         }
 
         const aegi = nextBalances['Aegis_Prime'] ?? null
@@ -143,7 +208,7 @@ export default function DashboardPage({ characters, onClose }: DashboardPageProp
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [activeNames])
+  }, [activeNames, dispatchFirewallCracked, markEscrowFunded])
 
   const aegiBalance = balances['Aegis_Prime'] ?? null
   const systemHealthy = !aegiBalance || parseAmount(aegiBalance.native.balanceFormatted) > 0
@@ -240,6 +305,30 @@ export default function DashboardPage({ characters, onClose }: DashboardPageProp
               <p className="mt-3 text-xs text-white/70">
                 Firewall unlock is tied to the Node-Alpha and Node-Omega escrow state. When both balances clear the threshold, the scene emits FIREWALL_CRACKED.
               </p>
+            </div>
+
+            <div className="mt-4 rounded border border-cyan-400/30 bg-cyan-950/20 p-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-white/70">Player Credits</span>
+                <span className="font-semibold text-cyan-200">{credits.toLocaleString()} KITE</span>
+              </div>
+              <div className="mt-1 text-[11px] text-white/60">
+                Escrow: {escrowFunded ? 'Funded' : 'Unfunded'}
+              </div>
+              <button
+                className="mt-3 w-full rounded border px-3 py-2 text-xs font-semibold tracking-wide transition disabled:cursor-not-allowed"
+                disabled={fundingEscrow || escrowFunded || !canFundEscrow}
+                onClick={() => void handleFundEscrow()}
+              >
+                {escrowFunded
+                  ? 'Escrow Funded'
+                  : fundingEscrow
+                    ? 'Funding Escrow...'
+                    : `Fund Escrow (${escrowCost.toLocaleString()} KITE)`}
+              </button>
+              {fundEscrowMessage && (
+                <p className="mt-2 text-[11px] text-cyan-200/90">{fundEscrowMessage}</p>
+              )}
             </div>
           </section>
         </div>

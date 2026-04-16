@@ -20,6 +20,10 @@ const basePath = process.env.BASE_PATH;
 if (!basePath) throw new Error("BASE_PATH environment variable is required.");
 
 const proxyTarget = process.env.GC_PROXY_TARGET || "http://localhost:3000";
+// The Replit runtime overlay can throw AudioContext resume errors in local dev,
+// so only enable it when running inside Replit.
+const isReplitDev =
+  process.env.NODE_ENV !== "production" && process.env.REPL_ID !== undefined;
 
 export default defineConfig({
   base: basePath,
@@ -27,9 +31,8 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    runtimeErrorOverlay(),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
+    ...(isReplitDev ? [runtimeErrorOverlay()] : []),
+    ...(isReplitDev
       ? [
           await import("@replit/vite-plugin-cartographer").then((m) =>
             m.cartographer({

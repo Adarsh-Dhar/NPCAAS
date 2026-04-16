@@ -14,6 +14,7 @@ import {
 } from "@/lib/sdk";
 import type { TradeIntent } from "@/components/ChatWindow";
 import { formatNpcDisplayName, PROTOCOL_BABEL_NODE_NAMES } from "@/lib/protocolBabel";
+import { usePlayerState } from "@/context/PlayerStateContext";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,6 +58,7 @@ export function HUD({
   const [walletLoading, setWalletLoading] = useState(false);
   const [txStatus, setTxStatus] = useState<TxStatus>({ state: "idle" });
   const [sdkActive] = useState(isSdkReady);
+  const { credits, escrowFunded } = usePlayerState();
   // Resolved GuildCraft character id for the active NPC
   const [resolvedCharId, setResolvedCharId] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -171,6 +173,12 @@ export function HUD({
           )}
         </div>
         <div style={{ color: "#334466" }}>OBJECTIVE: Acquire the Root Key</div>
+        <div className="mt-1" style={{ color: "#66d9ff" }}>
+          CREDITS: {credits.toLocaleString()} KITE
+        </div>
+        <div style={{ color: escrowFunded ? "#7dff9b" : "#ffd166" }}>
+          ESCROW: {escrowFunded ? "FUNDED" : "PENDING"}
+        </div>
         <div className="mt-3 space-y-1" style={{ color: "#223344" }}>
           <div>
             <span style={{ color: "#445566" }}>MOVE</span> — WASD / ARROWS

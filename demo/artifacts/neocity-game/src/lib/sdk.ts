@@ -178,6 +178,18 @@ class HttpGuildCraftClient {
     return this._request(`/npcs/${encodeURIComponent(npcName)}/actions/queue`)
   }
 
+  async triggerNpcEvent(
+    npcName: string,
+    payload: { event: string; asset?: string; data?: Record<string, unknown>; recordInMemory?: boolean }
+  ) {
+    if (!npcName) throw new GuildCraftError('npcName is required', 400, null)
+    if (!payload?.event) throw new GuildCraftError('event is required', 400, null)
+    return this._request(`/npcs/${encodeURIComponent(npcName)}/trigger`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
   async chat(characterId: string, message: string) {
     if (!characterId) throw new GuildCraftError('characterId is required', 400, null)
     if (!message) throw new GuildCraftError('message is required', 400, null)
