@@ -102,13 +102,10 @@ export default function ConfigurationForm({
   }, [initialConfig, characterId, characterName])
 
   const handleInputChange = (field: string, value: string | number | boolean) => {
-    setFormData((prev) => {
-      const next = { ...prev, [field]: value }
-      if (field === 'name' && onNameChange) {
-        onNameChange(value as string)
-      }
-      return next
-    })
+    setFormData((prev) => ({ ...prev, [field]: value }))
+    if (field === 'name' && onNameChange) {
+      onNameChange(value as string)
+    }
   }
 
   const buildConfigPayload = () => {

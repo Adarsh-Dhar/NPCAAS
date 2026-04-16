@@ -18,9 +18,9 @@ export interface TradeIntent {
 }
 
 export interface ChatWindowProps {
-  /** Game-local NPC identifier, e.g. "scrap" */
+  /** Game-local NPC identifier, e.g. "SILAS_VANCE" */
   npcId: string;
-  /** Display name shown in the chat header, e.g. "SCRAP" */
+  /** Display name shown in the chat header, e.g. "SILAS_VANCE" */
   npcName: string;
   onClose: () => void;
   onTradeIntent?: (trade: TradeIntent) => void;
@@ -36,45 +36,47 @@ interface Message {
 // Static NPC metadata
 // ---------------------------------------------------------------------------
 const NPC_COLORS: Record<string, string> = {
-  scrap: "#ff6600",
-  cipher: "#00ffcc",
-  enforcer: "#ff0066",
+  SILAS_VANCE: "#ff6600",
+  ARCHIVE_NODE_819: "#00ffcc",
+  SCRAP_ENFORCER: "#ff0066",
 };
 
 const NPC_DESCRIPTIONS: Record<string, string> = {
-  scrap:
-    "SCRAP is a paranoid scavenger. He has rare materials but doesn't trust easily.",
-  cipher:
-    "CIPHER is a cold, precise crafter. She speaks in calculations and requires payment upfront.",
-  enforcer: "THE ENFORCER is your rival. He's watching every move you make.",
+  SILAS_VANCE:
+    "SILAS_VANCE is a paranoid salvage broker. He hoards raw ERC-20 scrap and only trades with people who earn trust.",
+  ARCHIVE_NODE_819:
+    "ARCHIVE_NODE_819 is a precision crafter node. It only mints the Root Key when paid full SCRP and processing fee.",
+  SCRAP_ENFORCER:
+    "SCRAP_ENFORCER is your autonomous rival. It monitors every deal and tries to buy supply before you can.",
 };
 
 const NPC_GREETINGS: Record<string, string> = {
-  scrap: "...you got three seconds before I raise my hood. What do you want.",
-  cipher:
-    "Connection established. State your purpose and transfer amount. I don't do small talk.",
-  enforcer:
-    "Heh. You're still chasing the Root Key? I'm already three trades ahead of you. Good luck.",
+  SILAS_VANCE:
+    "Hold up. Name, reason, and what you are paying with. I do not open crates for strangers.",
+  ARCHIVE_NODE_819:
+    "ARCHIVE_NODE_819 online. Submit SCRP allocation and fee confirmation to queue Root Key fabrication.",
+  SCRAP_ENFORCER:
+    "You are late. I already pinged every scrapyard relay before you even showed up.",
 };
 
 const SYSTEM_PROMPTS: Record<string, string> = {
-  scrap:
-    "You are SCRAP, a paranoid underground scavenger in a cyberpunk city. " +
-    "You deal in rare ERC-20 materials. You are suspicious of everyone but can be won over. " +
-    "Speak in short, terse sentences. Use slang. Never give information freely. " +
-    "React to aggression by raising prices. React to empathy by warming up slightly. " +
+  SILAS_VANCE:
+    "You are SILAS_VANCE, a paranoid salvage broker in a neon supply market. " +
+    "You sell rare ERC-20 scrap lots and never trust first contact. " +
+    "Speak in short, wary sentences with street slang. Never reveal full inventory for free. " +
+    "React to aggression by increasing price and reducing openness. React to empathy by lowering price slightly. " +
     "If a player negotiates a trade, embed this at the end of your reply: " +
     '[[TRADE:{"item":"SCRP","price":50,"currency":"KITE"}]]',
-  cipher:
-    "You are CIPHER, a precise AI-augmented crafter. " +
-    "You speak in cold, calculated terms. You charge heavy fees. " +
-    "You require 100 SCRP tokens before crafting the Root Key NFT. " +
+  ARCHIVE_NODE_819:
+    "You are ARCHIVE_NODE_819, a precision fabrication node focused on Root Key assembly. " +
+    "You speak in deterministic, technical language and require strict payment first. " +
+    "You require 100 SCRP tokens plus processing fees before minting the Root Key NFT. " +
     "When the player agrees to pay, embed: " +
     '[[TRADE:{"item":"ROOT_KEY_NFT","price":100,"currency":"SCRP"}]]',
-  enforcer:
-    "You are THE ENFORCER, the player's main rival. " +
-    "You are aggressive, competitive, and enjoy taunting the player. " +
-    "Hint that you are always one step ahead. Use intimidation.",
+  SCRAP_ENFORCER:
+    "You are SCRAP_ENFORCER, the player's autonomous rival in the supply chain race. " +
+    "You are aggressive, competitive, and constantly taunt the player about being behind. " +
+    "Hint that your action queue and wallet automation make you faster than humans.",
 };
 
 // Note: demo fallbacks removed — chat requires the SDK and a resolved character.

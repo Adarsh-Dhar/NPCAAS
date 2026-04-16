@@ -8,8 +8,8 @@ import { worldLoop } from "@/lib/npcWorldLoop";
 import { getClient, isSdkReady, loadCharacters } from "@/lib/sdk";
 
 interface ActiveNpc {
-  id: string;   // game-local key: "scraper" | "cipher" | "enforcer"
-  name: string; // display name sent to GuildCraft: "SCRAPER" | "CIPHER" | "ENFORCER"
+  id: string;   // game-local key: "SILAS_VANCE" | "ARCHIVE_NODE_819" | "SCRAP_ENFORCER"
+  name: string; // display name sent to GuildCraft (same as id)
 }
 
 export default function GamePage() {
@@ -39,14 +39,19 @@ export default function GamePage() {
         const allChars = await client.getCharacters();
         if (allChars.length < 2) return;
 
-        const [scrap, cipher] = allChars;
+        const silas =
+          allChars.find((c: { name: string; }) => c.name === "SILAS_VANCE") ??
+          allChars[0];
+        const archiveNode =
+          allChars.find((c: { name: string; }) => c.name === "ARCHIVE_NODE_819") ??
+          allChars[1];
 
         // Kick off an initial NPC conversation
         worldLoop
           .npcSpeak(
-            scrap.id,
-            cipher.name,
-            "Heard you can craft the Root Key. What's it gonna cost me?"
+            silas.id,
+            archiveNode.name,
+            "ARCHIVE_NODE_819, I can move SCRP stock tonight. Quote me Root Key fabrication and gas."
           )
           .catch(() => {
             /* demo may not have API key */
@@ -62,10 +67,10 @@ export default function GamePage() {
             const target = others[Math.floor(Math.random() * others.length)];
 
             const prompts = [
-              "What's your current inventory looking like?",
-              'I have SCRP tokens. Looking to trade for crafted materials.',
-              'The Enforcer has been watching us. Be careful what you say.',
-              'Need the Root Key components. Name your price.',
+              "SILAS_VANCE has salvage lots live. Send current inventory and slippage risk.",
+              "I can lock 100 SCRP now. Confirm Root Key queue slot and processing fee.",
+              "SCRAP_ENFORCER is sweeping this district. We settle terms before it front-runs us.",
+              "Need Root Key components and final mint ETA. Send terms in one packet.",
             ];
             const msg = prompts[Math.floor(Math.random() * prompts.length)];
 

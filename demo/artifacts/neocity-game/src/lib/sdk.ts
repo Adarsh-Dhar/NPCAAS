@@ -58,10 +58,10 @@ function getRuntimeBaseUrl(): string {
     return (
       (window as any).__VITE_GC_BASE_URL as string | null ??
       (localStorage.getItem("VITE_GC_BASE_URL") as string | null) ??
-      "http://localhost:3002/api"
+      "/api"
     );
   }
-  return "http://localhost:3002/api";
+  return "/api";
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +76,9 @@ let _clientKey: string | null = null;
 class HttpGuildCraftClient {
   apiKey: string
   baseUrl: string
-  constructor(apiKey: string, baseUrl = 'http://localhost:3002/api') {
+  private _didFallbackToProxy = false
+  private static readonly CHAT_STREAM_TIMEOUT_MS = 30_000
+  constructor(apiKey: string, baseUrl = '/api') {
     this.apiKey = apiKey
     this.baseUrl = baseUrl.replace(/\/$/, '')
   }
@@ -86,11 +88,37 @@ class HttpGuildCraftClient {
   }
 
   async _request(path: string, options: any = {}) {
-    const url = `${this.baseUrl}${path}`
     const headers = { ...this._authHeaders(), ...(options.headers ?? {}) }
-    console.log(`[GuildCraft] 🔗 ${options.method || 'GET'} ${url}`)
-    console.log(`[GuildCraft] Headers:`, headers)
-    const res = await fetch(url, { ...options, headers })
+    const method = options.method || 'GET'
+    const fetchOnce = async (baseUrl: string) => {
+      const url = `${baseUrl}${path}`
+      console.log(`[GuildCraft] 🔗 ${method} ${url}`)
+      console.log(`[GuildCraft] Headers:`, headers)
+      return fetch(url, { ...options, headers })
+    }
+
+    let res: Response
+    try {
+      res = await fetchOnce(this.baseUrl)
+    } catch (err) {
+      const canFallbackToProxy =
+        typeof window !== 'undefined' &&
+        this.baseUrl !== '/api' &&
+        !this._didFallbackToProxy
+
+      if (canFallbackToProxy) {
+        this._didFallbackToProxy = true
+        this.baseUrl = '/api'
+        console.warn(
+          `[GuildCraft] Network error against configured base URL. Falling back to ${this.baseUrl}.`,
+          err
+        )
+        res = await fetchOnce(this.baseUrl)
+      } else {
+        throw err
+      }
+    }
+
     console.log(`[GuildCraft] Response status:`, res.status)
     const body = await res.json().catch(() => ({}))
     if (!res.ok) {
@@ -134,18 +162,39 @@ class HttpGuildCraftClient {
     const npcName = opts.npcName ?? characterId
     const charId = opts.characterId ?? characterId
 
-    const res = await fetch(`${this.baseUrl}/chat/stream`, {
-      method: 'POST',
-      headers: this._authHeaders(),
-      body: JSON.stringify({ npcName, characterId: charId, message }),
-    })
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => {
+      controller.abort()
+    }, HttpGuildCraftClient.CHAT_STREAM_TIMEOUT_MS)
+
+    let res: Response
+    try {
+      res = await fetch(`${this.baseUrl}/chat/stream`, {
+        method: 'POST',
+        headers: this._authHeaders(),
+        body: JSON.stringify({ npcName, characterId: charId, message }),
+        signal: controller.signal,
+      })
+    } catch (err) {
+      clearTimeout(timeoutId)
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new GuildCraftError(
+          `Chat stream timed out after ${HttpGuildCraftClient.CHAT_STREAM_TIMEOUT_MS / 1000}s`,
+          504,
+          null
+        )
+      }
+      throw err
+    }
 
     if (!res.ok) {
+      clearTimeout(timeoutId)
       const body = await res.json().catch(() => ({}))
       throw new GuildCraftError(body?.error ?? `HTTP ${res.status}`, res.status, body)
     }
 
     if (!res.body) {
+      clearTimeout(timeoutId)
       throw new GuildCraftError('No response body', res.status, null)
     }
 
@@ -154,23 +203,36 @@ class HttpGuildCraftClient {
     const decoder = new TextDecoder()
     let buffer = ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const frames = buffer.split('\n\n')
-      buffer = frames.pop() ?? ''
-      for (const frame of frames) {
-        const dataLine = frame.trim()
-        if (!dataLine.startsWith('data:')) continue
-        const json = dataLine.slice('data:'.length).trim()
-        if (!json) continue
-        try {
-          yield JSON.parse(json)
-        } catch {
-          // ignore malformed frame
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const frames = buffer.split('\n\n')
+        buffer = frames.pop() ?? ''
+        for (const frame of frames) {
+          const dataLine = frame.trim()
+          if (!dataLine.startsWith('data:')) continue
+          const json = dataLine.slice('data:'.length).trim()
+          if (!json) continue
+          try {
+            yield JSON.parse(json)
+          } catch {
+            // ignore malformed frame
+          }
         }
       }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new GuildCraftError(
+          `Chat stream timed out after ${HttpGuildCraftClient.CHAT_STREAM_TIMEOUT_MS / 1000}s`,
+          504,
+          null
+        )
+      }
+      throw err
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
@@ -229,6 +291,7 @@ export async function loadCharacters(): Promise<Map<string, Character>> {
   _cachePromise = (client.getCharacters() as Promise<Character[]>)
     .then((chars) => {
       const map = new Map<string, Character>();
+      console.log("[GuildCraft] Loaded characters:", chars);
       for (const char of chars) {
         map.set(char.name.toLowerCase(), char);
       }

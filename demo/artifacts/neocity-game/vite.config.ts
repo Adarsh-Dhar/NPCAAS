@@ -19,6 +19,8 @@ if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT: "${rawPort}"
 const basePath = process.env.BASE_PATH;
 if (!basePath) throw new Error("BASE_PATH environment variable is required.");
 
+const proxyTarget = process.env.GC_PROXY_TARGET || "http://localhost:3000";
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -71,7 +73,7 @@ export default defineConfig({
     // Proxy /api calls to the local API server during development
     proxy: {
       "/api": {
-        target: "http://localhost:3002",
+        target: proxyTarget,
         changeOrigin: true,
       },
     },

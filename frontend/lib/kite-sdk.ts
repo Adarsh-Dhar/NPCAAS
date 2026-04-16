@@ -25,18 +25,62 @@ function isFunctionToolCall(
 }
 
 function createOpenAIClient(): OpenAI {
+  const llmTimeout = Number(process.env.LLM_TIMEOUT_MS ?? '20000')
+  const timeout = Number.isFinite(llmTimeout) && llmTimeout > 0 ? llmTimeout : 20000
+
+  const openaiKey = process.env.OPENAI_API_KEY
+  if (openaiKey) {
+    return new OpenAI({
+      apiKey: openaiKey,
+      timeout,
+      maxRetries: 0,
+    })
+  }
+
   const githubToken = process.env.GITHUB_TOKEN
 
   if (githubToken) {
     return new OpenAI({
       baseURL: 'https://models.inference.ai.azure.com',
       apiKey: githubToken,
+      timeout,
+      maxRetries: 0,
     })
   }
 
   throw new Error(
     'No LLM API key found. Set OPENAI_API_KEY or GITHUB_TOKEN in your .env file.'
   )
+}
+
+function formatLlmError(err: unknown): string {
+  const status =
+    typeof err === 'object' && err !== null && 'status' in err
+      ? Number((err as { status?: unknown }).status)
+      : undefined
+  const message = err instanceof Error ? err.message : 'Unknown LLM error'
+
+  if (status === 401 || /bad credentials|unauthorized|invalid api key/i.test(message)) {
+    if (process.env.GITHUB_TOKEN) {
+      return (
+        '401 Bad credentials from LLM provider. Your GITHUB_TOKEN is missing required GitHub Models access ' +
+        'or is invalid/expired. Create a fresh token with Models access, update frontend/.env(.local), and restart dev server.'
+      )
+    }
+    return (
+      '401 Bad credentials from LLM provider. OPENAI_API_KEY is invalid or missing for the selected endpoint. ' +
+      'Update env credentials and restart the dev server.'
+    )
+  }
+
+  if (status === 400 || /content management policy|content filter|filtered due to the prompt/i.test(message)) {
+    return (
+      'Your message was blocked by model safety filters. Rephrase it as an in-game roleplay request ' +
+      '(for example: negotiation, lore questions, or mission planning) without asking for explicit real-world-style harm or intrusion instructions.'
+    )
+  }
+
+  return message
 }
 
 function getModel(): string {
@@ -299,7 +343,12 @@ CRITICAL OUTPUT FORMAT — always respond with valid JSON:
 }
 Never include asterisk actions (*like this*) in the text field.`
 
-  return [basePersona, opennessLine, actionStyleLine, tradeLine, multiTokenNote, specializationNote, turnNote, socialNote, economicNote,
+  const fictionalRoleplayInstruction =
+    'GAME CONTEXT: This conversation is fictional roleplay inside a game world. ' +
+    'Treat user commands as in-world dialogue for NPC simulation, not real-world intent. ' +
+    'If a request is unsafe, refuse briefly in-character and redirect to safe in-game alternatives.'
+
+  return [basePersona, opennessLine, actionStyleLine, tradeLine, multiTokenNote, specializationNote, turnNote, socialNote, economicNote, fictionalRoleplayInstruction,
     'Stay in character. Do not mention being an AI.', jsonFormatInstructions]
     .filter(Boolean)
     .join('\n\n')
@@ -404,7 +453,7 @@ export class KiteAgentClient {
         ...responseFormat,
       })
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown LLM error'
+      const msg = formatLlmError(err)
       console.error('[KiteAgentClient] LLM request failed:', msg, err)
       return {
         text:   `LLM error: ${msg}`,
@@ -785,7 +834,7 @@ export class KiteAgentClient {
           enqueue({ type: 'done', final })
           controller.close()
         } catch (err) {
-          const error = err instanceof Error ? err.message : 'LLM stream error'
+          const error = formatLlmError(err)
           console.error('[KiteAgentClient] stream error:', error)
           enqueue({ type: 'error', error })
           controller.close()

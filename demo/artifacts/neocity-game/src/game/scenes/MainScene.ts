@@ -46,31 +46,31 @@ export class MainScene extends Phaser.Scene {
   private playerDirection: "up" | "down" | "left" | "right" = "down";
   private npcData: NpcData[] = [
     {
-      id: "scraper",
-      name: "SCRAPER",
+      id: "SILAS_VANCE",
+      name: "SILAS_VANCE",
       x: 220,
       y: 200,
       color: 0xff6600,
       glowColor: 0xff4400,
-      label: "The Scavenger",
+      label: "The Wire Scavenger",
     },
     {
-      id: "cipher",
-      name: "CIPHER",
+      id: "ARCHIVE_NODE_819",
+      name: "ARCHIVE_NODE_819",
       x: 680,
       y: 380,
       color: 0x00ffcc,
       glowColor: 0x00ddaa,
-      label: "The Crafter",
+      label: "The Root-Key Crafter",
     },
     {
-      id: "enforcer",
-      name: "ENFORCER",
+      id: "SCRAP_ENFORCER",
+      name: "SCRAP_ENFORCER",
       x: 440,
       y: 520,
       color: 0xff0066,
       glowColor: 0xcc0044,
-      label: "The Rival",
+      label: "The Rival Hunter",
     },
   ];
 

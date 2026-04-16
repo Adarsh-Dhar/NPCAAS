@@ -37,9 +37,9 @@ type TxStatus =
   | { state: "error"; message: string };
 
 export interface HUDProps {
-  /** Game-local NPC id like "scrap", or null when no chat is open */
+  /** Game-local NPC id like "SILAS_VANCE", or null when no chat is open */
   activeNpc: string | null;
-  /** Display name like "SCRAP" — used for GuildCraft character lookup */
+  /** Display name like "SILAS_VANCE" — used for GuildCraft character lookup */
   activeNpcName: string | null;
   pendingTrade: TradeIntent | null;
   onTradeExecuted?: () => void;
@@ -49,9 +49,15 @@ export interface HUDProps {
 // NPC color map
 // ---------------------------------------------------------------------------
 const NPC_COLORS: Record<string, string> = {
-  scrap: "#ff6600",
-  cipher: "#00ffcc",
-  enforcer: "#ff0066",
+  SILAS_VANCE: "#ff6600",
+  ARCHIVE_NODE_819: "#00ffcc",
+  SCRAP_ENFORCER: "#ff0066",
+};
+
+const NPC_LABELS: Record<string, string> = {
+  SILAS_VANCE: "The Wire Scavenger",
+  ARCHIVE_NODE_819: "The Root-Key Crafter",
+  SCRAP_ENFORCER: "The Rival Hunter",
 };
 
 // ---------------------------------------------------------------------------
@@ -201,7 +207,7 @@ export function HUD({
       >
         {/* NPC legend */}
         <div style={{ color: "#334466" }}>
-          {(["scrap", "cipher", "enforcer"] as const).map((id, idx) => (
+          {(["SILAS_VANCE", "ARCHIVE_NODE_819", "SCRAP_ENFORCER"] as const).map((id, idx) => (
             <div key={id} className="flex items-center gap-2 mb-1">
               <div
                 className="w-2 h-2 rounded-full animate-pulse"
@@ -211,14 +217,7 @@ export function HUD({
                 }}
               />
               <span style={{ color: NPC_COLORS[id] }}>{id.toUpperCase()}</span>
-              <span>
-                ·{" "}
-                {id === "scrap"
-                  ? "The Scavenger"
-                  : id === "cipher"
-                    ? "The Crafter"
-                    : "The Rival"}
-              </span>
+              <span>· {NPC_LABELS[id]}</span>
             </div>
           ))}
         </div>

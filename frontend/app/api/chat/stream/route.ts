@@ -142,6 +142,18 @@ function socialBlockStream(message: string, action: string): ReadableStream<Uint
   })
 }
 
+function isExplicitlyAggressiveMessage(message: string): boolean {
+  return /(hand\s+over|buy(ing)?\s+out|territory|weapon(s)?|surrender|or\s+else|kill|attack|wipe\s+out|execute)/i.test(
+    message
+  )
+}
+
+function isLikelyPolicyTriggerMessage(message: string): boolean {
+  return /((bypass|disable|override|hack|exploit)\s+(security|protocol|firewall|authentication|access))|(steal|exfiltrate|leak)\s+(files?|data|records?)|(bring\s+me\s+the\s+files?)/i.test(
+    message
+  )
+}
+
 function buildOpennessStrategyInstruction(openness: number): string {
   if (openness >= 70) {
     return [
@@ -319,6 +331,16 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  if (isLikelyPolicyTriggerMessage(message)) {
+    return new NextResponse(
+      socialBlockStream(
+        `${character.name} refuses that command. Keep operations inside lawful in-city contracts and mission protocol.`,
+        'locks the archive channel and waits'
+      ),
+      { status: 200, headers: sseHeaders }
+    )
+  }
+
   // Build agent context
   const config = toCharacterConfig(character.config)
   const adaptation = asRecord(character.adaptation)
@@ -410,7 +432,8 @@ export async function POST(request: NextRequest) {
 
   const actorOpenness = typeof config.openness === 'number' ? config.openness : 50
   const socialEvaluation = SocialEngine.evaluateHostility(socialInput, actorOpenness)
-  if (socialEvaluation.decision !== 'ALLOW_CHAT') {
+  const explicitAggression = isExplicitlyAggressiveMessage(message)
+  if (socialEvaluation.decision !== 'ALLOW_CHAT' && explicitAggression) {
     const responseText =
       socialEvaluation.decision === 'INTERRUPT_OR_ATTACK'
         ? `${character.name} rejects diplomacy and escalates aggressively.`
@@ -429,6 +452,10 @@ export async function POST(request: NextRequest) {
   const socialContext = SocialEngine.buildSocialContext(socialInput, actorOpenness)
   const opennessStrategy = buildOpennessStrategyInstruction(actorOpenness)
   const dynamicWorldContext = worldState.buildWorldContextPrompt(character.id, activeProjectId)
+  const hostilityBehaviorNote =
+    socialEvaluation.decision === 'ALLOW_CHAT'
+      ? ''
+      : 'HOSTILITY OVERRIDE: Stay hostile and suspicious, but respond verbally unless the user explicitly threatens violence or coercion.'
 
   let liveWalletBalance: string | undefined
   try {
@@ -460,7 +487,7 @@ export async function POST(request: NextRequest) {
   const ctx = {
     characterName: character.name,
     systemPrompt:
-      `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${opennessStrategy}\n\n${economicContext}`,
+      `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}`,
     openness: actorOpenness,
     canTrade: config.canTrade !== false,
     specializationActive: Boolean(adaptation.specializationActive),
@@ -526,29 +553,33 @@ export async function POST(request: NextRequest) {
           usageTokens += usedTokens
           usageDeducted = true
 
-          await (prisma.character as any).update({
-            where: { id: character.id },
-            data: {
-              computeUsageTokens: usageTokens,
-              computeLimitTokens: limitTokens,
-              lastComputeResetAt,
-            },
-          })
-
-          await (prisma as any).npcLog.create({
-            data: {
-              characterId: character.id,
-              eventType: 'COMPUTE_SPEND',
-              details: {
-                usedTokens: usedTokens.toString(),
-                usageAfter: usageTokens.toString(),
-                limitTokens: limitTokens.toString(),
-                message,
-                stream: true,
-                teeEnabled: tee.enabled,
+          try {
+            await (prisma.character as any).update({
+              where: { id: character.id },
+              data: {
+                computeUsageTokens: usageTokens,
+                computeLimitTokens: limitTokens,
+                lastComputeResetAt,
               },
-            },
-          })
+            })
+
+            await (prisma as any).npcLog.create({
+              data: {
+                characterId: character.id,
+                eventType: 'COMPUTE_SPEND',
+                details: {
+                  usedTokens: usedTokens.toString(),
+                  usageAfter: usageTokens.toString(),
+                  limitTokens: limitTokens.toString(),
+                  message,
+                  stream: true,
+                  teeEnabled: tee.enabled,
+                },
+              },
+            })
+          } catch (persistError) {
+            console.warn('[chat/stream] Failed to persist compute spend details:', persistError)
+          }
         }
       },
     })

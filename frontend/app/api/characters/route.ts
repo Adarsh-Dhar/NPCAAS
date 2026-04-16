@@ -118,9 +118,46 @@ function isProjectsRelationRuntimeError(error: unknown): boolean {
   )
 }
 
+function getUnknownArgumentName(error: unknown): string | null {
+  if (!(error instanceof Error)) return null
+  const match = error.message.match(/Unknown argument `([^`]+)`/)
+  return match?.[1] ?? null
+}
+
+async function createWithUnknownArgStripping<T>(
+  createFn: (data: Record<string, unknown>) => Promise<T>,
+  initialData: Record<string, unknown>,
+  maxAttempts = 8
+): Promise<T> {
+  let data = { ...initialData }
+  let attempts = 0
+
+  while (attempts < maxAttempts) {
+    attempts += 1
+    try {
+      return await createFn(data)
+    } catch (error) {
+      const unknownArg = getUnknownArgumentName(error)
+      if (unknownArg && Object.prototype.hasOwnProperty.call(data, unknownArg)) {
+        const { [unknownArg]: _ignored, ...rest } = data
+        data = rest
+        continue
+      }
+      throw error
+    }
+  }
+
+  throw new Error('Character create failed after stripping unsupported Prisma fields.')
+}
+
 function shouldFallbackToLegacyCreate(error: unknown): boolean {
   if (!(error instanceof Error)) return false
-  return isProjectsRelationRuntimeError(error)
+  const message = error.message.toLowerCase()
+  return (
+    isProjectsRelationRuntimeError(error) ||
+    message.includes('unknown argument `projectid`') ||
+    message.includes('argument `projectid` is missing')
+  )
 }
 
 const createCharacterSchema = z
@@ -259,12 +296,16 @@ export async function POST(request: NextRequest) {
       | null = null
 
     try {
-      character = await (prisma.character as any).create({
-        data: characterData,
-        include: {
-          projects: { select: { id: true } },
-        },
-      })
+      character = await createWithUnknownArgStripping(
+        (data) =>
+          (prisma.character as any).create({
+            data,
+            include: {
+              projects: { select: { id: true } },
+            },
+          }),
+        characterData as Record<string, unknown>
+      )
     } catch (createError) {
       if (!shouldFallbackToLegacyCreate(createError)) {
         throw createError
@@ -323,8 +364,27 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const legacyCharacter = await legacyPrisma.character.create({
-        data: {
+      const legacyCharacter = await createWithUnknownArgStripping(
+        (data) =>
+          legacyPrisma.character.create({
+            data: data as {
+              name: string
+              walletAddress: string
+              aaChainId: number
+              aaProvider: string
+              smartAccountId: string | null
+              smartAccountStatus: string
+              computeUsageTokens: bigint
+              computeLimitTokens: bigint
+              lastComputeResetAt: Date
+              teeAttestationProof?: string | null
+              config: Prisma.InputJsonValue
+              adaptation: Prisma.InputJsonValue
+              isDeployedOnChain: boolean
+              projectId: string
+            },
+          }),
+        {
           name,
           walletAddress: smartAccount.address,
           aaChainId: smartAccount.chainId,
@@ -347,8 +407,8 @@ export async function POST(request: NextRequest) {
           } as Prisma.InputJsonValue,
           isDeployedOnChain: true,
           projectId: fallbackProjectId,
-        },
-      })
+        }
+      )
 
       character = {
         ...legacyCharacter,

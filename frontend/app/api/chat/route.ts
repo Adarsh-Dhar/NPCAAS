@@ -279,6 +279,18 @@ function buildOpennessStrategyInstruction(openness: number): string {
   ].join('\n')
 }
 
+function isExplicitlyAggressiveMessage(message: string): boolean {
+  return /(hand\s+over|buy(ing)?\s+out|territory|weapon(s)?|surrender|or\s+else|kill|attack|wipe\s+out|execute)/i.test(
+    message
+  )
+}
+
+function isLikelyPolicyTriggerMessage(message: string): boolean {
+  return /((bypass|disable|override|hack|exploit)\s+(security|protocol|firewall|authentication|access))|(steal|exfiltrate|leak)\s+(files?|data|records?)|(bring\s+me\s+the\s+files?)/i.test(
+    message
+  )
+}
+
 /**
  * Look up a character by name within the authenticated project.
  * npcName is normalised to uppercase with underscores, matching how names are stored.
@@ -394,6 +406,25 @@ export async function POST(request: NextRequest) {
     const config = toCharacterConfig(character.config)
     const adaptation = toAdaptationMemory(character.adaptation)
     const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
+
+    if (isLikelyPolicyTriggerMessage(message)) {
+      return NextResponse.json(
+        {
+          success: true,
+          response: `${character.name} refuses that command. Keep operations inside lawful in-city contracts and mission protocol.`,
+          action: 'locks the archive channel and waits',
+          characterId: character.id,
+          npcName: character.name,
+          tradeIntent: null,
+          specializationActive: adaptation.specializationActive,
+          pendingSpecialization: Boolean(adaptation.pendingSection2),
+          timestamp: new Date().toISOString(),
+          projectId: activeProjectId,
+        },
+        { status: 200, headers: corsHeaders }
+      )
+    }
+
     const tee = buildTeeGateResult({
       teeExecution: config.teeExecution,
       characterId: character.id,
@@ -590,8 +621,13 @@ export async function POST(request: NextRequest) {
     const socialEvaluation = SocialEngine.evaluateHostility(socialInput, actorOpenness)
     const socialContext = SocialEngine.buildSocialContext(socialInput, actorOpenness)
     const opennessStrategy = buildOpennessStrategyInstruction(actorOpenness)
+    const explicitAggression = isExplicitlyAggressiveMessage(message)
+    const hostilityBehaviorNote =
+      socialEvaluation.decision === 'ALLOW_CHAT'
+        ? ''
+        : 'HOSTILITY OVERRIDE: Stay hostile and suspicious, but respond verbally unless the user explicitly threatens violence or coercion.'
 
-    if (socialEvaluation.decision !== 'ALLOW_CHAT') {
+    if (socialEvaluation.decision !== 'ALLOW_CHAT' && explicitAggression) {
       const refusalText =
         socialEvaluation.decision === 'INTERRUPT_OR_ATTACK'
           ? `${character.name} rejects diplomacy and escalates aggressively.`
@@ -703,7 +739,7 @@ export async function POST(request: NextRequest) {
 
     const activeProfile: Section2Profile = {
       systemPrompt:
-        `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${opennessStrategy}\n\n${economicContext}`,
+        `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}`,
       openness: actorOpenness,
     }
 
@@ -754,28 +790,32 @@ export async function POST(request: NextRequest) {
     let updatedUsageTokens = usageTokens
     if (usedTokens > BigInt(0)) {
       updatedUsageTokens = usageTokens + usedTokens
-      await (prisma.character as any).update({
-        where: { id: character.id },
-        data: {
-          computeUsageTokens: updatedUsageTokens,
-          computeLimitTokens: limitTokens,
-          lastComputeResetAt,
-        },
-      })
-
-      await (prisma as any).npcLog.create({
-        data: {
-          characterId: character.id,
-          eventType: 'COMPUTE_SPEND',
-          details: {
-            usedTokens: usedTokens.toString(),
-            usageBefore: usageTokens.toString(),
-            usageAfter: updatedUsageTokens.toString(),
-            limitTokens: limitTokens.toString(),
-            message,
+      try {
+        await (prisma.character as any).update({
+          where: { id: character.id },
+          data: {
+            computeUsageTokens: updatedUsageTokens,
+            computeLimitTokens: limitTokens,
+            lastComputeResetAt,
           },
-        },
-      })
+        })
+
+        await (prisma as any).npcLog.create({
+          data: {
+            characterId: character.id,
+            eventType: 'COMPUTE_SPEND',
+            details: {
+              usedTokens: usedTokens.toString(),
+              usageBefore: usageTokens.toString(),
+              usageAfter: updatedUsageTokens.toString(),
+              limitTokens: limitTokens.toString(),
+              message,
+            },
+          },
+        })
+      } catch (persistError) {
+        console.warn('[chat] Failed to persist compute spend details:', persistError)
+      }
     }
 
     let finalTradeIntent = agentResponse.tradeIntent
