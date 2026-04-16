@@ -69,12 +69,20 @@ function toCharacterConfig(value: unknown): CharacterConfig {
   }
 }
 
-async function fetchCurrentMarketRate(): Promise<number | undefined> {
+async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefined> {
   const endpoint = process.env.KITE_MARKET_RATE_API_URL
   if (!endpoint) return undefined
 
   try {
-    const response = await fetch(endpoint, { method: 'GET', cache: 'no-store' })
+    // If symbol provided, append it to the Binance API endpoint
+    let fetchUrl = endpoint
+    if (symbol && symbol.toUpperCase() !== 'KITE_USD') {
+      // Construct Binance ticker symbol (e.g., "SOL" -> "SOLUSDT")
+      const tickerSymbol = `${symbol.toUpperCase()}USDT`
+      fetchUrl = `${endpoint}?symbol=${tickerSymbol}`
+    }
+    
+    const response = await fetch(fetchUrl, { method: 'GET', cache: 'no-store' })
     if (!response.ok) return undefined
     const payload = (await response.json()) as Record<string, unknown>
     return asNumber(payload.currentMarketRate ?? payload.rate ?? payload.price)

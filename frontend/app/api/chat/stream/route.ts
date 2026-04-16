@@ -98,12 +98,20 @@ function getTeeTrustScore(teeEnabled: boolean): number {
   return teeEnabled ? 12 : 0
 }
 
-async function fetchCurrentMarketRate(): Promise<number | undefined> {
+async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefined> {
   const endpoint = process.env.KITE_MARKET_RATE_API_URL
   if (!endpoint) return undefined
 
   try {
-    const response = await fetch(endpoint, { method: 'GET', cache: 'no-store' })
+    // If symbol provided, append it to the Binance API endpoint
+    let fetchUrl = endpoint
+    if (symbol && symbol.toUpperCase() !== 'KITE_USD') {
+      // Construct Binance ticker symbol (e.g., "SOL" -> "SOLUSDT")
+      const tickerSymbol = `${symbol.toUpperCase()}USDT`
+      fetchUrl = `${endpoint}?symbol=${tickerSymbol}`
+    }
+    
+    const response = await fetch(fetchUrl, { method: 'GET', cache: 'no-store' })
     if (!response.ok) return undefined
     const payload = (await response.json()) as Record<string, unknown>
     return asNumber(payload.currentMarketRate ?? payload.rate ?? payload.price)
@@ -158,6 +166,40 @@ function buildOpennessStrategyInstruction(openness: number): string {
     '- Balance creativity with policy guardrails.',
     '- Entertain alternatives only when they remain economically and socially safe.',
   ].join('\n')
+}
+
+/**
+ * Parse ALLOWED_TRADE_TOKENS from environment variable.
+ * Returns array of token symbols (e.g., ['KITE_USD', 'SOL', 'USDC', 'BTC'])
+ */
+function parseAllowedTradeTokens(): string[] {
+  const env = process.env.ALLOWED_TRADE_TOKENS
+  if (!env) return []
+  return env.split(',').map(token => token.trim().toUpperCase()).filter(token => token.length > 0)
+}
+
+/**
+ * Auto-detect trade currency from user messages.
+ * Searches recent messages for keyword matches against allowed tokens.
+ */
+function detectTradeCurrency(messages: string[], allowedTokens: string[]): string | undefined {
+  if (allowedTokens.length === 0) return undefined
+  
+  // Build regex pattern from allowed tokens
+  // Remove KITE_USD and add individual keywords for better matching
+  const tokenKeywords = allowedTokens
+    .filter(token => token !== 'KITE_USD')
+    .join('|')
+  
+  if (!tokenKeywords) return undefined
+  
+  const pattern = new RegExp(`\\b(${tokenKeywords})\\b`, 'i')
+  
+  // Search recent messages (just last 500 chars to be efficient)
+  const recentContext = messages.slice(-3).join(' ').slice(-500)
+  const match = recentContext.match(pattern)
+  
+  return match ? match[1].toUpperCase() : undefined
 }
 
 /**
@@ -397,12 +439,18 @@ export async function POST(request: NextRequest) {
     console.warn('[chat/stream] Failed to fetch live wallet balance:', error)
   }
 
-  const currentMarketRate = await fetchCurrentMarketRate()
+  // Parse allowed trade tokens and auto-detect currency from message
+  const allowedTradeTokens = parseAllowedTradeTokens()
+  const detectedCurrency = detectTradeCurrency([message], allowedTradeTokens)
+  const activeCurrency = detectedCurrency ?? (allowedTradeTokens.length > 0 ? allowedTradeTokens[0] : undefined)
+  
+  const currentMarketRate = await fetchCurrentMarketRate(activeCurrency)
   const economicContext = EconomicEngine.buildEconomicContext({
     config,
     currentMarketRate,
     liveWalletBalance,
     openness: actorOpenness,
+    currentTradeCurrency: activeCurrency,
   })
 
   const basePrompt = config.systemPrompt?.trim()
@@ -424,6 +472,9 @@ export async function POST(request: NextRequest) {
     marginPercentage: config.marginPercentage,
     currentMarketRate,
     liveWalletBalance,
+    allowedTradeTokens,
+    currentTradeCurrency: activeCurrency,
+    marketRateForCurrentToken: currentMarketRate,
     factionId: config.factionId,
     disposition: config.disposition,
     baseHostility: config.baseHostility,

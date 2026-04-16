@@ -92,6 +92,9 @@ export interface AgentContext {
   baseHostility?: number
   teeExecution?: 'ENABLED' | 'DISABLED'
   projectId?: string
+  allowedTradeTokens?: string[]
+  currentTradeCurrency?: string
+  marketRateForCurrentToken?: number
 }
 
 /** SSE event shape emitted by chatStream(). */
@@ -109,25 +112,35 @@ export interface StreamEvent {
 // Tool definition
 // ---------------------------------------------------------------------------
 
-const PROPOSE_TRADE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
-  type: 'function',
-  function: {
-    name: 'propose_trade',
-    description:
-      'Call this when you want to offer the player a specific trade or purchase deal. ' +
-      'Only call it when the player is clearly asking to buy, sell, or trade.',
-    parameters: {
-      type: 'object',
-      properties: {
-        item:     { type: 'string',  description: 'The item or service being traded' },
-        price:    { type: 'number',  description: 'Price in KITE_USD' },
-        currency: { type: 'string',  enum: ['KITE_USD'] },
-        message:  { type: 'string',  description: 'Spoken dialogue (1–2 sentences, no asterisk actions)' },
-        action:   { type: 'string',  description: 'Physical action, max 8 words' },
+/**
+ * Generate the PROPOSE_TRADE_TOOL with dynamic currency enum
+ * based on allowed tokens from context or environment.
+ */
+function generateProposeTradeTool(allowedTokens?: string[]): OpenAI.Chat.Completions.ChatCompletionTool {
+  const currencies = allowedTokens && allowedTokens.length > 0
+    ? allowedTokens
+    : ['KITE_USD']
+
+  return {
+    type: 'function',
+    function: {
+      name: 'propose_trade',
+      description:
+        'Call this when you want to offer the player a specific trade or purchase deal. ' +
+        'Only call it when the player is clearly asking to buy, sell, or trade.',
+      parameters: {
+        type: 'object',
+        properties: {
+          item:     { type: 'string',  description: 'The item or service being traded' },
+          price:    { type: 'number',  description: `Price in ${currencies.join('/')}` },
+          currency: { type: 'string',  enum: currencies },
+          message:  { type: 'string',  description: 'Spoken dialogue (1–2 sentences, no asterisk actions)' },
+          action:   { type: 'string',  description: 'Physical action, max 8 words' },
+        },
+        required: ['item', 'price', 'currency', 'message', 'action'],
       },
-      required: ['item', 'price', 'currency', 'message', 'action'],
     },
-  },
+  }
 }
 
 const EXECUTE_TRADE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
@@ -225,6 +238,12 @@ function buildSystemPrompt(ctx: AgentContext): string {
     ? 'When a player wants to buy, sell, or trade something, use the propose_trade function.'
     : 'Trading is currently disabled. Politely redirect trade requests.'
 
+  // Multi-token authorization note
+  const multiTokenNote = ctx.allowedTradeTokens && ctx.allowedTradeTokens.length > 0
+    ? `You are authorized to negotiate and quote prices in these tokens: ${ctx.allowedTradeTokens.join(', ')}. ` +
+      `While your internal treasury and gas fees operate on the KITE network, you can offer trades in any of the authorized currencies.`
+    : ''
+
   const specializationNote =
     ctx.specializationActive && ctx.preferences?.length
       ? `You know this player's preferences: ${ctx.preferences.slice(0, 5).join('; ')}. ` +
@@ -245,13 +264,14 @@ function buildSystemPrompt(ctx: AgentContext): string {
     economicLines.push(`Margin target: ${ctx.marginPercentage}%.`)
   }
   if (typeof ctx.baseCapital === 'number') {
-    economicLines.push(`Starting treasury: ${ctx.baseCapital} KITE.`)
+    economicLines.push(`Starting treasury: ${ctx.baseCapital} KITE (native network token).`)
   }
   if (typeof ctx.currentMarketRate === 'number') {
-    economicLines.push(`Live market rate: ${ctx.currentMarketRate} KITE.`)
+    const rateCurrency = ctx.currentTradeCurrency ?? 'KITE_USD'
+    economicLines.push(`Live market rate for ${rateCurrency}: ${ctx.currentMarketRate}.`)
   }
   if (ctx.liveWalletBalance) {
-    economicLines.push(`Live wallet balance: ${ctx.liveWalletBalance} KITE.`)
+    economicLines.push(`Live wallet balance (KITE native): ${ctx.liveWalletBalance}.`)
   }
   if (economicLines.length > 0) {
     economicLines.push('Follow these economic constraints and do not propose underpriced trades.')
@@ -277,7 +297,7 @@ CRITICAL OUTPUT FORMAT — always respond with valid JSON:
 }
 Never include asterisk actions (*like this*) in the text field.`
 
-  return [basePersona, opennessLine, actionStyleLine, tradeLine, specializationNote, turnNote, socialNote, economicNote,
+  return [basePersona, opennessLine, actionStyleLine, tradeLine, multiTokenNote, specializationNote, turnNote, socialNote, economicNote,
     'Stay in character. Do not mention being an AI.', jsonFormatInstructions]
     .filter(Boolean)
     .join('\n\n')
@@ -337,7 +357,7 @@ export class KiteAgentClient {
     const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = []
 
     if (ctx.canTrade !== false && allowed.has('propose_trade')) {
-      tools.push(PROPOSE_TRADE_TOOL)
+      tools.push(generateProposeTradeTool(ctx.allowedTradeTokens))
     }
     if (allowed.has('execute_trade')) {
       tools.push(EXECUTE_TRADE_TOOL)

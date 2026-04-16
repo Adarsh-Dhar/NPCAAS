@@ -21,6 +21,8 @@ export interface EconomicValidationInput {
   config: CharacterConfig
   currentMarketRate?: number
   openness?: number
+  proposedCurrency?: string
+  marketRateCurrency?: string
 }
 
 export interface EconomicValidationResult {
@@ -36,6 +38,7 @@ export interface EconomicPromptContext {
   currentMarketRate?: number
   liveWalletBalance?: string
   openness?: number
+  currentTradeCurrency?: string
 }
 
 const KNOWN_ALGORITHMS: PricingAlgorithm[] = [
@@ -108,6 +111,20 @@ export class EconomicEngine {
   }
 
   static validateTradeDetailed(input: EconomicValidationInput): EconomicValidationResult {
+    // Currency validation: ensure proposed currency matches market rate currency
+    if (
+      input.proposedCurrency &&
+      input.marketRateCurrency &&
+      input.proposedCurrency.toUpperCase() !== input.marketRateCurrency.toUpperCase()
+    ) {
+      return {
+        isValid: false,
+        reason:
+          `Currency mismatch: NPC proposed ${input.proposedCurrency} but market rate was fetched for ${input.marketRateCurrency}. ` +
+          `Possible data staleness or context drift.`,
+      }
+    }
+
     const price = asFiniteNumber(input.tradeIntent.price)
     if (price === undefined || price <= 0) {
       return { isValid: false, reason: 'Trade price must be greater than zero.' }
@@ -195,6 +212,7 @@ export class EconomicEngine {
     const openness = normalizeOpenness(input.openness)
     const discountTolerance = getDiscountTolerance(openness)
     const minPrice = EconomicEngine.calculateMinPrice(input.config, input.currentMarketRate)
+    const tradeCurrency = input.currentTradeCurrency ?? 'KITE_USD'
 
     const lines: string[] = [
       'ECONOMIC CONSTRAINTS:',
@@ -202,7 +220,7 @@ export class EconomicEngine {
     ]
 
     if (baseCapital !== undefined) {
-      lines.push(`- Base capital: ${baseCapital} KITE`)
+      lines.push(`- Base capital (KITE native): ${baseCapital}`)
     }
 
     if (margin !== undefined) {
@@ -212,20 +230,20 @@ export class EconomicEngine {
     lines.push(`- Openness-adjusted negotiation mode: ${openness <= 30 ? 'strict' : openness >= 70 ? 'flexible' : 'balanced'}`)
 
     if (input.currentMarketRate !== undefined) {
-      lines.push(`- Current market rate: ${roundToTwo(input.currentMarketRate)} KITE`)
+      lines.push(`- Current market rate for ${tradeCurrency}: ${roundToTwo(input.currentMarketRate)}`)
     } else {
       lines.push('- Current market rate: unavailable (fallback mode)')
     }
 
     if (input.liveWalletBalance !== undefined) {
-      lines.push(`- Live wallet balance: ${input.liveWalletBalance} KITE`)
+      lines.push(`- Live wallet balance (KITE native): ${input.liveWalletBalance}`)
     }
 
     if (minPrice !== null) {
-      lines.push(`- Minimum allowed listing price: ${minPrice} KITE`)
+      lines.push(`- Minimum allowed listing price: ${minPrice} ${tradeCurrency}`)
       if (discountTolerance > 0) {
         lines.push(`- Openness discount tolerance: up to ${roundToTwo(discountTolerance * 100)}% below target floor`)
-        lines.push(`- Effective accepted minimum price: ${roundToTwo(minPrice * (1 - discountTolerance))} KITE`)
+        lines.push(`- Effective accepted minimum price: ${roundToTwo(minPrice * (1 - discountTolerance))} ${tradeCurrency}`)
       } else {
         lines.push('- Openness discount tolerance: 0% (strict margin enforcement)')
       }
