@@ -10,8 +10,8 @@ import { getClient, isSdkReady, loadCharacters } from "../lib/sdk";
 import type { Character } from "../lib/sdk";
 
 interface ActiveNpc {
-  id: string;   // game-local key: "SILAS_VANCE" | "ARCHIVE_NODE_819" | "SCRAP_ENFORCER"
-  name: string; // display name sent to GuildCraft (same as id)
+  id: string;
+  name: string; // canonical GuildCraft name, e.g. Forge_9
 }
 
 export default function GamePage() {

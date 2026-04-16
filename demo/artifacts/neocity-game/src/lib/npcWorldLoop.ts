@@ -3,7 +3,8 @@
 // them into a local in-memory event store so the UI can react.
 
 import { getClient } from '@/lib/sdk'
-import type { TradeIntent } from '@/components/ChatWindow'
+import type { TradeIntent } from '../components/ChatWindow'
+import { PROTOCOL_BABEL_NODE_NAMES } from '@/lib/protocolBabel'
 
 export interface WorldEvent {
   sourceId: string
@@ -19,7 +20,7 @@ class NpcWorldLoop {
   private handlers: WorldEventHandler[] = []
   private intervalId: ReturnType<typeof setInterval> | null = null
   private tickCount = 0
-  private readonly loopNpcNames = ['Forge-9', 'The Weaver', 'Aegis-Prime']
+  private readonly loopNpcNames = [...PROTOCOL_BABEL_NODE_NAMES]
 
   subscribe(handler: WorldEventHandler) {
     this.handlers.push(handler)

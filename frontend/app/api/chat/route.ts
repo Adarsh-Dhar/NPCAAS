@@ -300,11 +300,20 @@ async function findCharacterByName(
   npcName: string,
   projectId: string
 ): Promise<StoredCharacter | null> {
-  const normalisedName = npcName.trim().toUpperCase().replace(/\s+/g, '_')
+  const rawName = npcName.trim()
+  const hyphenToUnderscore = rawName.replace(/[\s-]+/g, '_')
+  const normalisedName = rawName.toUpperCase().replace(/[\s-]+/g, '_')
   const character = await (prisma.character as any).findFirst({
     where: {
-      name: normalisedName,
       projects: { some: { id: projectId } },
+      OR: [
+        { name: rawName },
+        { name: hyphenToUnderscore },
+        { name: normalisedName },
+        { name: { equals: rawName, mode: 'insensitive' } },
+        { name: { equals: hyphenToUnderscore, mode: 'insensitive' } },
+        { name: { equals: normalisedName, mode: 'insensitive' } },
+      ],
     },
     include: { projects: { select: { id: true } } },
   })

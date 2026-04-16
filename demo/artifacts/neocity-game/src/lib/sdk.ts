@@ -290,6 +290,7 @@ export function getClient(): any | null {
   }
   const base = getRuntimeBaseUrl();
   if (!_client || _clientKey !== key) {
+    clearCharacterCache();
     // The demo targets local Next.js API routes and relies on methods not
     // guaranteed across packaged SDK builds, so use the local HTTP client
     // consistently for deterministic behavior.
@@ -308,12 +309,18 @@ export function isSdkReady(): boolean {
 // ---------------------------------------------------------------------------
 let _characterCache: Map<string, Character> | null = null;
 let _cachePromise: Promise<Map<string, Character>> | null = null;
+let _characterCacheKey: string | null = null;
 
 /**
  * Fetches all characters once and caches them by lowercase name.
  * Subsequent calls return the same cached promise — no duplicate requests.
  */
 export async function loadCharacters(): Promise<Map<string, Character>> {
+  const currentKey = getRuntimeApiKey() ?? null;
+  if (_characterCacheKey && currentKey && _characterCacheKey !== currentKey) {
+    clearCharacterCache();
+  }
+
   if (_characterCache) return _characterCache;
   if (_cachePromise) return _cachePromise;
 
@@ -331,12 +338,14 @@ export async function loadCharacters(): Promise<Map<string, Character>> {
         map.set(char.name.toLowerCase(), char);
       }
       _characterCache = map;
+      _characterCacheKey = currentKey;
       return map;
     })
     .catch((err: unknown) => {
       console.error("[GuildCraft] Failed to load characters:", err);
       _cachePromise = null; // allow retry on next call
       _characterCache = new Map();
+      _characterCacheKey = currentKey;
       return _characterCache;
     });
 
@@ -373,4 +382,5 @@ export function getAllCharacters(): Character[] {
 export function clearCharacterCache(): void {
   _characterCache = null;
   _cachePromise = null;
+  _characterCacheKey = null;
 }

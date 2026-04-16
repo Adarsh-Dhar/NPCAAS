@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Send, X } from 'lucide-react'
 import { getCharacterByName, getClient, isSdkReady } from '@/lib/sdk'
+import { formatNpcDisplayName, normalizeNpcName } from '@/lib/protocolBabel'
 
 export interface TradeIntent {
   item: string
@@ -120,10 +121,11 @@ function parseAgentResponse(rawText: string): ParsedNpcAction[] {
 }
 
 export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindowProps) {
+  const npcDisplayName = formatNpcDisplayName(npcName)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'npc',
-      text: NPC_GREETINGS[npcName.replace(/-/g, '_').toUpperCase()] ?? '...',
+      text: NPC_GREETINGS[normalizeNpcName(npcName)] ?? '...',
       timestamp: new Date(),
     },
   ])
@@ -285,7 +287,7 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
       <div className="flex flex-shrink-0 items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(0,255,255,0.15)' }}>
         <div>
           <div className="flex items-center gap-2 text-sm font-bold tracking-widest text-cyan-300">
-            {npcName}
+            {npcDisplayName}
             {sdkActive && characterId && (
               <span className="rounded border border-cyan-400/20 bg-cyan-500/10 px-1.5 py-0.5 text-xs text-cyan-200">
                 live
@@ -314,7 +316,7 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
             >
               {message.role === 'npc' && (
                 <div className="mb-1 text-[10px] uppercase tracking-wider opacity-70">
-                  {npcName}
+                  {npcDisplayName}
                   {message.action && message.action !== 'speaks' && <span className="ml-2 text-cyan-300">• {message.action}</span>}
                 </div>
               )}
@@ -328,7 +330,7 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
           <div className="flex justify-start">
             <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/60">
               <Loader2 size={14} className="animate-spin" />
-              {npcName} is thinking...
+              {npcDisplayName} is thinking...
             </div>
           </div>
         )}
@@ -349,7 +351,7 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`Message ${npcName}...`}
+            placeholder={`Message ${npcDisplayName}...`}
             disabled={!sdkActive || busy}
             className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/40 disabled:opacity-60"
           />

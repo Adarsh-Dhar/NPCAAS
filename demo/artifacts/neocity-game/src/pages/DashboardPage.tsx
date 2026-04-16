@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Activity, Wallet, Gauge, Lock, Unlock } from 'lucide-react'
 import { getClient } from '@/lib/sdk'
 import { emitPlayerEvent, setEscrowFunded, setPlayerInventory } from '@/lib/playerState'
+import {
+  formatNpcDisplayName,
+  PROTOCOL_BABEL_NODE_NAMES,
+  toCanonicalNpcName,
+} from '@/lib/protocolBabel'
 
 type CharacterSnapshot = {
   id: string
@@ -30,7 +35,6 @@ interface DashboardPageProps {
   onClose?: () => void
 }
 
-const ACTIVE_NAMES = ['Forge-9', 'The Weaver', 'Aegis-Prime', 'Vex', 'Silicate', 'Node-Alpha', 'Node-Omega']
 const ESCROW_THRESHOLD = 1
 
 function parseAmount(value: string) {
@@ -47,8 +51,8 @@ export default function DashboardPage({ characters, onClose }: DashboardPageProp
   const lastTradeStateRef = useRef<boolean | null>(null)
 
   const activeNames = useMemo(() => {
-    const discovered = characters.map((character) => character.name)
-    return discovered.length ? discovered : ACTIVE_NAMES
+    const discovered = characters.map((character) => toCanonicalNpcName(character.name))
+    return discovered.length ? discovered : [...PROTOCOL_BABEL_NODE_NAMES]
   }, [characters])
 
   useEffect(() => {
@@ -86,8 +90,8 @@ export default function DashboardPage({ characters, onClose }: DashboardPageProp
         setLogs(nextLogs)
         setLastUpdatedAt(new Date().toISOString())
 
-        const alpha = nextBalances['Node-Alpha'] ?? nextBalances['NODE_ALPHA'] ?? null
-        const omega = nextBalances['Node-Omega'] ?? nextBalances['NODE_OMEGA'] ?? null
+        const alpha = nextBalances['Node_Alpha'] ?? null
+        const omega = nextBalances['Node_Omega'] ?? null
         const aBalance = alpha ? parseAmount(alpha.native.balanceFormatted) : 0
         const oBalance = omega ? parseAmount(omega.native.balanceFormatted) : 0
         const escrowFunded = aBalance >= ESCROW_THRESHOLD && oBalance >= ESCROW_THRESHOLD
@@ -102,7 +106,7 @@ export default function DashboardPage({ characters, onClose }: DashboardPageProp
           window.dispatchEvent(new CustomEvent('FIREWALL_CRACKED'))
         }
 
-        const aegi = nextBalances['Aegis-Prime'] ?? nextBalances['AEGIS_PRIME'] ?? null
+        const aegi = nextBalances['Aegis_Prime'] ?? null
         const aegiBalance = aegi ? parseAmount(aegi.native.balanceFormatted) : 0
         const aegisDown = aegiBalance <= 0
         if (lastAegisDownRef.current !== aegisDown) {
@@ -141,7 +145,7 @@ export default function DashboardPage({ characters, onClose }: DashboardPageProp
     }
   }, [activeNames])
 
-  const aegiBalance = balances['Aegis-Prime'] ?? balances['AEGIS_PRIME'] ?? null
+  const aegiBalance = balances['Aegis_Prime'] ?? null
   const systemHealthy = !aegiBalance || parseAmount(aegiBalance.native.balanceFormatted) > 0
 
   return (
@@ -182,7 +186,7 @@ export default function DashboardPage({ characters, onClose }: DashboardPageProp
                 return (
                   <div key={npcName} className="rounded border border-white/10 bg-black/40 p-3">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-white">{npcName}</span>
+                      <span className="text-white">{formatNpcDisplayName(npcName)}</span>
                       <span className="text-cyan-300">{balance} {row?.native.symbol ?? 'KITE'}</span>
                     </div>
                     <div className="mt-2 text-[11px] text-white/45 break-all">
@@ -204,7 +208,7 @@ export default function DashboardPage({ characters, onClose }: DashboardPageProp
                 const rows = logs[npcName]?.logs ?? []
                 return (
                   <div key={npcName} className="rounded border border-white/10 bg-black/40 p-3">
-                    <div className="mb-2 text-sm text-white">{npcName}</div>
+                    <div className="mb-2 text-sm text-white">{formatNpcDisplayName(npcName)}</div>
                     <div className="space-y-2">
                       {rows.length === 0 ? (
                         <p className="text-xs text-white/40">Waiting for backend logs...</p>

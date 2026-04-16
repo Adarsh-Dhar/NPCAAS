@@ -13,6 +13,7 @@ import {
   isSdkReady,
 } from "@/lib/sdk";
 import type { TradeIntent } from "@/components/ChatWindow";
+import { formatNpcDisplayName, PROTOCOL_BABEL_NODE_NAMES } from "@/lib/protocolBabel";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,9 +38,9 @@ type TxStatus =
   | { state: "error"; message: string };
 
 export interface HUDProps {
-  /** Game-local NPC id like "SILAS_VANCE", or null when no chat is open */
+  /** Active NPC id, or null when no chat is open */
   activeNpc: string | null;
-  /** Display name like "SILAS_VANCE" — used for GuildCraft character lookup */
+  /** Canonical NPC name used for GuildCraft character lookup */
   activeNpcName: string | null;
   pendingTrade: TradeIntent | null;
   onTradeExecuted?: () => void;
@@ -203,7 +204,7 @@ export function HUD({
           </div>
           <div style={{ color: "#445566" }}>
             <div className="mb-1">NODES ACTIVE</div>
-            <div className="text-cyan-300">Forge-9 · The Weaver · Aegis-Prime · Vex · Silicate · Node-Alpha · Node-Omega</div>
+            <div className="text-cyan-300">{PROTOCOL_BABEL_NODE_NAMES.map((name) => formatNpcDisplayName(name)).join(" · ")}</div>
             <div className="mt-2 text-white/60">TAB — macro dashboard</div>
           </div>
         </div>

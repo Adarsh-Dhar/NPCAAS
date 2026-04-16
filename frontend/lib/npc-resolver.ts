@@ -53,7 +53,7 @@ export async function resolveAuthorisedProject(
  * "Scrap" → "SCRAP", "my npc" → "MY_NPC"
  */
 export function normaliseNpcName(name: string): string {
-  return name.trim().toUpperCase().replace(/\s+/g, '_')
+  return name.trim().toUpperCase().replace(/[\s-]+/g, '_')
 }
 
 export interface ResolvedCharacter {
@@ -104,11 +104,20 @@ export async function resolveCharacterByName(
   }
 
   const normalisedName = normaliseNpcName(npcName)
+  const rawName = npcName.trim()
+  const hyphenToUnderscore = rawName.replace(/[\s-]+/g, '_')
 
   const character = await (prisma.character as any).findFirst({
     where: {
-      name: normalisedName,
       projects: { some: { id: projectId } },
+      OR: [
+        { name: rawName },
+        { name: hyphenToUnderscore },
+        { name: normalisedName },
+        { name: { equals: rawName, mode: 'insensitive' } },
+        { name: { equals: hyphenToUnderscore, mode: 'insensitive' } },
+        { name: { equals: normalisedName, mode: 'insensitive' } },
+      ],
     },
     include: { projects: { select: { id: true } } },
   })
