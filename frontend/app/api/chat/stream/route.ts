@@ -46,6 +46,8 @@ interface CharacterConfig {
   baseHostility?: number
   teeExecution?: 'ENABLED' | 'DISABLED'
   computeBudget?: number
+  allowDbFetch?: boolean
+  dbEndpoint?: string
 }
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
@@ -92,6 +94,8 @@ function toCharacterConfig(value: unknown): CharacterConfig {
         ? 'ENABLED'
         : 'DISABLED',
     computeBudget: asNumber(config.computeBudget),
+    allowDbFetch: typeof config.allowDbFetch === 'boolean' ? config.allowDbFetch : false,
+    dbEndpoint: typeof config.dbEndpoint === 'string' ? config.dbEndpoint : undefined,
   }
 }
 
@@ -104,10 +108,8 @@ async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefin
   if (!endpoint) return undefined
 
   try {
-    // If symbol provided, append it to the Binance API endpoint
     let fetchUrl = endpoint
     if (symbol && symbol.toUpperCase() !== 'KITE_USD') {
-      // Construct Binance ticker symbol (e.g., "SOL" -> "SOLUSDT")
       const tickerSymbol = `${symbol.toUpperCase()}USDT`
       fetchUrl = `${endpoint}?symbol=${tickerSymbol}`
     }
@@ -181,25 +183,15 @@ function buildOpennessStrategyInstruction(openness: number): string {
   ].join('\n')
 }
 
-/**
- * Parse ALLOWED_TRADE_TOKENS from environment variable.
- * Returns array of token symbols (e.g., ['KITE_USD', 'SOL', 'USDC', 'BTC'])
- */
 function parseAllowedTradeTokens(): string[] {
   const env = process.env.ALLOWED_TRADE_TOKENS
   if (!env) return []
   return env.split(',').map(token => token.trim().toUpperCase()).filter(token => token.length > 0)
 }
 
-/**
- * Auto-detect trade currency from user messages.
- * Searches recent messages for keyword matches against allowed tokens.
- */
 function detectTradeCurrency(messages: string[], allowedTokens: string[]): string | undefined {
   if (allowedTokens.length === 0) return undefined
   
-  // Build regex pattern from allowed tokens
-  // Remove KITE_USD and add individual keywords for better matching
   const tokenKeywords = allowedTokens
     .filter(token => token !== 'KITE_USD')
     .join('|')
@@ -207,17 +199,12 @@ function detectTradeCurrency(messages: string[], allowedTokens: string[]): strin
   if (!tokenKeywords) return undefined
   
   const pattern = new RegExp(`\\b(${tokenKeywords})\\b`, 'i')
-  
-  // Search recent messages (just last 500 chars to be efficient)
   const recentContext = messages.slice(-3).join(' ').slice(-500)
   const match = recentContext.match(pattern)
   
   return match ? match[1].toUpperCase() : undefined
 }
 
-/**
- * Resolve a character by npcName within a project, or by legacy characterId.
- */
 async function resolveCharacter(
   npcName: string | undefined,
   characterId: string | undefined,
@@ -251,7 +238,6 @@ export async function POST(request: NextRequest) {
   const origin = request.headers.get('origin')
   const corsHeaders = getCorsHeaders(origin)
 
-  // Auth
   const authHeader = request.headers.get('Authorization')
   let project: { id: string } | null = null
 
@@ -270,7 +256,6 @@ export async function POST(request: NextRequest) {
     project = validated
   }
 
-  // Parse body
   let body: {
     npcName?: string
     characterId?: string
@@ -304,7 +289,6 @@ export async function POST(request: NextRequest) {
 
   const encoder = new TextEncoder()
 
-  // Require explicit NPC target for streaming requests.
   if (!npcName && !characterId) {
     return new NextResponse(
       errorStream('npcName or characterId is required'),
@@ -312,7 +296,6 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Resolve character
   const character = await resolveCharacter(npcName, characterId, project?.id ?? null).catch(() => null)
 
   if (!character) {
@@ -342,7 +325,6 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Build agent context
   const config = toCharacterConfig(character.config)
   const adaptation = asRecord(character.adaptation)
   const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
@@ -466,7 +448,6 @@ export async function POST(request: NextRequest) {
     console.warn('[chat/stream] Failed to fetch live wallet balance:', error)
   }
 
-  // Parse allowed trade tokens and auto-detect currency from message
   const allowedTradeTokens = parseAllowedTradeTokens()
   const detectedCurrency = detectTradeCurrency([message], allowedTradeTokens)
   const activeCurrency = detectedCurrency ?? (allowedTradeTokens.length > 0 ? allowedTradeTokens[0] : undefined)
@@ -484,10 +465,20 @@ export async function POST(request: NextRequest) {
     ? config.systemPrompt.trim()
     : 'You are an autonomous NPC that negotiates fairly and builds reputation.'
 
+  // Build DB access instruction when the feature is enabled
+  let dbInstruction = ''
+  if (config.allowDbFetch && config.dbEndpoint) {
+    dbInstruction =
+      "DATABASE ACCESS: You have access to an external database via the 'query_database' tool. " +
+      'If the user asks a question about lore, stats, or facts you do not know, you MUST use this tool to fetch the answer before replying.'
+  }
+
+  const systemPrompt =
+    `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}`.trim()
+
   const ctx = {
     characterName: character.name,
-    systemPrompt:
-      `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}`,
+    systemPrompt,
     openness: actorOpenness,
     canTrade: config.canTrade !== false,
     specializationActive: Boolean(adaptation.specializationActive),
@@ -509,15 +500,24 @@ export async function POST(request: NextRequest) {
     projectId: activeProjectId,
     characterConfig: config,
     teeTrustScore,
+    dbEndpoint: config.allowDbFetch ? config.dbEndpoint : undefined,
   }
 
-  kiteAgentClient.registerTools([
+  // Build allowed tools list — conditionally include DB tool
+  const allowedTools = [
     'propose_trade',
     'execute_trade',
     'join_faction',
     'betray_ally',
     'declare_hostility',
-  ])
+  ]
+
+  if (config.allowDbFetch && config.dbEndpoint) {
+    allowedTools.push('query_database')
+    kiteAgentClient.setDbEndpoint(config.dbEndpoint)
+  }
+
+  kiteAgentClient.registerTools(allowedTools)
 
   const rawStream = kiteAgentClient.chatStream(message, ctx)
   let sseBuffer = ''

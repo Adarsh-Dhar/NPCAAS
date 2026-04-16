@@ -50,6 +50,8 @@ interface CharacterConfig {
   baseHostility?: number
   teeExecution?: 'ENABLED' | 'DISABLED'
   computeBudget?: number
+  allowDbFetch?: boolean
+  dbEndpoint?: string
 }
 
 interface Section2Profile {
@@ -97,10 +99,8 @@ async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefin
   if (!endpoint) return undefined
 
   try {
-    // If symbol provided, append it to the Binance API endpoint
     let fetchUrl = endpoint
     if (symbol && symbol.toUpperCase() !== 'KITE_USD') {
-      // Construct Binance ticker symbol (e.g., "SOL" -> "SOLUSDT")
       const tickerSymbol = `${symbol.toUpperCase()}USDT`
       fetchUrl = `${endpoint}?symbol=${tickerSymbol}`
     }
@@ -135,6 +135,8 @@ function toCharacterConfig(value: unknown): CharacterConfig {
         ? 'ENABLED'
         : 'DISABLED',
     computeBudget: asNumber(payload.computeBudget),
+    allowDbFetch: typeof payload.allowDbFetch === 'boolean' ? payload.allowDbFetch : false,
+    dbEndpoint: typeof payload.dbEndpoint === 'string' ? payload.dbEndpoint : undefined,
   }
 }
 
@@ -201,25 +203,15 @@ function extractPreferences(message: string): string[] {
   return preferences
 }
 
-/**
- * Parse ALLOWED_TRADE_TOKENS from environment variable.
- * Returns array of token symbols (e.g., ['KITE_USD', 'SOL', 'USDC', 'BTC'])
- */
 function parseAllowedTradeTokens(): string[] {
   const env = process.env.ALLOWED_TRADE_TOKENS
   if (!env) return []
   return env.split(',').map(token => token.trim().toUpperCase()).filter(token => token.length > 0)
 }
 
-/**
- * Auto-detect trade currency from user messages.
- * Searches recent messages for keyword matches against allowed tokens.
- */
 function detectTradeCurrency(messages: string[], allowedTokens: string[]): string | undefined {
   if (allowedTokens.length === 0) return undefined
   
-  // Build regex pattern from allowed tokens
-  // Remove KITE_USD and add individual keywords for better matching
   const tokenKeywords = allowedTokens
     .filter(token => token !== 'KITE_USD')
     .join('|')
@@ -227,8 +219,6 @@ function detectTradeCurrency(messages: string[], allowedTokens: string[]): strin
   if (!tokenKeywords) return undefined
   
   const pattern = new RegExp(`\\b(${tokenKeywords})\\b`, 'i')
-  
-  // Search recent messages (just last 500 chars to be efficient)
   const recentContext = messages.slice(-3).join(' ').slice(-500)
   const match = recentContext.match(pattern)
   
@@ -292,10 +282,6 @@ function isLikelyPolicyTriggerMessage(message: string): boolean {
   )
 }
 
-/**
- * Look up a character by name within the authenticated project.
- * npcName is normalised to uppercase with underscores, matching how names are stored.
- */
 async function findCharacterByName(
   npcName: string,
   projectId: string
@@ -350,7 +336,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    // Support both npcName (new semantic API) and characterId (legacy)
     const {
       npcName,
       characterId: legacyCharacterId,
@@ -367,7 +352,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Require explicit NPC target for chat requests.
     if (!npcName && !legacyCharacterId) {
       return NextResponse.json(
         { error: 'npcName or characterId is required' },
@@ -375,7 +359,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Resolve the character — prefer name lookup, fall back to ID
     let character: StoredCharacter | null = null
 
     if (npcName && project) {
@@ -387,7 +370,6 @@ export async function POST(request: NextRequest) {
         )
       }
     } else if (legacyCharacterId) {
-      // Legacy path: look up by ID
       character = (await (prisma.character as any).findUnique({
         where: { id: legacyCharacterId },
         include: { projects: { select: { id: true } } },
@@ -500,7 +482,6 @@ export async function POST(request: NextRequest) {
         where: { id: character.id },
         data: { adaptation: nextAdaptation as unknown as Prisma.InputJsonValue },
       })
-      // Log the event
       await (prisma as any).npcLog.create({
         data: {
           characterId: character.id,
@@ -571,15 +552,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Normal chat
+    // Normal chat — build allowed tools list
     const agent = kiteAgentClient
-    agent.registerTools([
+    const allowedTools = [
       'propose_trade',
       'execute_trade',
       'join_faction',
       'betray_ally',
       'declare_hostility',
-    ])
+    ]
+
+    // Conditionally add the DB fetch tool
+    if (config.allowDbFetch && config.dbEndpoint) {
+      allowedTools.push('query_database')
+      agent.setDbEndpoint(config.dbEndpoint)
+    }
+
+    agent.registerTools(allowedTools)
 
     worldState.register({
       id: character.id,
@@ -603,7 +592,6 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // 1. Fetch the live context of other NPCs in the project
     const dynamicWorldContext = worldState.buildWorldContextPrompt(character.id, activeProjectId)
 
     const socialInput = {
@@ -718,7 +706,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 2. Append it to the base system prompt
     const basePrompt = typeof config.systemPrompt === 'string' && config.systemPrompt.trim()
       ? config.systemPrompt
       : 'You are an autonomous NPC that negotiates fairly and builds reputation.'
@@ -732,7 +719,6 @@ export async function POST(request: NextRequest) {
       console.warn('[chat] Failed to fetch live wallet balance:', error)
     }
 
-    // Parse allowed trade tokens and auto-detect currency from message
     const allowedTradeTokens = parseAllowedTradeTokens()
     const detectedCurrency = detectTradeCurrency([message], allowedTradeTokens)
     const activeCurrency = detectedCurrency ?? (allowedTradeTokens.length > 0 ? allowedTradeTokens[0] : undefined)
@@ -746,9 +732,17 @@ export async function POST(request: NextRequest) {
       currentTradeCurrency: activeCurrency,
     })
 
+    // Build DB access instruction when the feature is enabled
+    let dbInstruction = ''
+    if (config.allowDbFetch && config.dbEndpoint) {
+      dbInstruction =
+        "DATABASE ACCESS: You have access to an external database via the 'query_database' tool. " +
+        'If the user asks a question about lore, stats, or facts you do not know, you MUST use this tool to fetch the answer before replying.'
+    }
+
     const activeProfile: Section2Profile = {
       systemPrompt:
-        `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}`,
+        `${basePrompt}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}`.trim(),
       openness: actorOpenness,
     }
 
@@ -793,6 +787,7 @@ export async function POST(request: NextRequest) {
       teeExecution: config.teeExecution,
       projectId: activeProjectId,
       characterConfig: config,
+      dbEndpoint: config.allowDbFetch ? config.dbEndpoint : undefined,
     })
 
     const usedTokens = BigInt(agentResponse.usage?.totalTokens ?? 0)
@@ -846,7 +841,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Log the chat interaction in NpcLog table
     await (prisma as any).npcLog.create({
       data: {
         characterId: character.id,
@@ -865,7 +859,6 @@ export async function POST(request: NextRequest) {
       finalTradeIntent ? 'trade_proposed' : 'chat_replied'
     )
 
-    // Broadcast to the Event Bus so other NPCs "hear" this interaction
     eventBus.broadcast({
       sourceId: character.id,
       sourceName: character.name,

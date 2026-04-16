@@ -140,26 +140,26 @@ export interface AgentContext {
   currentTradeCurrency?: string
   marketRateForCurrentToken?: number
   characterConfig?: unknown
+  dbEndpoint?: string
 }
 
 /** SSE event shape emitted by chatStream(). */
 export interface StreamEvent {
   type: 'text_delta' | 'action' | 'trade_intent' | 'done' | 'error'
-  delta?: string       // incremental text token (type=text_delta)
-  action?: string      // physical action (type=action)
-  tradeIntent?: TradeIntent // (type=trade_intent)
+  delta?: string
+  action?: string
+  tradeIntent?: TradeIntent
   usage?: TokenUsage
-  error?: string       // (type=error)
-  final?: ChatResponse // (type=done) — full assembled response
+  error?: string
+  final?: ChatResponse
 }
 
 // ---------------------------------------------------------------------------
-// Tool definition
+// Tool definitions
 // ---------------------------------------------------------------------------
 
 /**
- * Generate the PROPOSE_TRADE_TOOL with dynamic currency enum
- * based on allowed tokens from context or environment.
+ * Generate the PROPOSE_TRADE_TOOL with dynamic currency enum.
  */
 function generateProposeTradeTool(allowedTokens?: string[]): OpenAI.Chat.Completions.ChatCompletionTool {
   const currencies = allowedTokens && allowedTokens.length > 0
@@ -253,6 +253,52 @@ const DECLARE_HOSTILITY_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
   },
 }
 
+/** Tool definition for querying an external NPC database. */
+const QUERY_DATABASE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'query_database',
+    description:
+      'Query the external database to retrieve facts, lore, or player stats. ' +
+      'Use this when the user asks about game-world information you do not already know.',
+    parameters: {
+      type: 'object',
+      properties: {
+        searchQuery: {
+          type: 'string',
+          description: 'The specific question or keyword to search the database for.',
+        },
+      },
+      required: ['searchQuery'],
+    },
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Database fetch executor
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute a query against the creator-configured external database endpoint.
+ * Returns the stringified JSON result or an error message.
+ */
+async function executeDatabaseQuery(
+  searchQuery: string,
+  dbEndpoint: string
+): Promise<string> {
+  try {
+    const response = await fetch(dbEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: searchQuery }),
+    })
+    const data = await response.json()
+    return JSON.stringify(data)
+  } catch (e) {
+    return JSON.stringify({ error: 'Failed to connect to the database.' })
+  }
+}
+
 // ---------------------------------------------------------------------------
 // System prompt builder
 // ---------------------------------------------------------------------------
@@ -284,7 +330,6 @@ function buildSystemPrompt(ctx: AgentContext): string {
     ? 'When a player wants to buy, sell, or trade something, use the propose_trade function.'
     : 'Trading is currently disabled. Politely redirect trade requests.'
 
-  // Multi-token authorization note
   const multiTokenNote = ctx.allowedTradeTokens && ctx.allowedTradeTokens.length > 0
     ? `You are authorized to negotiate and quote prices in these tokens: ${ctx.allowedTradeTokens.join(', ')}. ` +
       `While your internal treasury and gas fees operate on the KITE network, you can offer trades in any of the authorized currencies.`
@@ -398,9 +443,15 @@ export function encodeSSEFrame(event: StreamEvent): string {
 
 export class KiteAgentClient {
   private registeredTools: string[] = []
+  private dbEndpoint: string | undefined = undefined
 
   registerTools(tools: string[]): void {
     this.registeredTools = tools
+  }
+
+  /** Set the external database endpoint for the query_database tool. */
+  setDbEndpoint(endpoint: string | undefined): void {
+    this.dbEndpoint = endpoint
   }
 
   private resolveTools(ctx: AgentContext): OpenAI.Chat.Completions.ChatCompletionTool[] {
@@ -421,6 +472,9 @@ export class KiteAgentClient {
     }
     if (allowed.has('declare_hostility')) {
       tools.push(DECLARE_HOSTILITY_TOOL)
+    }
+    if (allowed.has('query_database') && (this.dbEndpoint || ctx.dbEndpoint)) {
+      tools.push(QUERY_DATABASE_TOOL)
     }
 
     return tools
@@ -470,7 +524,47 @@ export class KiteAgentClient {
     ) {
       const toolCall = choice.message.tool_calls[0]
 
-      // Map an on-chain execution tool to the tx-orchestrator
+      // Handle query_database tool
+      if (isFunctionToolCall(toolCall) && toolCall.function.name === 'query_database') {
+        try {
+          const args = JSON.parse(toolCall.function.arguments) as { searchQuery: string }
+          const endpoint = this.dbEndpoint ?? ctx.dbEndpoint ?? ''
+          if (!endpoint) {
+            return {
+              text: 'Database access is configured but no endpoint is set.',
+              action: 'shakes head with a puzzled look',
+              usage,
+            }
+          }
+          const dbResult = await executeDatabaseQuery(args.searchQuery, endpoint)
+
+          // Feed result back to the LLM for a natural reply
+          const followUp = await client.chat.completions.create({
+            model,
+            max_tokens: 400,
+            temperature: this.opennessToTemperature(ctx.openness),
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userMessage },
+              { role: 'assistant', content: null, tool_calls: choice.message.tool_calls },
+              {
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: dbResult,
+              },
+            ],
+          })
+          const rawContent = followUp.choices[0]?.message?.content?.trim() ?? ''
+          const { text, action } = parseStructuredResponse(rawContent)
+          return { text, action, usage: toTokenUsage(followUp.usage) }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Database query error'
+          return { text: `Could not retrieve that information right now: ${msg}`, action: 'frowns thoughtfully', usage }
+        }
+      }
+
+      // Handle execute_trade tool
       if (isFunctionToolCall(toolCall) && toolCall.function.name === 'execute_trade') {
         try {
           const args = JSON.parse(toolCall.function.arguments) as {
@@ -598,20 +692,6 @@ export class KiteAgentClient {
 
   // ── Streaming chat ────────────────────────────────────────────────────────
 
-  /**
-   * Returns a ReadableStream that emits SSE-formatted frames:
-   *
-   *   data: {"type":"text_delta","delta":"Hello"}\n\n
-   *   data: {"type":"action","action":"waves hand"}\n\n
-   *   data: {"type":"done","final":{...}}\n\n
-   *
-   * The caller is responsible for piping this into a Response with the
-   * appropriate Content-Type: text/event-stream header.
-   *
-   * NOTE: If the NPC decides to call the `propose_trade` tool, streaming
-   * is not possible (tool calls are returned only after the full response is
-   * generated).  In that case, a single non-streaming done frame is emitted.
-   */
   chatStream(userMessage: string, ctx: AgentContext = {}): ReadableStream<string> {
     const client = getClient()
     const model  = getModel()
@@ -626,7 +706,7 @@ export class KiteAgentClient {
         }
 
         try {
-          // ── Tool-call path: must use non-streaming for tool_choice ──────
+          // ── Tool-call path ──────────────────────────────────────────────
           if (tools.length > 0) {
             const completion = await client.chat.completions.create({
               model,
@@ -648,6 +728,62 @@ export class KiteAgentClient {
               choice.message.tool_calls?.length
             ) {
               const toolCall = choice.message.tool_calls[0]
+
+              // Handle query_database tool in streaming path
+              if (isFunctionToolCall(toolCall) && toolCall.function.name === 'query_database') {
+                const args = JSON.parse(toolCall.function.arguments) as { searchQuery: string }
+                const endpoint = this.dbEndpoint ?? ctx.dbEndpoint ?? ''
+                if (!endpoint) {
+                  const final: ChatResponse = {
+                    text: 'Database access is configured but no endpoint is set.',
+                    action: 'shakes head with a puzzled look',
+                    usage,
+                  }
+                  enqueue({ type: 'done', final })
+                  controller.close()
+                  return
+                }
+
+                const dbResult = await executeDatabaseQuery(args.searchQuery, endpoint)
+
+                // Feed result back to the LLM for a natural reply
+                try {
+                  const followUp = await client.chat.completions.create({
+                    model,
+                    max_tokens: 400,
+                    temperature: temp,
+                    response_format: { type: 'json_object' },
+                    messages: [
+                      { role: 'system', content: systemPrompt },
+                      { role: 'user', content: userMessage },
+                      { role: 'assistant', content: null, tool_calls: choice.message.tool_calls },
+                      {
+                        role: 'tool',
+                        tool_call_id: toolCall.id,
+                        content: dbResult,
+                      },
+                    ],
+                  })
+                  const rawContent = followUp.choices[0]?.message?.content?.trim() ?? ''
+                  const { text, action } = parseStructuredResponse(rawContent)
+                  if (action) enqueue({ type: 'action', action })
+                  enqueue({ type: 'text_delta', delta: text })
+                  const final: ChatResponse = { text, action, usage: toTokenUsage(followUp.usage) }
+                  enqueue({ type: 'done', final })
+                } catch (err) {
+                  const errorMsg = err instanceof Error ? err.message : 'DB follow-up error'
+                  const final: ChatResponse = {
+                    text: `Could not retrieve that information right now: ${errorMsg}`,
+                    action: 'frowns thoughtfully',
+                    usage,
+                  }
+                  enqueue({ type: 'text_delta', delta: final.text })
+                  enqueue({ type: 'done', final })
+                }
+                controller.close()
+                return
+              }
+
               if (isFunctionToolCall(toolCall) && toolCall.function.name === 'execute_trade') {
                 const args = JSON.parse(toolCall.function.arguments) as {
                   targetAddress?: string; amount?: number | string; currency?: string; memo?: string; ownerId?: string
@@ -686,6 +822,7 @@ export class KiteAgentClient {
                   return
                 }
               }
+
               if (isFunctionToolCall(toolCall) && toolCall.function.name === 'propose_trade') {
                 const args = JSON.parse(toolCall.function.arguments) as {
                   item: string; price: number; currency: string; message: string; action?: string
@@ -697,13 +834,13 @@ export class KiteAgentClient {
                   usage,
                 }
                 if (final.action) enqueue({ type: 'action', action: final.action })
-                // Emit the text as a single delta so clients render it progressively
                 enqueue({ type: 'text_delta', delta: final.text })
                 if (final.tradeIntent) enqueue({ type: 'trade_intent', tradeIntent: final.tradeIntent })
                 enqueue({ type: 'done', final })
                 controller.close()
                 return
               }
+
               if (isFunctionToolCall(toolCall) && toolCall.function.name === 'join_faction') {
                 const args = JSON.parse(toolCall.function.arguments) as { factionId?: string }
                 if (!ctx.characterId || !args.factionId) {
@@ -722,7 +859,7 @@ export class KiteAgentClient {
                   action: 'marks allegiance in ledger',
                   usage,
                 }
-                enqueue({ type: 'action', action: final.action })
+                enqueue({ type: 'action', action: final.action! })
                 enqueue({ type: 'text_delta', delta: final.text })
                 enqueue({ type: 'done', final })
                 controller.close()
@@ -747,7 +884,7 @@ export class KiteAgentClient {
                   action: 'burns an old pact',
                   usage,
                 }
-                enqueue({ type: 'action', action: final.action })
+                enqueue({ type: 'action', action: final.action! })
                 enqueue({ type: 'text_delta', delta: final.text })
                 enqueue({ type: 'done', final })
                 controller.close()
@@ -779,7 +916,7 @@ export class KiteAgentClient {
                   action: 'issues a public threat',
                   usage,
                 }
-                enqueue({ type: 'action', action: final.action })
+                enqueue({ type: 'action', action: final.action! })
                 enqueue({ type: 'text_delta', delta: final.text })
                 enqueue({ type: 'done', final })
                 controller.close()
@@ -823,11 +960,9 @@ export class KiteAgentClient {
             if (!delta) continue
 
             accumulated += delta
-            // Stream raw tokens as they arrive — clients can buffer until done
             enqueue({ type: 'text_delta', delta })
           }
 
-          // Parse the fully assembled JSON to extract action + clean text
           const { text, action } = parseStructuredResponse(accumulated)
           if (action) enqueue({ type: 'action', action })
           const final: ChatResponse = { text, action, usage: streamUsage }

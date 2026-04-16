@@ -1,7 +1,7 @@
 interface FormSectionProps {
   title: string
   description?: string
-  borderColor: 'orange' | 'purple' | 'red' | 'yellow' | 'cyan'
+  borderColor: 'orange' | 'purple' | 'red' | 'yellow' | 'cyan' | 'green'
   children: React.ReactNode
 }
 
@@ -11,6 +11,7 @@ const colorMap = {
   red: 'retro-card-red',
   yellow: 'retro-card-yellow',
   cyan: 'retro-card-cyan',
+  green: 'retro-card-green',
 }
 
 export default function FormSection({

@@ -6,6 +6,8 @@ import RetroInput from '@/components/ui/RetroInput'
 import RetroTextarea from '@/components/ui/RetroTextarea'
 import RetroRangeSlider from '@/components/ui/RetroRangeSlider'
 import FormSection from '@/components/creator/FormSection'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 
 interface ConfigurationFormProps {
   projectId?: string
@@ -25,6 +27,8 @@ interface ConfigurationFormProps {
     canCraft: boolean
     teeExecution: string
     computeBudget: string
+    allowDbFetch: boolean
+    dbEndpoint: string
   }>
   onDeploySuccess?: (characterId: string, characterName: string) => void
   onSaveSuccess?: () => void
@@ -72,6 +76,8 @@ export default function ConfigurationForm({
     canCraft: true,
     teeExecution: 'ENABLED',
     computeBudget: '5000',
+    allowDbFetch: false,
+    dbEndpoint: '',
   })
   const [deploying, setDeploying] = useState(false)
   const [deployError, setDeployError] = useState('')
@@ -97,6 +103,8 @@ export default function ConfigurationForm({
         canCraft: initialConfig.canCraft ?? prev.canCraft,
         teeExecution: initialConfig.teeExecution ?? prev.teeExecution,
         computeBudget: initialConfig.computeBudget ?? prev.computeBudget,
+        allowDbFetch: initialConfig.allowDbFetch ?? prev.allowDbFetch,
+        dbEndpoint: initialConfig.dbEndpoint ?? prev.dbEndpoint,
       } : {}),
     }))
   }, [initialConfig, characterId, characterName])
@@ -117,6 +125,11 @@ export default function ConfigurationForm({
 
     if (formData.pricingAlgorithm === 'FIXED_MARGIN') {
       payload.marginPercentage = marginPercentage
+    }
+
+    // Only include dbEndpoint when DB fetch is enabled and endpoint is set
+    if (!formData.allowDbFetch) {
+      payload.dbEndpoint = undefined
     }
 
     return payload
@@ -394,6 +407,45 @@ export default function ConfigurationForm({
           value={formData.computeBudget}
           onChange={(e) => handleInputChange('computeBudget', e.target.value)}
         />
+      </FormSection>
+
+      {/* Section 6: KNOWLEDGE & DATA */}
+      <FormSection
+        title="SECTION 6: KNOWLEDGE & DATA"
+        description="Connect an external database for real-time lore and stat lookups"
+        borderColor="green"
+      >
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs font-bold uppercase text-white">
+            Enable External Database Fetching
+          </label>
+          <Switch
+            checked={formData.allowDbFetch}
+            onCheckedChange={(checked: boolean) => handleInputChange('allowDbFetch', checked)}
+          />
+        </div>
+        <p className="text-xs text-gray-400 font-mono mb-4">
+          When enabled, the NPC can call your game's API to look up lore, stats, or facts it
+          doesn't know before answering the player.
+        </p>
+
+        {formData.allowDbFetch && (
+          <>
+            <RetroInput
+              borderColor="green"
+              label="Database API Endpoint / Connection String"
+              type="text"
+              placeholder="https://api.mygame.com/npc-data"
+              value={formData.dbEndpoint}
+              onChange={(e) => handleInputChange('dbEndpoint', e.target.value)}
+            />
+            <p className="mt-1 text-xs text-gray-400 font-mono">
+              The NPC will POST{' '}
+              <code className="text-green-400">{"{ query: \"<search term>\" }"}</code>{' '}
+              to this endpoint and use the JSON response to answer the player.
+            </p>
+          </>
+        )}
       </FormSection>
 
       {/* Error Message */}
