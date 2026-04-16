@@ -29,8 +29,17 @@ export interface ChatWindowProps {
 interface Message {
   role: "user" | "npc" | "system";
   text: string;
+  action?: string;
   timestamp: Date;
 }
+
+interface ParsedNpcAction {
+  action: string;
+  text: string;
+}
+
+const NPC_ACTION_EVENT = "npc-action";
+const NPC_ACTION_DELAY_MS = 4000;
 
 // ---------------------------------------------------------------------------
 // Static NPC metadata
@@ -98,6 +107,89 @@ function extractTradeIntent(text: string): {
   } catch {
     return { clean: text, trade: null };
   }
+}
+
+function extractJsonObjects(rawText: string): string[] {
+  const chunks: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < rawText.length; i += 1) {
+    const ch = rawText[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+      continue;
+    }
+
+    if (ch === "}") {
+      if (depth === 0) continue;
+      depth -= 1;
+      if (depth === 0 && start !== -1) {
+        chunks.push(rawText.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return chunks;
+}
+
+function parseAgentResponse(rawText: string): ParsedNpcAction[] {
+  const jsonChunks = extractJsonObjects(rawText);
+  const parsed: ParsedNpcAction[] = [];
+
+  for (const chunk of jsonChunks) {
+    try {
+      const obj = JSON.parse(chunk) as {
+        action?: unknown;
+        text?: unknown;
+        message?: unknown;
+      };
+
+      const textValue =
+        typeof obj.text === "string"
+          ? obj.text
+          : typeof obj.message === "string"
+            ? obj.message
+            : "";
+      if (!textValue.trim()) continue;
+
+      const actionValue =
+        typeof obj.action === "string" && obj.action.trim()
+          ? obj.action.trim()
+          : "speaks";
+
+      parsed.push({ action: actionValue, text: textValue.trim() });
+    } catch {
+      // Ignore malformed chunks and continue parsing other blocks.
+    }
+  }
+
+  if (parsed.length > 0) return parsed;
+
+  const fallback = rawText.trim();
+  return [{ action: "speaks", text: fallback || rawText }];
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +315,7 @@ export function ChatWindow({
       abortRef.current = false;
 
       let fullText = "";
+      let finalActionFromEvent: string | undefined;
       try {
         for await (const event of client.chatStream(
           characterId,
@@ -243,6 +336,7 @@ export function ChatWindow({
 
           if (event.type === "done" && event.final) {
             fullText = event.final.text ?? fullText;
+            finalActionFromEvent = event.final.action;
             if (event.final.tradeIntent) {
               onTradeIntent?.(event.final.tradeIntent);
             }
@@ -276,13 +370,50 @@ export function ChatWindow({
       const { clean, trade } = extractTradeIntent(fullText);
       if (trade) onTradeIntent?.(trade);
 
+      const parsedResponses = parseAgentResponse(clean);
+      const normalizedResponses = parsedResponses.map((res, index) => {
+        if (
+          index === 0 &&
+          finalActionFromEvent &&
+          (res.action === "speaks" || !res.action.trim())
+        ) {
+          return { ...res, action: finalActionFromEvent };
+        }
+        return res;
+      });
+
+      normalizedResponses.forEach((res, index) => {
+        const dispatchAction = () => {
+          window.dispatchEvent(
+            new CustomEvent(NPC_ACTION_EVENT, {
+              detail: {
+                npcId,
+                npcName,
+                text: res.text,
+                action: res.action,
+                index,
+              },
+            })
+          );
+        };
+
+        if (index === 0) {
+          dispatchAction();
+          return;
+        }
+
+        // Space out consecutive gesture/text beats for readability.
+        window.setTimeout(dispatchAction, NPC_ACTION_DELAY_MS * index);
+      });
+
       setMessages((prev) => [
         ...prev,
-        {
-          role: "npc",
-          text: clean || fullText || "[no response from SDK]",
+        ...normalizedResponses.map((res) => ({
+          role: "npc" as const,
+          text: res.text || "[no response from SDK]",
+          action: res.action,
           timestamp: new Date(),
-        },
+        })),
       ]);
       return true;
     },
@@ -487,6 +618,11 @@ export function ChatWindow({
                       }
               }
             >
+              {msg.role === "npc" && msg.action && (
+                <div className="text-[10px] mb-1 opacity-80 italic" style={{ color: "#99aabb" }}>
+                  [{msg.action}]
+                </div>
+              )}
               {msg.text}
             </div>
           </div>

@@ -82,3 +82,55 @@ export function serializeBudget(decision: ComputeBudgetDecision) {
     resetAt: decision.resetAt.toISOString(),
   }
 }
+
+type CharacterModelLike = {
+  fields?: Record<string, unknown>
+  update?: (args: {
+    where: { id: string }
+    data: Record<string, unknown>
+  }) => Promise<unknown>
+}
+
+type PrismaLike = {
+  character?: CharacterModelLike
+}
+
+function hasComputeBudgetFields(client: PrismaLike): boolean {
+  const fields = client.character?.fields
+  if (!fields || typeof fields !== 'object') return false
+  return (
+    Object.prototype.hasOwnProperty.call(fields, 'computeUsageTokens') &&
+    Object.prototype.hasOwnProperty.call(fields, 'computeLimitTokens') &&
+    Object.prototype.hasOwnProperty.call(fields, 'lastComputeResetAt')
+  )
+}
+
+export async function persistComputeBudgetIfSupported(
+  prisma: PrismaLike,
+  input: {
+    characterId: string
+    usageTokens: bigint
+    limitTokens: bigint
+    lastComputeResetAt: Date
+    logPrefix: string
+  }
+): Promise<boolean> {
+  if (!hasComputeBudgetFields(prisma)) {
+    console.warn(
+      `${input.logPrefix} Prisma client missing compute budget fields on Character model. ` +
+      'Skipping compute budget persistence until prisma client is regenerated.'
+    )
+    return false
+  }
+
+  await prisma.character!.update!({
+    where: { id: input.characterId },
+    data: {
+      computeUsageTokens: input.usageTokens,
+      computeLimitTokens: input.limitTokens,
+      lastComputeResetAt: input.lastComputeResetAt,
+    },
+  })
+
+  return true
+}

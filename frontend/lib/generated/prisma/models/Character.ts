@@ -28,10 +28,14 @@ export type AggregateCharacter = {
 
 export type CharacterAvgAggregateOutputType = {
   aaChainId: number | null
+  computeUsageTokens: number | null
+  computeLimitTokens: number | null
 }
 
 export type CharacterSumAggregateOutputType = {
   aaChainId: number | null
+  computeUsageTokens: bigint | null
+  computeLimitTokens: bigint | null
 }
 
 export type CharacterMinAggregateOutputType = {
@@ -44,6 +48,10 @@ export type CharacterMinAggregateOutputType = {
   smartAccountStatus: string | null
   isDeployedOnChain: boolean | null
   deploymentTxHash: string | null
+  computeUsageTokens: bigint | null
+  computeLimitTokens: bigint | null
+  lastComputeResetAt: Date | null
+  teeAttestationProof: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -58,6 +66,10 @@ export type CharacterMaxAggregateOutputType = {
   smartAccountStatus: string | null
   isDeployedOnChain: boolean | null
   deploymentTxHash: string | null
+  computeUsageTokens: bigint | null
+  computeLimitTokens: bigint | null
+  lastComputeResetAt: Date | null
+  teeAttestationProof: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -72,6 +84,10 @@ export type CharacterCountAggregateOutputType = {
   smartAccountStatus: number
   isDeployedOnChain: number
   deploymentTxHash: number
+  computeUsageTokens: number
+  computeLimitTokens: number
+  lastComputeResetAt: number
+  teeAttestationProof: number
   config: number
   adaptation: number
   createdAt: number
@@ -82,10 +98,14 @@ export type CharacterCountAggregateOutputType = {
 
 export type CharacterAvgAggregateInputType = {
   aaChainId?: true
+  computeUsageTokens?: true
+  computeLimitTokens?: true
 }
 
 export type CharacterSumAggregateInputType = {
   aaChainId?: true
+  computeUsageTokens?: true
+  computeLimitTokens?: true
 }
 
 export type CharacterMinAggregateInputType = {
@@ -98,6 +118,10 @@ export type CharacterMinAggregateInputType = {
   smartAccountStatus?: true
   isDeployedOnChain?: true
   deploymentTxHash?: true
+  computeUsageTokens?: true
+  computeLimitTokens?: true
+  lastComputeResetAt?: true
+  teeAttestationProof?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -112,6 +136,10 @@ export type CharacterMaxAggregateInputType = {
   smartAccountStatus?: true
   isDeployedOnChain?: true
   deploymentTxHash?: true
+  computeUsageTokens?: true
+  computeLimitTokens?: true
+  lastComputeResetAt?: true
+  teeAttestationProof?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -126,6 +154,10 @@ export type CharacterCountAggregateInputType = {
   smartAccountStatus?: true
   isDeployedOnChain?: true
   deploymentTxHash?: true
+  computeUsageTokens?: true
+  computeLimitTokens?: true
+  lastComputeResetAt?: true
+  teeAttestationProof?: true
   config?: true
   adaptation?: true
   createdAt?: true
@@ -229,6 +261,10 @@ export type CharacterGroupByOutputType = {
   smartAccountStatus: string
   isDeployedOnChain: boolean
   deploymentTxHash: string | null
+  computeUsageTokens: bigint
+  computeLimitTokens: bigint
+  lastComputeResetAt: Date
+  teeAttestationProof: string | null
   config: runtime.JsonValue
   adaptation: runtime.JsonValue | null
   createdAt: Date
@@ -268,6 +304,10 @@ export type CharacterWhereInput = {
   smartAccountStatus?: Prisma.StringFilter<"Character"> | string
   isDeployedOnChain?: Prisma.BoolFilter<"Character"> | boolean
   deploymentTxHash?: Prisma.StringNullableFilter<"Character"> | string | null
+  computeUsageTokens?: Prisma.BigIntFilter<"Character"> | bigint | number
+  computeLimitTokens?: Prisma.BigIntFilter<"Character"> | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFilter<"Character"> | Date | string
+  teeAttestationProof?: Prisma.StringNullableFilter<"Character"> | string | null
   config?: Prisma.JsonFilter<"Character">
   adaptation?: Prisma.JsonNullableFilter<"Character">
   createdAt?: Prisma.DateTimeFilter<"Character"> | Date | string
@@ -287,6 +327,10 @@ export type CharacterOrderByWithRelationInput = {
   smartAccountStatus?: Prisma.SortOrder
   isDeployedOnChain?: Prisma.SortOrder
   deploymentTxHash?: Prisma.SortOrderInput | Prisma.SortOrder
+  computeUsageTokens?: Prisma.SortOrder
+  computeLimitTokens?: Prisma.SortOrder
+  lastComputeResetAt?: Prisma.SortOrder
+  teeAttestationProof?: Prisma.SortOrderInput | Prisma.SortOrder
   config?: Prisma.SortOrder
   adaptation?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -309,6 +353,10 @@ export type CharacterWhereUniqueInput = Prisma.AtLeast<{
   smartAccountStatus?: Prisma.StringFilter<"Character"> | string
   isDeployedOnChain?: Prisma.BoolFilter<"Character"> | boolean
   deploymentTxHash?: Prisma.StringNullableFilter<"Character"> | string | null
+  computeUsageTokens?: Prisma.BigIntFilter<"Character"> | bigint | number
+  computeLimitTokens?: Prisma.BigIntFilter<"Character"> | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFilter<"Character"> | Date | string
+  teeAttestationProof?: Prisma.StringNullableFilter<"Character"> | string | null
   config?: Prisma.JsonFilter<"Character">
   adaptation?: Prisma.JsonNullableFilter<"Character">
   createdAt?: Prisma.DateTimeFilter<"Character"> | Date | string
@@ -328,6 +376,10 @@ export type CharacterOrderByWithAggregationInput = {
   smartAccountStatus?: Prisma.SortOrder
   isDeployedOnChain?: Prisma.SortOrder
   deploymentTxHash?: Prisma.SortOrderInput | Prisma.SortOrder
+  computeUsageTokens?: Prisma.SortOrder
+  computeLimitTokens?: Prisma.SortOrder
+  lastComputeResetAt?: Prisma.SortOrder
+  teeAttestationProof?: Prisma.SortOrderInput | Prisma.SortOrder
   config?: Prisma.SortOrder
   adaptation?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -352,6 +404,10 @@ export type CharacterScalarWhereWithAggregatesInput = {
   smartAccountStatus?: Prisma.StringWithAggregatesFilter<"Character"> | string
   isDeployedOnChain?: Prisma.BoolWithAggregatesFilter<"Character"> | boolean
   deploymentTxHash?: Prisma.StringNullableWithAggregatesFilter<"Character"> | string | null
+  computeUsageTokens?: Prisma.BigIntWithAggregatesFilter<"Character"> | bigint | number
+  computeLimitTokens?: Prisma.BigIntWithAggregatesFilter<"Character"> | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeWithAggregatesFilter<"Character"> | Date | string
+  teeAttestationProof?: Prisma.StringNullableWithAggregatesFilter<"Character"> | string | null
   config?: Prisma.JsonWithAggregatesFilter<"Character">
   adaptation?: Prisma.JsonNullableWithAggregatesFilter<"Character">
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Character"> | Date | string
@@ -368,6 +424,10 @@ export type CharacterCreateInput = {
   smartAccountStatus?: string
   isDeployedOnChain?: boolean
   deploymentTxHash?: string | null
+  computeUsageTokens?: bigint | number
+  computeLimitTokens?: bigint | number
+  lastComputeResetAt?: Date | string
+  teeAttestationProof?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -387,6 +447,10 @@ export type CharacterUncheckedCreateInput = {
   smartAccountStatus?: string
   isDeployedOnChain?: boolean
   deploymentTxHash?: string | null
+  computeUsageTokens?: bigint | number
+  computeLimitTokens?: bigint | number
+  lastComputeResetAt?: Date | string
+  teeAttestationProof?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -406,6 +470,10 @@ export type CharacterUpdateInput = {
   smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
   isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  computeUsageTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -425,6 +493,10 @@ export type CharacterUncheckedUpdateInput = {
   smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
   isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  computeUsageTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -444,6 +516,10 @@ export type CharacterCreateManyInput = {
   smartAccountStatus?: string
   isDeployedOnChain?: boolean
   deploymentTxHash?: string | null
+  computeUsageTokens?: bigint | number
+  computeLimitTokens?: bigint | number
+  lastComputeResetAt?: Date | string
+  teeAttestationProof?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -460,6 +536,10 @@ export type CharacterUpdateManyMutationInput = {
   smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
   isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  computeUsageTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -476,6 +556,10 @@ export type CharacterUncheckedUpdateManyInput = {
   smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
   isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  computeUsageTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -502,6 +586,10 @@ export type CharacterCountOrderByAggregateInput = {
   smartAccountStatus?: Prisma.SortOrder
   isDeployedOnChain?: Prisma.SortOrder
   deploymentTxHash?: Prisma.SortOrder
+  computeUsageTokens?: Prisma.SortOrder
+  computeLimitTokens?: Prisma.SortOrder
+  lastComputeResetAt?: Prisma.SortOrder
+  teeAttestationProof?: Prisma.SortOrder
   config?: Prisma.SortOrder
   adaptation?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -510,6 +598,8 @@ export type CharacterCountOrderByAggregateInput = {
 
 export type CharacterAvgOrderByAggregateInput = {
   aaChainId?: Prisma.SortOrder
+  computeUsageTokens?: Prisma.SortOrder
+  computeLimitTokens?: Prisma.SortOrder
 }
 
 export type CharacterMaxOrderByAggregateInput = {
@@ -522,6 +612,10 @@ export type CharacterMaxOrderByAggregateInput = {
   smartAccountStatus?: Prisma.SortOrder
   isDeployedOnChain?: Prisma.SortOrder
   deploymentTxHash?: Prisma.SortOrder
+  computeUsageTokens?: Prisma.SortOrder
+  computeLimitTokens?: Prisma.SortOrder
+  lastComputeResetAt?: Prisma.SortOrder
+  teeAttestationProof?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -536,12 +630,18 @@ export type CharacterMinOrderByAggregateInput = {
   smartAccountStatus?: Prisma.SortOrder
   isDeployedOnChain?: Prisma.SortOrder
   deploymentTxHash?: Prisma.SortOrder
+  computeUsageTokens?: Prisma.SortOrder
+  computeLimitTokens?: Prisma.SortOrder
+  lastComputeResetAt?: Prisma.SortOrder
+  teeAttestationProof?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
 
 export type CharacterSumOrderByAggregateInput = {
   aaChainId?: Prisma.SortOrder
+  computeUsageTokens?: Prisma.SortOrder
+  computeLimitTokens?: Prisma.SortOrder
 }
 
 export type CharacterScalarRelationFilter = {
@@ -603,6 +703,14 @@ export type BoolFieldUpdateOperationsInput = {
   set?: boolean
 }
 
+export type BigIntFieldUpdateOperationsInput = {
+  set?: bigint | number
+  increment?: bigint | number
+  decrement?: bigint | number
+  multiply?: bigint | number
+  divide?: bigint | number
+}
+
 export type CharacterCreateNestedOneWithoutLogsInput = {
   create?: Prisma.XOR<Prisma.CharacterCreateWithoutLogsInput, Prisma.CharacterUncheckedCreateWithoutLogsInput>
   connectOrCreate?: Prisma.CharacterCreateOrConnectWithoutLogsInput
@@ -641,6 +749,10 @@ export type CharacterCreateWithoutProjectsInput = {
   smartAccountStatus?: string
   isDeployedOnChain?: boolean
   deploymentTxHash?: string | null
+  computeUsageTokens?: bigint | number
+  computeLimitTokens?: bigint | number
+  lastComputeResetAt?: Date | string
+  teeAttestationProof?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -659,6 +771,10 @@ export type CharacterUncheckedCreateWithoutProjectsInput = {
   smartAccountStatus?: string
   isDeployedOnChain?: boolean
   deploymentTxHash?: string | null
+  computeUsageTokens?: bigint | number
+  computeLimitTokens?: bigint | number
+  lastComputeResetAt?: Date | string
+  teeAttestationProof?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -701,6 +817,10 @@ export type CharacterScalarWhereInput = {
   smartAccountStatus?: Prisma.StringFilter<"Character"> | string
   isDeployedOnChain?: Prisma.BoolFilter<"Character"> | boolean
   deploymentTxHash?: Prisma.StringNullableFilter<"Character"> | string | null
+  computeUsageTokens?: Prisma.BigIntFilter<"Character"> | bigint | number
+  computeLimitTokens?: Prisma.BigIntFilter<"Character"> | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFilter<"Character"> | Date | string
+  teeAttestationProof?: Prisma.StringNullableFilter<"Character"> | string | null
   config?: Prisma.JsonFilter<"Character">
   adaptation?: Prisma.JsonNullableFilter<"Character">
   createdAt?: Prisma.DateTimeFilter<"Character"> | Date | string
@@ -717,6 +837,10 @@ export type CharacterCreateWithoutLogsInput = {
   smartAccountStatus?: string
   isDeployedOnChain?: boolean
   deploymentTxHash?: string | null
+  computeUsageTokens?: bigint | number
+  computeLimitTokens?: bigint | number
+  lastComputeResetAt?: Date | string
+  teeAttestationProof?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -735,6 +859,10 @@ export type CharacterUncheckedCreateWithoutLogsInput = {
   smartAccountStatus?: string
   isDeployedOnChain?: boolean
   deploymentTxHash?: string | null
+  computeUsageTokens?: bigint | number
+  computeLimitTokens?: bigint | number
+  lastComputeResetAt?: Date | string
+  teeAttestationProof?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -769,6 +897,10 @@ export type CharacterUpdateWithoutLogsInput = {
   smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
   isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  computeUsageTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -787,6 +919,10 @@ export type CharacterUncheckedUpdateWithoutLogsInput = {
   smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
   isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  computeUsageTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -805,6 +941,10 @@ export type CharacterCreateWithoutActionsInput = {
   smartAccountStatus?: string
   isDeployedOnChain?: boolean
   deploymentTxHash?: string | null
+  computeUsageTokens?: bigint | number
+  computeLimitTokens?: bigint | number
+  lastComputeResetAt?: Date | string
+  teeAttestationProof?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -823,6 +963,10 @@ export type CharacterUncheckedCreateWithoutActionsInput = {
   smartAccountStatus?: string
   isDeployedOnChain?: boolean
   deploymentTxHash?: string | null
+  computeUsageTokens?: bigint | number
+  computeLimitTokens?: bigint | number
+  lastComputeResetAt?: Date | string
+  teeAttestationProof?: string | null
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -857,6 +1001,10 @@ export type CharacterUpdateWithoutActionsInput = {
   smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
   isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  computeUsageTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -875,6 +1023,10 @@ export type CharacterUncheckedUpdateWithoutActionsInput = {
   smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
   isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  computeUsageTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -893,6 +1045,10 @@ export type CharacterUpdateWithoutProjectsInput = {
   smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
   isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  computeUsageTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -911,6 +1067,10 @@ export type CharacterUncheckedUpdateWithoutProjectsInput = {
   smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
   isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  computeUsageTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -929,6 +1089,10 @@ export type CharacterUncheckedUpdateManyWithoutProjectsInput = {
   smartAccountStatus?: Prisma.StringFieldUpdateOperationsInput | string
   isDeployedOnChain?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deploymentTxHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  computeUsageTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -994,6 +1158,10 @@ export type CharacterSelect<ExtArgs extends runtime.Types.Extensions.InternalArg
   smartAccountStatus?: boolean
   isDeployedOnChain?: boolean
   deploymentTxHash?: boolean
+  computeUsageTokens?: boolean
+  computeLimitTokens?: boolean
+  lastComputeResetAt?: boolean
+  teeAttestationProof?: boolean
   config?: boolean
   adaptation?: boolean
   createdAt?: boolean
@@ -1014,6 +1182,10 @@ export type CharacterSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Ext
   smartAccountStatus?: boolean
   isDeployedOnChain?: boolean
   deploymentTxHash?: boolean
+  computeUsageTokens?: boolean
+  computeLimitTokens?: boolean
+  lastComputeResetAt?: boolean
+  teeAttestationProof?: boolean
   config?: boolean
   adaptation?: boolean
   createdAt?: boolean
@@ -1030,6 +1202,10 @@ export type CharacterSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Ext
   smartAccountStatus?: boolean
   isDeployedOnChain?: boolean
   deploymentTxHash?: boolean
+  computeUsageTokens?: boolean
+  computeLimitTokens?: boolean
+  lastComputeResetAt?: boolean
+  teeAttestationProof?: boolean
   config?: boolean
   adaptation?: boolean
   createdAt?: boolean
@@ -1046,13 +1222,17 @@ export type CharacterSelectScalar = {
   smartAccountStatus?: boolean
   isDeployedOnChain?: boolean
   deploymentTxHash?: boolean
+  computeUsageTokens?: boolean
+  computeLimitTokens?: boolean
+  lastComputeResetAt?: boolean
+  teeAttestationProof?: boolean
   config?: boolean
   adaptation?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type CharacterOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "walletAddress" | "aaChainId" | "aaProvider" | "smartAccountId" | "smartAccountStatus" | "isDeployedOnChain" | "deploymentTxHash" | "config" | "adaptation" | "createdAt" | "updatedAt", ExtArgs["result"]["character"]>
+export type CharacterOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "walletAddress" | "aaChainId" | "aaProvider" | "smartAccountId" | "smartAccountStatus" | "isDeployedOnChain" | "deploymentTxHash" | "computeUsageTokens" | "computeLimitTokens" | "lastComputeResetAt" | "teeAttestationProof" | "config" | "adaptation" | "createdAt" | "updatedAt", ExtArgs["result"]["character"]>
 export type CharacterInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   projects?: boolean | Prisma.Character$projectsArgs<ExtArgs>
   logs?: boolean | Prisma.Character$logsArgs<ExtArgs>
@@ -1079,6 +1259,10 @@ export type $CharacterPayload<ExtArgs extends runtime.Types.Extensions.InternalA
     smartAccountStatus: string
     isDeployedOnChain: boolean
     deploymentTxHash: string | null
+    computeUsageTokens: bigint
+    computeLimitTokens: bigint
+    lastComputeResetAt: Date
+    teeAttestationProof: string | null
     config: runtime.JsonValue
     adaptation: runtime.JsonValue | null
     createdAt: Date
@@ -1518,6 +1702,10 @@ export interface CharacterFieldRefs {
   readonly smartAccountStatus: Prisma.FieldRef<"Character", 'String'>
   readonly isDeployedOnChain: Prisma.FieldRef<"Character", 'Boolean'>
   readonly deploymentTxHash: Prisma.FieldRef<"Character", 'String'>
+  readonly computeUsageTokens: Prisma.FieldRef<"Character", 'BigInt'>
+  readonly computeLimitTokens: Prisma.FieldRef<"Character", 'BigInt'>
+  readonly lastComputeResetAt: Prisma.FieldRef<"Character", 'DateTime'>
+  readonly teeAttestationProof: Prisma.FieldRef<"Character", 'String'>
   readonly config: Prisma.FieldRef<"Character", 'Json'>
   readonly adaptation: Prisma.FieldRef<"Character", 'Json'>
   readonly createdAt: Prisma.FieldRef<"Character", 'DateTime'>

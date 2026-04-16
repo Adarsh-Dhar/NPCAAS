@@ -10,6 +10,25 @@ interface NpcData {
   label: string;
 }
 
+interface NpcActionDetail {
+  npcId?: string;
+  npcName?: string;
+  text?: string;
+  action?: string;
+}
+
+interface SceneNpc {
+  id: string;
+  name: string;
+  container: Phaser.GameObjects.Container;
+  body: Phaser.GameObjects.Graphics;
+  label: Phaser.GameObjects.Text;
+  promptText: Phaser.GameObjects.Text;
+  pulse: Phaser.GameObjects.Ellipse;
+  x: number;
+  y: number;
+}
+
 export class MainScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Container;
   private playerBody!: Phaser.GameObjects.Rectangle;
@@ -22,20 +41,12 @@ export class MainScene extends Phaser.Scene {
     right: Phaser.Input.Keyboard.Key;
   };
   private interactKey!: Phaser.Input.Keyboard.Key;
-  private npcs: Array<{
-    id: string;
-    name: string;
-    container: Phaser.GameObjects.Container;
-    label: Phaser.GameObjects.Text;
-    promptText: Phaser.GameObjects.Text;
-    pulse: Phaser.GameObjects.Ellipse;
-    x: number;
-    y: number;
-  }> = [];
+  private npcs: SceneNpc[] = [];
   private promptGroup!: Phaser.GameObjects.Group;
   private paused = false;
   private boundCloseChat?: (e: Event) => void;
   private boundGameResume?: (e: Event) => void;
+  private boundNpcAction?: (e: Event) => void;
   private playerSpeed = 200;
   private physicsPlayer!: Phaser.Types.Physics.Arcade.GameObjectWithBody;
   private tilemap!: Phaser.GameObjects.Group;
@@ -101,8 +112,10 @@ export class MainScene extends Phaser.Scene {
     this.promptGroup = this.add.group();
     this.boundCloseChat = this.handleCloseChat.bind(this);
     this.boundGameResume = this.handleGameResume.bind(this);
+    this.boundNpcAction = this.handleNpcAction.bind(this);
     window.addEventListener("CLOSE_CHAT", this.boundCloseChat);
     window.addEventListener("GAME_RESUME", this.boundGameResume);
+    window.addEventListener("npc-action", this.boundNpcAction);
   }
 
   private createCyberpunkMap(W: number, H: number) {
@@ -295,6 +308,7 @@ export class MainScene extends Phaser.Scene {
         id: npc.id,
         name: npc.name,
         container,
+        body,
         label: labelText,
         promptText,
         pulse,
@@ -339,6 +353,289 @@ export class MainScene extends Phaser.Scene {
     } catch (err) {
       // ignore
     }
+  }
+
+  private handleNpcAction(event: Event) {
+    const detail = (event as CustomEvent<NpcActionDetail>).detail;
+    if (!detail) return;
+
+    const npcKey = detail.npcId ?? detail.npcName;
+    if (!npcKey) return;
+
+    this.triggerNpcAction(
+      npcKey,
+      detail.text ?? "...",
+      detail.action ?? "speaks"
+    );
+  }
+
+  private findNpcByKey(npcKey: string) {
+    return this.npcs.find((npc) => npc.id === npcKey || npc.name === npcKey);
+  }
+
+  private syncNpcWorldPosition(npc: SceneNpc) {
+    npc.x = npc.container.x;
+    npc.y = npc.container.y;
+    npc.label.setPosition(npc.x, npc.y + 30);
+    npc.promptText.setPosition(npc.x, npc.y - 55);
+  }
+
+  private animateNpcMove(npc: SceneNpc, toX: number, toY: number, duration = 850) {
+    const clampedX = Phaser.Math.Clamp(toX, 32, this.scale.width - 32);
+    const clampedY = Phaser.Math.Clamp(toY, 32, this.scale.height - 32);
+
+    this.tweens.killTweensOf(npc.container);
+    this.tweens.add({
+      targets: npc.container,
+      x: clampedX,
+      y: clampedY,
+      ease: "Sine.easeInOut",
+      duration,
+      onUpdate: () => this.syncNpcWorldPosition(npc),
+      onComplete: () => this.syncNpcWorldPosition(npc),
+    });
+  }
+
+  triggerNpcAction(npcKey: string, text: string, action: string) {
+    const npc = this.findNpcByKey(npcKey);
+    if (!npc) return;
+
+    this.createSpeechBubble(npc.container.x, npc.container.y - 10, 220, 92, text);
+    this.executePhysicalGesture(npc, action);
+
+    const actionText = this.add
+      .text(npc.container.x, npc.container.y + 24, `*${action}*`, {
+        fontFamily: "monospace",
+        fontSize: "10px",
+        color: "#aaaaaa",
+        fontStyle: "italic",
+      })
+      .setOrigin(0.5)
+      .setDepth(32);
+
+    this.tweens.add({
+      targets: actionText,
+      alpha: 0,
+      y: npc.container.y + 34,
+      duration: 1500,
+      delay: 500,
+      onComplete: () => actionText.destroy(),
+    });
+  }
+
+  private setNpcTint(
+    npc: {
+      container: Phaser.GameObjects.Container;
+    },
+    tint: number
+  ) {
+    for (const child of npc.container.list) {
+      const tintable = child as Phaser.GameObjects.GameObject & {
+        setTint?: (color: number) => void;
+      };
+      tintable.setTint?.(tint);
+    }
+  }
+
+  private clearNpcTint(npc: { container: Phaser.GameObjects.Container }) {
+    for (const child of npc.container.list) {
+      const tintable = child as Phaser.GameObjects.GameObject & {
+        clearTint?: () => void;
+      };
+      tintable.clearTint?.();
+    }
+  }
+
+  executePhysicalGesture(npc: SceneNpc, actionText: string) {
+    const act = actionText.toLowerCase();
+    const originalX = npc.container.x;
+    const originalY = npc.container.y;
+
+    if (act.includes("nod") || act.includes("agree") || act.includes("bow")) {
+      this.tweens.add({
+        targets: npc.container,
+        scaleY: 0.8,
+        scaleX: 1.1,
+        y: originalY + 5,
+        yoyo: true,
+        duration: 150,
+        repeat: 1,
+        onComplete: () => {
+          npc.container.y = originalY;
+          npc.container.setScale(1, 1);
+        },
+      });
+      return;
+    }
+
+    if (
+      act.includes("attention") ||
+      act.includes("straightens") ||
+      act.includes("alert")
+    ) {
+      this.tweens.add({
+        targets: npc.container,
+        scaleY: 1.2,
+        scaleX: 0.9,
+        y: originalY - 10,
+        yoyo: true,
+        duration: 200,
+        ease: "Sine.easeOut",
+        onComplete: () => {
+          npc.container.y = originalY;
+          npc.container.setScale(1, 1);
+        },
+      });
+      return;
+    }
+
+    if (
+      act.includes("shake") ||
+      act.includes("disagree") ||
+      act.includes("refuse")
+    ) {
+      this.tweens.add({
+        targets: npc.container,
+        x: originalX + 4,
+        yoyo: true,
+        duration: 50,
+        repeat: 3,
+        onComplete: () => {
+          npc.container.x = originalX;
+        },
+      });
+      return;
+    }
+
+    if (
+      act.includes("angry") ||
+      act.includes("glare") ||
+      act.includes("threaten")
+    ) {
+      this.setNpcTint(npc, 0xffaaaa);
+      this.tweens.add({
+        targets: npc.container,
+        x: originalX + 2,
+        yoyo: true,
+        duration: 30,
+        repeat: 5,
+        onComplete: () => {
+          npc.container.x = originalX;
+          window.setTimeout(() => this.clearNpcTint(npc), 2000);
+        },
+      });
+      return;
+    }
+
+    if (act.includes("think") || act.includes("ponder")) {
+      const questionMark = this.add
+        .text(npc.container.x, npc.container.y - 34, "?", {
+          fontSize: "20px",
+          color: "#ffff00",
+          fontFamily: "monospace",
+        })
+        .setOrigin(0.5)
+        .setDepth(32);
+
+      this.tweens.add({
+        targets: questionMark,
+        y: questionMark.y - 20,
+        alpha: 0,
+        duration: 1500,
+        onComplete: () => questionMark.destroy(),
+      });
+      return;
+    }
+
+    if (
+      act.includes("walk away") ||
+      act.includes("walks away") ||
+      act.includes("retreat") ||
+      act.includes("backs away") ||
+      act.includes("leave")
+    ) {
+      const awayAngle = Phaser.Math.Angle.Between(
+        this.player.x,
+        this.player.y,
+        npc.container.x,
+        npc.container.y
+      );
+      const distance = 78;
+      const targetX = npc.container.x + Math.cos(awayAngle) * distance;
+      const targetY = npc.container.y + Math.sin(awayAngle) * distance;
+      this.animateNpcMove(npc, targetX, targetY, 920);
+      return;
+    }
+
+    if (
+      act.includes("approach") ||
+      act.includes("steps closer") ||
+      act.includes("walks to") ||
+      act.includes("move to player")
+    ) {
+      const towardAngle = Phaser.Math.Angle.Between(
+        npc.container.x,
+        npc.container.y,
+        this.player.x,
+        this.player.y
+      );
+      const distance = 60;
+      const targetX = npc.container.x + Math.cos(towardAngle) * distance;
+      const targetY = npc.container.y + Math.sin(towardAngle) * distance;
+      this.animateNpcMove(npc, targetX, targetY, 860);
+      return;
+    }
+
+    if (act.includes("door") || act.includes("exit") || act.includes("walks off")) {
+      this.animateNpcMove(npc, this.scale.width - 40, npc.container.y, 980);
+      return;
+    }
+
+    this.tweens.add({
+      targets: npc.container,
+      y: originalY - 2,
+      yoyo: true,
+      duration: 100,
+      repeat: 2,
+      onComplete: () => {
+        npc.container.y = originalY;
+      },
+    });
+  }
+
+  createSpeechBubble(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    quote: string
+  ) {
+    const bubblePadding = 10;
+    const bubbleContainer = this.add.container(x, y).setDepth(31);
+
+    const bubble = this.add.graphics();
+    bubble.fillStyle(0xffffff, 1);
+    bubble.fillRoundedRect(-width / 2, -height, width, height, 10);
+    bubble.fillTriangle(0, 0, -10, -10, 10, -10);
+
+    const content = this.add
+      .text(-width / 2 + bubblePadding, -height + bubblePadding, quote, {
+        fontFamily: "monospace",
+        fontSize: "14px",
+        color: "#000000",
+        wordWrap: { width: width - bubblePadding * 2 },
+      })
+      .setDepth(1);
+
+    bubbleContainer.add([bubble, content]);
+
+    this.tweens.add({
+      targets: bubbleContainer,
+      alpha: 0,
+      duration: 500,
+      delay: 4000,
+      onComplete: () => bubbleContainer.destroy(true),
+    });
   }
 
   update() {
@@ -409,6 +706,9 @@ export class MainScene extends Phaser.Scene {
     }
     if (this.boundGameResume) {
       window.removeEventListener("GAME_RESUME", this.boundGameResume);
+    }
+    if (this.boundNpcAction) {
+      window.removeEventListener("npc-action", this.boundNpcAction);
     }
   }
 }

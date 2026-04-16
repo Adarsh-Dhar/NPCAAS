@@ -11,6 +11,7 @@ import { ensureNpcSocialSubscription } from '@/lib/npcSocialReactivity'
 import { SocialEngine, normalizeBaseHostility, normalizeDisposition } from '@/lib/social-engine'
 import {
   evaluateComputeBudget,
+  persistComputeBudgetIfSupported,
   parseComputeLimit,
   parseComputeUsage,
   parseResetAt,
@@ -439,13 +440,12 @@ export async function POST(request: NextRequest) {
     if (shouldResetBudget(lastComputeResetAt)) {
       usageTokens = BigInt(0)
       lastComputeResetAt = new Date()
-      await (prisma.character as any).update({
-        where: { id: character.id },
-        data: {
-          computeUsageTokens: usageTokens,
-          computeLimitTokens: limitTokens,
-          lastComputeResetAt,
-        },
+      await persistComputeBudgetIfSupported(prisma as unknown as any, {
+        characterId: character.id,
+        usageTokens,
+        limitTokens,
+        lastComputeResetAt,
+        logPrefix: '[chat]',
       })
     }
 
@@ -791,13 +791,12 @@ export async function POST(request: NextRequest) {
     if (usedTokens > BigInt(0)) {
       updatedUsageTokens = usageTokens + usedTokens
       try {
-        await (prisma.character as any).update({
-          where: { id: character.id },
-          data: {
-            computeUsageTokens: updatedUsageTokens,
-            computeLimitTokens: limitTokens,
-            lastComputeResetAt,
-          },
+        await persistComputeBudgetIfSupported(prisma as unknown as any, {
+          characterId: character.id,
+          usageTokens: updatedUsageTokens,
+          limitTokens,
+          lastComputeResetAt,
+          logPrefix: '[chat]',
         })
 
         await (prisma as any).npcLog.create({

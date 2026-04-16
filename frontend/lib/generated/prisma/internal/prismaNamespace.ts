@@ -762,6 +762,10 @@ export const CharacterScalarFieldEnum = {
   smartAccountStatus: 'smartAccountStatus',
   isDeployedOnChain: 'isDeployedOnChain',
   deploymentTxHash: 'deploymentTxHash',
+  computeUsageTokens: 'computeUsageTokens',
+  computeLimitTokens: 'computeLimitTokens',
+  lastComputeResetAt: 'lastComputeResetAt',
+  teeAttestationProof: 'teeAttestationProof',
   config: 'config',
   adaptation: 'adaptation',
   createdAt: 'createdAt',
@@ -895,6 +899,20 @@ export type ListIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel,
  * Reference to a field of type 'Boolean'
  */
 export type BooleanFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Boolean'>
+    
+
+
+/**
+ * Reference to a field of type 'BigInt'
+ */
+export type BigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BigInt'>
+    
+
+
+/**
+ * Reference to a field of type 'BigInt[]'
+ */
+export type ListBigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BigInt[]'>
     
 
 
