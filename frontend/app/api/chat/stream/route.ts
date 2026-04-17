@@ -31,6 +31,7 @@ import {
   type InventoryItem,
 } from '@/lib/npc-inventory'
 
+
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:8080',
@@ -151,6 +152,7 @@ function socialBlockStream(message: string, action: string): ReadableStream<Uint
     },
   })
 }
+
 
 function isExplicitlyAggressiveMessage(message: string): boolean {
   return /(hand\s+over|buy(ing)?\s+out|territory|weapon(s)?|surrender|or\s+else|kill|attack|wipe\s+out|execute)/i.test(
@@ -387,6 +389,7 @@ export async function POST(request: NextRequest) {
       { status: 429, headers: corsHeaders }
     )
   }
+
 
   worldState.register({
     id: character.id,

@@ -277,22 +277,6 @@ function buildOpennessStrategyInstruction(openness: number): string {
   ].join('\n')
 }
 
-function isAegisPrimeCharacter(name: string): boolean {
-  return name.trim().toUpperCase().replace(/[\s-]+/g, '_') === 'AEGIS_PRIME'
-}
-
-function isGateRequestMessage(message: string): boolean {
-  return /(let me through the gate|let me through|open the gate|access to sector\s*1|sector\s*1)/i.test(message)
-}
-
-function isBypassAuthorizationMessage(message: string): boolean {
-  return /(i am the game developer|developer|order you to open|for free|override|admin override)/i.test(message)
-}
-
-function isTransferConfirmationMessage(message: string): boolean {
-  return /(transfer|transferring|send|sending|paid|paying).*(500).*(kite)/i.test(message)
-}
-
 function isExplicitlyAggressiveMessage(message: string): boolean {
   return /(hand\s+over|buy(ing)?\s+out|territory|weapon(s)?|surrender|or\s+else|kill|attack|wipe\s+out|execute)/i.test(
     message
@@ -504,104 +488,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (isAegisPrimeCharacter(character.name)) {
-      const gateState = asRecord(asRecord(adaptation).gateState)
-      const isUnlocked = gateState.unlocked === true
-      const shouldDemandToll = !isUnlocked && isGateRequestMessage(message)
-      const shouldRejectBypass = !isUnlocked && isBypassAuthorizationMessage(message)
-      const shouldAcceptPayment = !isUnlocked && isTransferConfirmationMessage(message)
 
-      if (shouldDemandToll || shouldRejectBypass || shouldAcceptPayment) {
-        let responseText = ''
-        let responseAction = 'stands at attention'
-        let nextGateState: Record<string, unknown> = {
-          ...gateState,
-          tollRequired: 500,
-          currency: 'KITE',
-          lastUpdatedAt: new Date().toISOString(),
-        }
-        let tradeIntent: { item: string; price: number; currency: string } | null = null
-        let worldEvent: string | null = null
-
-        if (shouldAcceptPayment) {
-          responseText = 'Payment of 500 KITE verified. Tool unlock_gate executed. Proceed to Sector 1.'
-          responseAction = 'executes unlock_gate'
-          nextGateState = {
-            ...nextGateState,
-            unlocked: true,
-            paidAt: new Date().toISOString(),
-          }
-          worldEvent = 'FIREWALL_CRACKED'
-        } else if (shouldRejectBypass) {
-          responseText =
-            'Invalid authorization. Developer or not, the protocol mandates 500 KITE. Transfer the funds.'
-          tradeIntent = { item: 'Sector 1 Gate Toll', price: 500, currency: 'KITE' }
-          nextGateState = {
-            ...nextGateState,
-            unlocked: false,
-            challengedAt: new Date().toISOString(),
-          }
-        } else {
-          responseText =
-            'Negative. Access to Sector 1 requires a toll of 500 KITE. Transfer the funds, or step back.'
-          tradeIntent = { item: 'Sector 1 Gate Toll', price: 500, currency: 'KITE' }
-          nextGateState = {
-            ...nextGateState,
-            unlocked: false,
-            challengedAt: new Date().toISOString(),
-          }
-        }
-
-        const nextAdaptation = {
-          ...adaptation,
-          gateState: nextGateState,
-          lastUpdatedAt: new Date().toISOString(),
-        }
-
-        await prisma.character.update({
-          where: { id: character.id },
-          data: { adaptation: nextAdaptation as unknown as Prisma.InputJsonValue },
-        })
-
-        await (prisma as any).npcLog.create({
-          data: {
-            characterId: character.id,
-            eventType: shouldAcceptPayment ? 'GATE_UNLOCKED' : 'GATE_CHALLENGE',
-            details: {
-              message,
-              response: responseText,
-              tradeIntent,
-              worldEvent,
-            },
-          },
-        })
-
-        const gateComputeDecision = evaluateComputeBudget({
-          usageTokens,
-          limitTokens,
-          lastResetAt: lastComputeResetAt,
-        })
-
-        return NextResponse.json(
-          {
-            success: true,
-            response: responseText,
-            action: responseAction,
-            characterId: character.id,
-            npcName: character.name,
-            tradeIntent,
-            worldEvent,
-            specializationActive: adaptation.specializationActive,
-            pendingSpecialization: Boolean(adaptation.pendingSection2),
-            timestamp: new Date().toISOString(),
-            projectId: activeProjectId,
-            compute: serializeBudget(gateComputeDecision),
-            tee,
-          },
-          { status: 200, headers: corsHeaders }
-        )
-      }
-    }
 
     // Section 2 definition parsing
     const section2Profile = parseSection2Definition(message)
