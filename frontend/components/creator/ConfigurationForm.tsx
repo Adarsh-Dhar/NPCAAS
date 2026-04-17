@@ -6,8 +6,25 @@ import RetroInput from '@/components/ui/RetroInput'
 import RetroTextarea from '@/components/ui/RetroTextarea'
 import RetroRangeSlider from '@/components/ui/RetroRangeSlider'
 import FormSection from '@/components/creator/FormSection'
-import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+
+interface InventoryFormItem {
+  id: string
+  name: string
+  description: string
+  price: string
+  quantity: string
+}
+
+function createEmptyInventoryItem(): InventoryFormItem {
+  return {
+    id: '',
+    name: '',
+    description: '',
+    price: '0',
+    quantity: '1',
+  }
+}
 
 interface ConfigurationFormProps {
   projectId?: string
@@ -29,6 +46,13 @@ interface ConfigurationFormProps {
     computeBudget: string
     allowDbFetch: boolean
     dbEndpoint: string
+    inventory?: Array<{
+      id: string
+      name: string
+      description: string
+      price: number | string
+      quantity: number | string
+    }>
   }>
   onDeploySuccess?: (characterId: string, characterName: string) => void
   onSaveSuccess?: () => void
@@ -78,7 +102,9 @@ export default function ConfigurationForm({
     computeBudget: '5000',
     allowDbFetch: false,
     dbEndpoint: '',
+    inventoryEnabled: false,
   })
+  const [inventoryItems, setInventoryItems] = useState<InventoryFormItem[]>([])
   const [deploying, setDeploying] = useState(false)
   const [deployError, setDeployError] = useState('')
 
@@ -105,8 +131,23 @@ export default function ConfigurationForm({
         computeBudget: initialConfig.computeBudget ?? prev.computeBudget,
         allowDbFetch: initialConfig.allowDbFetch ?? prev.allowDbFetch,
         dbEndpoint: initialConfig.dbEndpoint ?? prev.dbEndpoint,
+        inventoryEnabled: Array.isArray(initialConfig.inventory),
       } : {}),
     }))
+
+    if (initialConfig && Array.isArray(initialConfig.inventory)) {
+      setInventoryItems(
+        initialConfig.inventory.map((item) => ({
+          id: String(item.id ?? '').trim(),
+          name: String(item.name ?? '').trim(),
+          description: String(item.description ?? ''),
+          price: String(item.price ?? '0'),
+          quantity: String(item.quantity ?? '0'),
+        }))
+      )
+    } else {
+      setInventoryItems([])
+    }
   }, [initialConfig, characterId, characterName])
 
   const handleInputChange = (field: string, value: string | number | boolean) => {
@@ -114,6 +155,60 @@ export default function ConfigurationForm({
     if (field === 'name' && onNameChange) {
       onNameChange(value as string)
     }
+  }
+
+  const handleInventoryItemChange = (
+    index: number,
+    field: keyof InventoryFormItem,
+    value: string
+  ) => {
+    setInventoryItems((prev) => {
+      const next = [...prev]
+      const current = next[index]
+      if (!current) return prev
+      next[index] = {
+        ...current,
+        [field]: value,
+      }
+      return next
+    })
+  }
+
+  const addInventoryItem = () => {
+    setInventoryItems((prev) => [...prev, createEmptyInventoryItem()])
+  }
+
+  const removeInventoryItem = (index: number) => {
+    setInventoryItems((prev) => prev.filter((_, idx) => idx !== index))
+  }
+
+  const validateInventory = (): string | null => {
+    if (!formData.inventoryEnabled) return null
+
+    const seenIds = new Set<string>()
+    for (let index = 0; index < inventoryItems.length; index += 1) {
+      const item = inventoryItems[index]
+      const id = item.id.trim()
+      const name = item.name.trim()
+      const price = Number(item.price)
+      const quantity = Number(item.quantity)
+
+      if (!id) return `Inventory item ${index + 1}: Item ID is required.`
+      if (!name) return `Inventory item ${index + 1}: Name is required.`
+      if (seenIds.has(id.toLowerCase())) {
+        return `Inventory item ${index + 1}: Item ID '${id}' is duplicated.`
+      }
+      seenIds.add(id.toLowerCase())
+
+      if (!Number.isFinite(price) || price <= 0) {
+        return `Inventory item ${index + 1}: Price must be greater than 0.`
+      }
+      if (!Number.isFinite(quantity) || quantity < 0) {
+        return `Inventory item ${index + 1}: Quantity must be 0 or greater.`
+      }
+    }
+
+    return null
   }
 
   const buildConfigPayload = () => {
@@ -132,12 +227,30 @@ export default function ConfigurationForm({
       payload.dbEndpoint = undefined
     }
 
+    if (formData.inventoryEnabled) {
+      payload.inventory = inventoryItems.map((item) => ({
+        id: item.id.trim(),
+        name: item.name.trim(),
+        description: item.description.trim(),
+        price: Number(item.price),
+        quantity: Math.floor(Number(item.quantity)),
+      }))
+    } else {
+      payload.inventory = undefined
+    }
+
     return payload
   }
 
   const handleDeploy = async () => {
     if (!formData.name.trim()) {
       setDeployError('Character name is required')
+      return
+    }
+
+    const inventoryValidationError = validateInventory()
+    if (inventoryValidationError) {
+      setDeployError(inventoryValidationError)
       return
     }
 
@@ -176,6 +289,12 @@ export default function ConfigurationForm({
   const handleSave = async () => {
     if (!characterId) {
       await handleDeploy()
+      return
+    }
+
+    const inventoryValidationError = validateInventory()
+    if (inventoryValidationError) {
+      setDeployError(inventoryValidationError)
       return
     }
 
@@ -409,9 +528,109 @@ export default function ConfigurationForm({
         />
       </FormSection>
 
-      {/* Section 6: KNOWLEDGE & DATA */}
+      {/* Section 6: INVENTORY MANAGER */}
       <FormSection
-        title="SECTION 6: KNOWLEDGE & DATA"
+        title="SECTION 6: INVENTORY MANAGER"
+        description="Optional native inventory owned by this NPC"
+        borderColor="yellow"
+      >
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs font-bold uppercase text-white">
+            Enable Native Inventory
+          </label>
+          <Switch
+            checked={formData.inventoryEnabled}
+            onCheckedChange={(checked: boolean) => handleInputChange('inventoryEnabled', checked)}
+          />
+        </div>
+        <p className="text-xs text-gray-400 font-mono mb-4">
+          When enabled, this NPC controls stock directly from NPCAAS. Items are optional and can be empty.
+        </p>
+
+        {formData.inventoryEnabled && (
+          <div className="space-y-4">
+            {inventoryItems.length === 0 && (
+              <p className="text-xs text-yellow-300 font-mono">
+                Inventory enabled but currently empty (NPC will report out-of-stock).
+              </p>
+            )}
+
+            {inventoryItems.map((item, index) => (
+              <div key={`${index}-${item.id}`} className="border-2 border-yellow-500/60 p-3 space-y-3 bg-black/40">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase text-yellow-300">Item {index + 1}</p>
+                  <RetroButton
+                    variant="red"
+                    size="sm"
+                    type="button"
+                    onClick={() => removeInventoryItem(index)}
+                    className="text-xs"
+                  >
+                    Remove
+                  </RetroButton>
+                </div>
+
+                <RetroInput
+                  borderColor="yellow"
+                  label="Item ID"
+                  placeholder="logic_virus"
+                  value={item.id}
+                  onChange={(e) => handleInventoryItemChange(index, 'id', e.target.value)}
+                />
+                <RetroInput
+                  borderColor="yellow"
+                  label="Item Name"
+                  placeholder="Logic Virus"
+                  value={item.name}
+                  onChange={(e) => handleInventoryItemChange(index, 'name', e.target.value)}
+                />
+                <RetroTextarea
+                  borderColor="yellow"
+                  label="Description"
+                  rows={2}
+                  placeholder="High-risk cyber payload"
+                  value={item.description}
+                  onChange={(e) => handleInventoryItemChange(index, 'description', e.target.value)}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <RetroInput
+                    borderColor="yellow"
+                    label="Price (CU)"
+                    type="number"
+                    min={0.01}
+                    step={0.01}
+                    value={item.price}
+                    onChange={(e) => handleInventoryItemChange(index, 'price', e.target.value)}
+                  />
+                  <RetroInput
+                    borderColor="yellow"
+                    label="Quantity"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={item.quantity}
+                    onChange={(e) => handleInventoryItemChange(index, 'quantity', e.target.value)}
+                  />
+                </div>
+              </div>
+            ))}
+
+            <RetroButton
+              variant="yellow"
+              size="sm"
+              type="button"
+              onClick={addInventoryItem}
+              className="text-xs"
+            >
+              + ADD INVENTORY ITEM
+            </RetroButton>
+          </div>
+        )}
+      </FormSection>
+
+      {/* Section 7: KNOWLEDGE & DATA */}
+      <FormSection
+        title="SECTION 7: KNOWLEDGE & DATA"
         description="Connect an external database for real-time lore and stat lookups"
         borderColor="green"
       >

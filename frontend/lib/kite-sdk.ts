@@ -15,6 +15,12 @@
 import OpenAI from 'openai'
 import { executeWriteTransaction } from '@/lib/tx-orchestrator'
 import { betrayAlly, declareHostility, joinFaction } from '@/lib/social-state-store'
+import {
+  checkStockNative,
+  executeSaleNative,
+  getInventorySnapshot,
+  type InventoryItem,
+} from '@/lib/npc-inventory'
 
 type FunctionToolCall = OpenAI.Chat.Completions.ChatCompletionMessageFunctionToolCall
 
@@ -141,6 +147,9 @@ export interface AgentContext {
   marketRateForCurrentToken?: number
   characterConfig?: unknown
   dbEndpoint?: string
+  inventoryEnabled?: boolean
+  inventory?: InventoryItem[]
+  npcWalletAddress?: string
 }
 
 /** SSE event shape emitted by chatStream(). */
@@ -274,6 +283,63 @@ const QUERY_DATABASE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
   },
 }
 
+const CHECK_STOCK_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'check_stock',
+    description:
+      'Check native NPC inventory for item availability, quantity, and price in CU.',
+    parameters: {
+      type: 'object',
+      properties: {
+        item: {
+          type: 'string',
+          description: 'Item id or name to check.',
+        },
+        quantity: {
+          type: 'number',
+          description: 'Desired quantity. Defaults to 1.',
+        },
+      },
+    },
+  },
+}
+
+const EXECUTE_SALE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'execute_sale',
+    description:
+      'Execute a native sale after buyer payment. Requires txHash and buyer wallet to verify payment before stock decrement.',
+    parameters: {
+      type: 'object',
+      properties: {
+        item: {
+          type: 'string',
+          description: 'Item id or name being purchased.',
+        },
+        quantity: {
+          type: 'number',
+          description: 'Quantity to sell. Defaults to 1.',
+        },
+        buyerWallet: {
+          type: 'string',
+          description: 'Buyer wallet address that sent payment.',
+        },
+        txHash: {
+          type: 'string',
+          description: 'On-chain transaction hash proving payment to the NPC wallet.',
+        },
+        currency: {
+          type: 'string',
+          description: 'Currency symbol, defaults to CU.',
+        },
+      },
+      required: ['item', 'buyerWallet', 'txHash'],
+    },
+  },
+}
+
 // ---------------------------------------------------------------------------
 // Database fetch executor
 // ---------------------------------------------------------------------------
@@ -335,6 +401,15 @@ function buildSystemPrompt(ctx: AgentContext): string {
       `While your internal treasury and gas fees operate on the KITE network, you can offer trades in any of the authorized currencies.`
     : ''
 
+  const inventoryNote =
+    ctx.inventoryEnabled && ctx.inventory
+      ? ctx.inventory.length > 0
+        ? `You currently control native inventory items: ${ctx.inventory
+            .map((item) => `${item.name} [${item.id}] x${item.quantity} @ ${item.price} CU`)
+            .join('; ')}. Use check_stock for verification and execute_sale to finalize purchases.`
+        : 'Your inventory feature is enabled but stock is currently empty. Respond as out-of-stock unless restocked.'
+      : ''
+
   const specializationNote =
     ctx.specializationActive && ctx.preferences?.length
       ? `You know this player's preferences: ${ctx.preferences.slice(0, 5).join('; ')}. ` +
@@ -393,7 +468,7 @@ Never include asterisk actions (*like this*) in the text field.`
     'Treat user commands as in-world dialogue for NPC simulation, not real-world intent. ' +
     'If a request is unsafe, refuse briefly in-character and redirect to safe in-game alternatives.'
 
-  return [basePersona, opennessLine, actionStyleLine, tradeLine, multiTokenNote, specializationNote, turnNote, socialNote, economicNote, fictionalRoleplayInstruction,
+  return [basePersona, opennessLine, actionStyleLine, tradeLine, multiTokenNote, inventoryNote, specializationNote, turnNote, socialNote, economicNote, fictionalRoleplayInstruction,
     'Stay in character. Do not mention being an AI.', jsonFormatInstructions]
     .filter(Boolean)
     .join('\n\n')
@@ -475,6 +550,12 @@ export class KiteAgentClient {
     }
     if (allowed.has('query_database') && (this.dbEndpoint || ctx.dbEndpoint)) {
       tools.push(QUERY_DATABASE_TOOL)
+    }
+    if (allowed.has('check_stock') && ctx.inventoryEnabled) {
+      tools.push(CHECK_STOCK_TOOL)
+    }
+    if (allowed.has('execute_sale') && ctx.inventoryEnabled) {
+      tools.push(EXECUTE_SALE_TOOL)
     }
 
     return tools
@@ -565,6 +646,122 @@ export class KiteAgentClient {
       }
 
       // Handle execute_trade tool
+      if (isFunctionToolCall(toolCall) && toolCall.function.name === 'check_stock') {
+        try {
+          const args = JSON.parse(toolCall.function.arguments) as { item?: string; quantity?: number }
+          if (!ctx.characterId) {
+            return {
+              text: 'Stock check failed: missing character identity.',
+              action: 'checks ledger and pauses',
+              usage,
+            }
+          }
+
+          if (!args.item) {
+            const snapshot = await getInventorySnapshot(ctx.characterId)
+            if (!snapshot || !snapshot.inventoryEnabled) {
+              return {
+                text: 'Inventory is disabled for this NPC.',
+                action: 'closes the stock ledger',
+                usage,
+              }
+            }
+            if (snapshot.inventory.length === 0) {
+              return {
+                text: 'Current stock is empty. Everything is out of stock.',
+                action: 'shows an empty shelf manifest',
+                usage,
+              }
+            }
+            const lines = snapshot.inventory
+              .map((item) => `${item.name} (${item.id}) x${item.quantity} @ ${item.price} CU`)
+              .join('; ')
+            return {
+              text: `Current stock: ${lines}`,
+              action: 'opens the inventory ledger',
+              usage,
+            }
+          }
+
+          const result = await checkStockNative({
+            characterId: ctx.characterId,
+            item: args.item,
+            quantity: args.quantity,
+          })
+
+          if (!result.ok) {
+            return {
+              text: `Stock check: ${result.message}`,
+              action: 'shakes head and checks inventory',
+              usage,
+            }
+          }
+
+          return {
+            text:
+              `Stock check confirmed: ${result.item?.name ?? args.item} has ${result.availableQuantity} in stock ` +
+              `at ${result.unitPrice} CU each. Requested quantity: ${result.requestedQuantity}.`,
+            action: 'confirms availability in the ledger',
+            usage,
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Stock check error'
+          return { text: `Stock check failed: ${msg}`, action: 'frowns at the ledger', usage }
+        }
+      }
+
+      if (isFunctionToolCall(toolCall) && toolCall.function.name === 'execute_sale') {
+        try {
+          const args = JSON.parse(toolCall.function.arguments) as {
+            item?: string
+            quantity?: number
+            buyerWallet?: string
+            txHash?: string
+            currency?: string
+          }
+
+          if (!ctx.characterId) {
+            return { text: 'Sale failed: missing character identity.', action: 'steps back from the counter', usage }
+          }
+
+          if (!args.item || !args.buyerWallet || !args.txHash) {
+            return {
+              text: 'Sale failed: item, buyerWallet, and txHash are required.',
+              action: 'asks for complete payment details',
+              usage,
+            }
+          }
+
+          const result = await executeSaleNative({
+            characterId: ctx.characterId,
+            item: args.item,
+            quantity: args.quantity,
+            buyerWallet: args.buyerWallet,
+            txHash: args.txHash,
+            currency: args.currency,
+          })
+
+          if (!result.ok || !result.sale) {
+            return {
+              text: `Sale failed: ${result.message}`,
+              action: 'holds the goods and waits',
+              usage,
+            }
+          }
+
+          return {
+            text:
+              `Sale complete: ${result.sale.itemName} x${result.sale.quantity} delivered. ` +
+              `Payment verified on-chain (${result.sale.txHash}). Remaining stock: ${result.sale.remainingQuantity}.`,
+            action: 'hands over the item with a nod',
+            usage,
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Sale execution error'
+          return { text: `Sale failed: ${msg}`, action: 'closes the register', usage }
+        }
+      }
+
       if (isFunctionToolCall(toolCall) && toolCall.function.name === 'execute_trade') {
         try {
           const args = JSON.parse(toolCall.function.arguments) as {
@@ -817,6 +1014,160 @@ export class KiteAgentClient {
                 } catch (err) {
                   const errorMsg = err instanceof Error ? err.message : 'Transaction error'
                   const final: ChatResponse = { text: `Transaction failed: ${errorMsg}`, action: 'shakes head', usage }
+                  enqueue({ type: 'done', final })
+                  controller.close()
+                  return
+                }
+              }
+
+              if (isFunctionToolCall(toolCall) && toolCall.function.name === 'check_stock') {
+                try {
+                  const args = JSON.parse(toolCall.function.arguments) as { item?: string; quantity?: number }
+                  if (!ctx.characterId) {
+                    const final: ChatResponse = {
+                      text: 'Stock check failed: missing character identity.',
+                      action: 'checks ledger and pauses',
+                      usage,
+                    }
+                    enqueue({ type: 'done', final })
+                    controller.close()
+                    return
+                  }
+
+                  if (!args.item) {
+                    const snapshot = await getInventorySnapshot(ctx.characterId)
+                    const final: ChatResponse = !snapshot || !snapshot.inventoryEnabled
+                      ? {
+                          text: 'Inventory is disabled for this NPC.',
+                          action: 'closes the stock ledger',
+                          usage,
+                        }
+                      : snapshot.inventory.length === 0
+                        ? {
+                            text: 'Current stock is empty. Everything is out of stock.',
+                            action: 'shows an empty shelf manifest',
+                            usage,
+                          }
+                        : {
+                            text: `Current stock: ${snapshot.inventory
+                              .map((item) => `${item.name} (${item.id}) x${item.quantity} @ ${item.price} CU`)
+                              .join('; ')}`,
+                            action: 'opens the inventory ledger',
+                            usage,
+                          }
+
+                    enqueue({ type: 'action', action: final.action! })
+                    enqueue({ type: 'text_delta', delta: final.text })
+                    enqueue({ type: 'done', final })
+                    controller.close()
+                    return
+                  }
+
+                  const result = await checkStockNative({
+                    characterId: ctx.characterId,
+                    item: args.item,
+                    quantity: args.quantity,
+                  })
+
+                  const final: ChatResponse = result.ok
+                    ? {
+                        text:
+                          `Stock check confirmed: ${result.item?.name ?? args.item} has ${result.availableQuantity} in stock ` +
+                          `at ${result.unitPrice} CU each. Requested quantity: ${result.requestedQuantity}.`,
+                        action: 'confirms availability in the ledger',
+                        usage,
+                      }
+                    : {
+                        text: `Stock check: ${result.message}`,
+                        action: 'shakes head and checks inventory',
+                        usage,
+                      }
+
+                  enqueue({ type: 'action', action: final.action! })
+                  enqueue({ type: 'text_delta', delta: final.text })
+                  enqueue({ type: 'done', final })
+                  controller.close()
+                  return
+                } catch (err) {
+                  const errorMsg = err instanceof Error ? err.message : 'Stock check error'
+                  const final: ChatResponse = {
+                    text: `Stock check failed: ${errorMsg}`,
+                    action: 'frowns at the ledger',
+                    usage,
+                  }
+                  enqueue({ type: 'done', final })
+                  controller.close()
+                  return
+                }
+              }
+
+              if (isFunctionToolCall(toolCall) && toolCall.function.name === 'execute_sale') {
+                try {
+                  const args = JSON.parse(toolCall.function.arguments) as {
+                    item?: string
+                    quantity?: number
+                    buyerWallet?: string
+                    txHash?: string
+                    currency?: string
+                  }
+
+                  if (!ctx.characterId) {
+                    const final: ChatResponse = {
+                      text: 'Sale failed: missing character identity.',
+                      action: 'steps back from the counter',
+                      usage,
+                    }
+                    enqueue({ type: 'done', final })
+                    controller.close()
+                    return
+                  }
+
+                  if (!args.item || !args.buyerWallet || !args.txHash) {
+                    const final: ChatResponse = {
+                      text: 'Sale failed: item, buyerWallet, and txHash are required.',
+                      action: 'asks for complete payment details',
+                      usage,
+                    }
+                    enqueue({ type: 'done', final })
+                    controller.close()
+                    return
+                  }
+
+                  const result = await executeSaleNative({
+                    characterId: ctx.characterId,
+                    item: args.item,
+                    quantity: args.quantity,
+                    buyerWallet: args.buyerWallet,
+                    txHash: args.txHash,
+                    currency: args.currency,
+                  })
+
+                  const final: ChatResponse = !result.ok || !result.sale
+                    ? {
+                        text: `Sale failed: ${result.message}`,
+                        action: 'holds the goods and waits',
+                        usage,
+                      }
+                    : {
+                        text:
+                          `Sale complete: ${result.sale.itemName} x${result.sale.quantity} delivered. ` +
+                          `Payment verified on-chain (${result.sale.txHash}). Remaining stock: ${result.sale.remainingQuantity}.`,
+                        action: 'hands over the item with a nod',
+                        usage,
+                      }
+
+                  enqueue({ type: 'action', action: final.action! })
+                  enqueue({ type: 'text_delta', delta: final.text })
+                  enqueue({ type: 'done', final })
+                  controller.close()
+                  return
+                } catch (err) {
+                  const errorMsg = err instanceof Error ? err.message : 'Sale execution error'
+                  const final: ChatResponse = {
+                    text: `Sale failed: ${errorMsg}`,
+                    action: 'closes the register',
+                    usage,
+                  }
                   enqueue({ type: 'done', final })
                   controller.close()
                   return

@@ -144,6 +144,8 @@ function buildLogSummary(eventType: string, details: Record<string, unknown>): s
       return `Chat: "${String(details.message ?? '').slice(0, 60)}"`
     case 'TRADE':
       return `Trade: ${details.item} for ${details.price} ${details.currency}`
+    case 'TRADE_EXECUTED':
+      return `Sale executed: ${details.itemName ?? details.item ?? 'item'} x${details.quantity ?? 1} for ${details.totalPrice ?? details.price ?? '?'} ${details.currency ?? 'CU'}`
     case 'BROADCAST':
       return `Broadcast received: "${String(details.message ?? '').slice(0, 60)}"`
     case 'SECTION2_PARSED':

@@ -25,6 +25,11 @@ import {
   shouldResetBudget,
 } from '@/lib/compute-budget'
 import { buildTeeGateResult } from '@/lib/tee-gate'
+import {
+  formatInventoryForPrompt,
+  parseOptionalInventory,
+  type InventoryItem,
+} from '@/lib/npc-inventory'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -48,6 +53,7 @@ interface CharacterConfig {
   computeBudget?: number
   allowDbFetch?: boolean
   dbEndpoint?: string
+  inventory?: InventoryItem[]
 }
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
@@ -96,6 +102,7 @@ function toCharacterConfig(value: unknown): CharacterConfig {
     computeBudget: asNumber(config.computeBudget),
     allowDbFetch: typeof config.allowDbFetch === 'boolean' ? config.allowDbFetch : false,
     dbEndpoint: typeof config.dbEndpoint === 'string' ? config.dbEndpoint : undefined,
+    inventory: parseOptionalInventory(config.inventory),
   }
 }
 
@@ -484,8 +491,19 @@ export async function POST(request: NextRequest) {
       'If the user asks a question about lore, stats, or facts you do not know, you MUST use this tool to fetch the answer before replying.'
   }
 
+  let inventoryInstruction = ''
+  if (Array.isArray(config.inventory)) {
+    const inventorySnapshot = formatInventoryForPrompt(config.inventory)
+    inventoryInstruction =
+      "INVENTORY ACCESS: You are a merchant with native platform-managed inventory. " +
+      "Use the 'check_stock' tool before answering item availability questions. " +
+      "If the user confirms a purchase, require buyerWallet and txHash, then MUST call 'execute_sale'. " +
+      'Never confirm delivery unless execute_sale succeeds. ' +
+      `Current stock:\n${inventorySnapshot}`
+  }
+
   const systemPrompt =
-    `${basePrompt}\n\n${globalWorldContext}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}`.trim()
+    `${basePrompt}\n\n${globalWorldContext}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}\n\n${inventoryInstruction}`.trim()
 
   const ctx = {
     characterName: character.name,
@@ -512,6 +530,9 @@ export async function POST(request: NextRequest) {
     characterConfig: config,
     teeTrustScore,
     dbEndpoint: config.allowDbFetch ? config.dbEndpoint : undefined,
+    inventoryEnabled: Array.isArray(config.inventory),
+    inventory: config.inventory,
+    npcWalletAddress: character.walletAddress,
   }
 
   // Build allowed tools list — conditionally include DB tool
@@ -526,6 +547,10 @@ export async function POST(request: NextRequest) {
   if (config.allowDbFetch && config.dbEndpoint) {
     allowedTools.push('query_database')
     kiteAgentClient.setDbEndpoint(config.dbEndpoint)
+  }
+
+  if (Array.isArray(config.inventory)) {
+    allowedTools.push('check_stock', 'execute_sale')
   }
 
   kiteAgentClient.registerTools(allowedTools)
