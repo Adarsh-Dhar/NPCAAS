@@ -7,6 +7,7 @@ import RetroTextarea from '@/components/ui/RetroTextarea'
 import RetroRangeSlider from '@/components/ui/RetroRangeSlider'
 import FormSection from '@/components/creator/FormSection'
 import { Switch } from '@/components/ui/switch'
+import { PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 
 interface InventoryFormItem {
   id: string
@@ -356,7 +357,7 @@ export default function ConfigurationForm({
       >
         <RetroInput
           borderColor="orange"
-          label="Base Capital (Kite Stablecoin)"
+          label={`Base Capital (${PRIMARY_TOKEN_SYMBOL})`}
           type="number"
           value={formData.capital}
           onChange={(e) => handleInputChange('capital', e.target.value)}
@@ -521,7 +522,7 @@ export default function ConfigurationForm({
 
         <RetroInput
           borderColor="cyan"
-          label="Compute Budget (in CU)"
+          label="Compute Budget"
           type="number"
           value={formData.computeBudget}
           onChange={(e) => handleInputChange('computeBudget', e.target.value)}
@@ -595,7 +596,7 @@ export default function ConfigurationForm({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <RetroInput
                     borderColor="yellow"
-                    label="Price (CU)"
+                    label={`Price (${PRIMARY_TOKEN_SYMBOL})`}
                     type="number"
                     min={0.01}
                     step={0.01}

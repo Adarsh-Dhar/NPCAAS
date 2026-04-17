@@ -8,6 +8,7 @@ import {
   toCanonicalNpcName,
 } from '@/lib/protocolBabel'
 import { usePlayerState } from '@/context/PlayerStateContext'
+import { PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 
 type CharacterSnapshot = {
   id: string
@@ -73,7 +74,7 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
     }
 
     if (!canFundEscrow) {
-      setFundEscrowMessage(`Need ${escrowCost} credits to fund escrow.`)
+      setFundEscrowMessage(`Need ${escrowCost} ${PRIMARY_TOKEN_SYMBOL} to fund escrow.`)
       return
     }
 
@@ -92,7 +93,7 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
         asset: 'Compute Escrow',
         data: {
           amount: escrowCost,
-          currency: 'KITE',
+          currency: PRIMARY_TOKEN_SYMBOL,
           source: 'player_dashboard',
         },
       })
@@ -252,7 +253,7 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
                   <div key={npcName} className="rounded border border-white/10 bg-black/40 p-3">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-white">{formatNpcDisplayName(npcName)}</span>
-                      <span className="text-cyan-300">{balance} {row?.native.symbol ?? 'KITE'}</span>
+                      <span className="text-cyan-300">{balance} {PRIMARY_TOKEN_SYMBOL}</span>
                     </div>
                     <div className="mt-2 text-[11px] text-white/45 break-all">
                       {row?.walletAddress ?? 'wallet unavailable'}
@@ -310,7 +311,7 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
             <div className="mt-4 rounded border border-cyan-400/30 bg-cyan-950/20 p-3">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-white/70">Player Credits</span>
-                <span className="font-semibold text-cyan-200">{credits.toLocaleString()} KITE</span>
+                <span className="font-semibold text-cyan-200">{credits.toLocaleString()} {PRIMARY_TOKEN_SYMBOL}</span>
               </div>
               <div className="mt-1 text-[11px] text-white/60">
                 Escrow: {escrowFunded ? 'Funded' : 'Unfunded'}
@@ -324,7 +325,7 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
                   ? 'Escrow Funded'
                   : fundingEscrow
                     ? 'Funding Escrow...'
-                    : `Fund Escrow (${escrowCost.toLocaleString()} KITE)`}
+                    : `Fund Escrow (${escrowCost.toLocaleString()} ${PRIMARY_TOKEN_SYMBOL})`}
               </button>
               {fundEscrowMessage && (
                 <p className="mt-2 text-[11px] text-cyan-200/90">{fundEscrowMessage}</p>

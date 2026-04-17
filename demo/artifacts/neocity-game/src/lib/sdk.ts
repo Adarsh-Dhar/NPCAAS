@@ -190,6 +190,14 @@ class HttpGuildCraftClient {
     })
   }
 
+  async refillNpcCompute(npcName: string) {
+    if (!npcName) throw new GuildCraftError('npcName is required', 400, null)
+    return this._request(`/npcs/${encodeURIComponent(npcName)}/refill`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
   async chat(characterId: string, message: string) {
     if (!characterId) throw new GuildCraftError('characterId is required', 400, null)
     if (!message) throw new GuildCraftError('message is required', 400, null)

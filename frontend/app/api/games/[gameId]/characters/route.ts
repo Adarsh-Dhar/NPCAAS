@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
+import { kiteAAProvider } from '@/lib/aa-sdk'
 
 const assignmentSchema = z
   .object({
@@ -66,6 +67,68 @@ function isUnknownArgumentError(error: unknown, argument: string) {
   return error instanceof Error && error.message.includes(`Unknown argument \`${argument}\``)
 }
 
+function isLegacyPlaceholderWallet(walletAddress: string, aaChainId?: number): boolean {
+  const isZeroPattern = /^0x0{36}[0-9a-fA-F]{4}$/.test(walletAddress)
+  const wrongChain = typeof aaChainId === 'number' && aaChainId !== 2368
+  return isZeroPattern || wrongChain
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+async function updateCharacterWithUnknownArgStripping(
+  characterId: string,
+  initialData: Record<string, unknown>,
+  maxAttempts = 8
+) {
+  let data = { ...initialData }
+  let attempts = 0
+
+  while (attempts < maxAttempts) {
+    attempts += 1
+    try {
+      return await (prisma.character as any).update({
+        where: { id: characterId },
+        data,
+      })
+    } catch (error) {
+      if (!(error instanceof Error)) throw error
+      const match = error.message.match(/Unknown argument `([^`]+)`/)
+      const unknownArg = match?.[1]
+      if (unknownArg && Object.prototype.hasOwnProperty.call(data, unknownArg)) {
+        const { [unknownArg]: _ignored, ...rest } = data
+        data = rest
+        continue
+      }
+      throw error
+    }
+  }
+
+  throw new Error('Character wallet update failed after stripping unsupported Prisma fields.')
+}
+
+async function repairLegacyCharacterWallet(character: any): Promise<string> {
+  const ownerId = `character:${character.id}`
+  const smartAccount = await kiteAAProvider.createSmartAccount({ ownerId })
+  const previousConfig = asRecord(character.config)
+  const nextConfig = {
+    ...previousConfig,
+    ownerId,
+  }
+
+  await updateCharacterWithUnknownArgStripping(character.id, {
+    walletAddress: smartAccount.address,
+    aaChainId: smartAccount.chainId,
+    aaProvider: smartAccount.provider,
+    smartAccountId: smartAccount.smartAccountId,
+    smartAccountStatus: 'created',
+    config: nextConfig as unknown as any,
+  })
+
+  return smartAccount.address
+}
+
 export async function GET(request: NextRequest, context: { params: Promise<{ gameId: string }> }) {
   try {
     const authProject = await resolveAuthorizedProject(request)
@@ -105,9 +168,32 @@ export async function GET(request: NextRequest, context: { params: Promise<{ gam
       })
     }
 
+    const normalizedCharacters = await Promise.all(
+      characters.map(async (character) => {
+        if (!isLegacyPlaceholderWallet(character.walletAddress, character.aaChainId)) {
+          return character
+        }
+
+        try {
+          const newWalletAddress = await repairLegacyCharacterWallet(character)
+          return {
+            ...character,
+            walletAddress: newWalletAddress,
+            smartAccountStatus: 'created',
+          }
+        } catch (error) {
+          console.warn(
+            `[API] Failed to auto-repair wallet for character ${character.id}:`,
+            error
+          )
+          return character
+        }
+      })
+    )
+
     return NextResponse.json({
       game,
-      characters: characters.map((character) => ({
+      characters: normalizedCharacters.map((character) => ({
         id: character.id,
         name: character.name,
         walletAddress: character.walletAddress,

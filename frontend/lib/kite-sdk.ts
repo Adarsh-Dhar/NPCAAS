@@ -21,6 +21,7 @@ import {
   getInventorySnapshot,
   type InventoryItem,
 } from '@/lib/npc-inventory'
+import { PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 
 type FunctionToolCall = OpenAI.Chat.Completions.ChatCompletionMessageFunctionToolCall
 
@@ -173,7 +174,7 @@ export interface StreamEvent {
 function generateProposeTradeTool(allowedTokens?: string[]): OpenAI.Chat.Completions.ChatCompletionTool {
   const currencies = allowedTokens && allowedTokens.length > 0
     ? allowedTokens
-    : ['KITE_USD']
+    : [PRIMARY_TOKEN_SYMBOL]
 
   return {
     type: 'function',
@@ -208,7 +209,7 @@ const EXECUTE_TRADE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
       properties: {
         targetAddress: { type: 'string', description: 'The blockchain wallet address of the recipient' },
         amount: { type: 'number', description: 'The amount of currency to send' },
-        currency: { type: 'string', description: 'The currency to transfer (e.g., KITE_USD, SOL, USDC, BTC). Defaults to KITE_USD.' },
+        currency: { type: 'string', description: `The currency to transfer (defaults to ${PRIMARY_TOKEN_SYMBOL}).` },
       },
       required: ['targetAddress', 'amount'],
     },
@@ -288,7 +289,7 @@ const CHECK_STOCK_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
   function: {
     name: 'check_stock',
     description:
-      'Check native NPC inventory for item availability, quantity, and price in CU.',
+      `Check native NPC inventory for item availability, quantity, and price in ${PRIMARY_TOKEN_SYMBOL}.`,
     parameters: {
       type: 'object',
       properties: {
@@ -332,7 +333,7 @@ const EXECUTE_SALE_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
         },
         currency: {
           type: 'string',
-          description: 'Currency symbol, defaults to CU.',
+          description: `Currency symbol, defaults to ${PRIMARY_TOKEN_SYMBOL}.`,
         },
       },
       required: ['item', 'buyerWallet', 'txHash'],
@@ -398,14 +399,14 @@ function buildSystemPrompt(ctx: AgentContext): string {
 
   const multiTokenNote = ctx.allowedTradeTokens && ctx.allowedTradeTokens.length > 0
     ? `You are authorized to negotiate and quote prices in these tokens: ${ctx.allowedTradeTokens.join(', ')}. ` +
-      `While your internal treasury and gas fees operate on the KITE network, you can offer trades in any of the authorized currencies.`
+      `While your internal treasury and gas fees operate on the KITE network, you can offer trades in ${PRIMARY_TOKEN_SYMBOL}.`
     : ''
 
   const inventoryNote =
     ctx.inventoryEnabled && ctx.inventory
       ? ctx.inventory.length > 0
         ? `You currently control native inventory items: ${ctx.inventory
-            .map((item) => `${item.name} [${item.id}] x${item.quantity} @ ${item.price} CU`)
+            .map((item) => `${item.name} [${item.id}] x${item.quantity} @ ${item.price} ${PRIMARY_TOKEN_SYMBOL}`)
             .join('; ')}. Use check_stock for verification and execute_sale to finalize purchases.`
         : 'Your inventory feature is enabled but stock is currently empty. Respond as out-of-stock unless restocked.'
       : ''
@@ -430,14 +431,14 @@ function buildSystemPrompt(ctx: AgentContext): string {
     economicLines.push(`Margin target: ${ctx.marginPercentage}%.`)
   }
   if (typeof ctx.baseCapital === 'number') {
-    economicLines.push(`Starting treasury: ${ctx.baseCapital} KITE (native network token).`)
+    economicLines.push(`Starting treasury: ${ctx.baseCapital} ${PRIMARY_TOKEN_SYMBOL}.`)
   }
   if (typeof ctx.currentMarketRate === 'number') {
-    const rateCurrency = ctx.currentTradeCurrency ?? 'KITE_USD'
+    const rateCurrency = ctx.currentTradeCurrency ?? PRIMARY_TOKEN_SYMBOL
     economicLines.push(`Live market rate for ${rateCurrency}: ${ctx.currentMarketRate}.`)
   }
   if (ctx.liveWalletBalance) {
-    economicLines.push(`Live wallet balance (KITE native): ${ctx.liveWalletBalance}.`)
+    economicLines.push(`Live wallet balance: ${ctx.liveWalletBalance} ${PRIMARY_TOKEN_SYMBOL}.`)
   }
   if (economicLines.length > 0) {
     economicLines.push('Follow these economic constraints and do not propose underpriced trades.')
@@ -674,7 +675,7 @@ export class KiteAgentClient {
               }
             }
             const lines = snapshot.inventory
-              .map((item) => `${item.name} (${item.id}) x${item.quantity} @ ${item.price} CU`)
+              .map((item) => `${item.name} (${item.id}) x${item.quantity} @ ${item.price} ${PRIMARY_TOKEN_SYMBOL}`)
               .join('; ')
             return {
               text: `Current stock: ${lines}`,
@@ -700,7 +701,7 @@ export class KiteAgentClient {
           return {
             text:
               `Stock check confirmed: ${result.item?.name ?? args.item} has ${result.availableQuantity} in stock ` +
-              `at ${result.unitPrice} CU each. Requested quantity: ${result.requestedQuantity}.`,
+              `at ${result.unitPrice} ${PRIMARY_TOKEN_SYMBOL} each. Requested quantity: ${result.requestedQuantity}.`,
             action: 'confirms availability in the ledger',
             usage,
           }

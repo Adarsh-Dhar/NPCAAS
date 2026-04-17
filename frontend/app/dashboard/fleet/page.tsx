@@ -21,7 +21,7 @@ const mockNPCs: NPC[] = [
     role: 'Blacksmith',
     status: 'online',
     wallet: '0x2A8f...91c2',
-    balance: '$450.00 KITE_USD',
+    balance: '$450.00 KITE',
     trades: 24,
   },
   {
@@ -30,7 +30,7 @@ const mockNPCs: NPC[] = [
     role: 'Merchant',
     status: 'online',
     wallet: '0x5B3d...7e44',
-    balance: '$1,230.00 KITE_USD',
+    balance: '$1,230.00 KITE',
     trades: 67,
   },
   {
@@ -39,7 +39,7 @@ const mockNPCs: NPC[] = [
     role: 'Sentinel',
     status: 'sleeping',
     wallet: '0x9c1e...5f88',
-    balance: '$89.50 KITE_USD',
+    balance: '$89.50 KITE',
     trades: 12,
   },
   {
@@ -48,7 +48,7 @@ const mockNPCs: NPC[] = [
     role: 'Enchanter',
     status: 'online',
     wallet: '0x4F7a...3b19',
-    balance: '$2,100.00 KITE_USD',
+    balance: '$2,100.00 KITE',
     trades: 156,
   },
   {
@@ -57,7 +57,7 @@ const mockNPCs: NPC[] = [
     role: 'Scout',
     status: 'sleeping',
     wallet: '0x8d2c...9a07',
-    balance: '$320.75 KITE_USD',
+    balance: '$320.75 KITE',
     trades: 38,
   },
 ]
@@ -127,7 +127,7 @@ export default function FleetPage() {
               ${totalBalance.toFixed(2)}
             </p>
             <p className="text-xs text-gray-400 mt-2">
-              KITE_USD in treasury
+              KITE in treasury
             </p>
           </div>
         </div>

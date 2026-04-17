@@ -15,6 +15,7 @@
 import { kiteAAProvider } from '@/lib/aa-sdk'
 import type { SponsoredTx } from '@/lib/aa-sdk'
 import { buildTeeGateResult } from '@/lib/tee-gate'
+import { PRIMARY_TOKEN_ADDRESS, PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -25,7 +26,8 @@ export interface WriteTransactionInput {
   value: string    // decimal string, e.g. "1000000"
   data?: string    // hex calldata; defaults to '0x'
   ownerId: string  // NPC owner string used at creation time
-  currency?: string  // Currency/token to transfer (e.g., KITE_USD, SOL, USDC)
+  currency?: string  // Currency/token label shown in prompts
+  tokenAddress?: string  // ERC20 token contract to transfer, if any
   characterConfig?: unknown  // Character configuration with token contract addresses
   teeExecution?: string
   projectId?: string
@@ -50,9 +52,8 @@ export interface SponsoredExecutionResult {
 /**
  * Execute a blockchain transaction with optional multi-token support.
  * 
- * For native KITE transfers: pass currency as undefined or 'KITE_USD'
- * For ERC-20 token transfers: pass currency (e.g., 'SOL', 'USDC') and ensure
- *   characterConfig contains tokenContractAddresses mapping
+ * For ERC-20 token transfers: pass tokenAddress or ensure characterConfig contains
+ *   tokenContractAddresses mapping for the active currency label.
  * 
  * Gas is always sponsored via KITE EIP-4337 bundler.
  */
@@ -65,29 +66,24 @@ export async function executeWriteTransaction(
     projectId: input.projectId,
   })
 
-  // Determine if this is an ERC-20 transfer or native KITE
-  const isMultiToken = input.currency && input.currency.toUpperCase() !== 'KITE_USD'
+  const config = input.characterConfig as Record<string, unknown> | undefined
+  const tokenContractAddresses = config?.tokenContractAddresses as Record<string, string> | undefined
+  const resolvedTokenAddress =
+    input.tokenAddress ??
+    (input.currency && tokenContractAddresses?.[input.currency]) ??
+    tokenContractAddresses?.[PRIMARY_TOKEN_SYMBOL] ??
+    tokenContractAddresses?.KITE ??
+    PRIMARY_TOKEN_ADDRESS
+
+  const isTokenTransfer = Boolean(resolvedTokenAddress)
   
   let finalTo = input.to
   let finalValue = input.value
   let finalData = input.data ?? '0x'
 
-  if (isMultiToken) {
+  if (isTokenTransfer) {
     // ERC-20 multi-token transfer
     const { ethers } = await import('ethers')
-    
-    // Extract token contract address from character config
-    const config = input.characterConfig as Record<string, unknown> | undefined
-    const tokenContractAddresses = config?.tokenContractAddresses as Record<string, string> | undefined
-    
-    if (!tokenContractAddresses) {
-      throw new Error(`No tokenContractAddresses mapping found in character config. Cannot transfer ${input.currency}.`)
-    }
-    
-    const tokenAddress = tokenContractAddresses[input.currency!]
-    if (!tokenAddress) {
-      throw new Error(`No contract address configured for token: ${input.currency}. Available tokens: ${Object.keys(tokenContractAddresses).join(', ')}`)
-    }
     
     // Encode ERC-20 transfer() call
     const erc20ABI = ['function transfer(address to, uint256 amount) returns (bool)']
@@ -100,13 +96,13 @@ export async function executeWriteTransaction(
     finalData = iface.encodeFunctionData('transfer', [input.to, amountInWei])
     
     // Target the token contract, not the recipient
-    finalTo = tokenAddress
+    finalTo = resolvedTokenAddress
     
     // No native value transfer for ERC-20
     finalValue = '0'
     
     console.debug(`[tx-orchestrator] Encoding ${input.currency} transfer to ${input.to}, amount: ${input.value}`, {
-      tokenContract: tokenAddress,
+      tokenContract: resolvedTokenAddress,
       encodedData: finalData,
     })
   }

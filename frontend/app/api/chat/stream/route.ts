@@ -116,7 +116,7 @@ async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefin
 
   try {
     let fetchUrl = endpoint
-    if (symbol && symbol.toUpperCase() !== 'KITE_USD') {
+    if (symbol && symbol.toUpperCase() !== 'KITE') {
       const tickerSymbol = `${symbol.toUpperCase()}USDT`
       fetchUrl = `${endpoint}?symbol=${tickerSymbol}`
     }
@@ -200,7 +200,7 @@ function detectTradeCurrency(messages: string[], allowedTokens: string[]): strin
   if (allowedTokens.length === 0) return undefined
   
   const tokenKeywords = allowedTokens
-    .filter(token => token !== 'KITE_USD')
+    .filter(token => token !== 'KITE')
     .join('|')
   
   if (!tokenKeywords) return undefined
@@ -335,13 +335,17 @@ export async function POST(request: NextRequest) {
   const config = toCharacterConfig(character.config)
   const adaptation = asRecord(character.adaptation)
   const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
-  const projectContext =
-    activeProjectId === 'global'
-      ? null
-      : await prisma.project.findUnique({
-          where: { id: activeProjectId },
-          select: { globalContext: true },
-        })
+  let projectContext: { globalContext?: string } | null = null
+  if (activeProjectId !== 'global') {
+    try {
+      projectContext = await (prisma.project as any).findUnique({
+        where: { id: activeProjectId },
+        select: { globalContext: true },
+      })
+    } catch (error) {
+      console.warn('[chat/stream] Failed to fetch project globalContext:', error)
+    }
+  }
   const tee = buildTeeGateResult({
     teeExecution: config.teeExecution,
     characterId: character.id,

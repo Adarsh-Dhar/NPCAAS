@@ -160,6 +160,70 @@ function shouldFallbackToLegacyCreate(error: unknown): boolean {
   )
 }
 
+function isLegacyPlaceholderWallet(walletAddress: string, aaChainId?: number): boolean {
+  const isZeroPattern = /^0x0{36}[0-9a-fA-F]{4}$/.test(walletAddress)
+  const wrongChain = typeof aaChainId === 'number' && aaChainId !== 2368
+  return isZeroPattern || wrongChain
+}
+
+async function updateWithUnknownArgStripping<T>(
+  updateFn: (data: Record<string, unknown>) => Promise<T>,
+  initialData: Record<string, unknown>,
+  maxAttempts = 8
+): Promise<T> {
+  let data = { ...initialData }
+  let attempts = 0
+
+  while (attempts < maxAttempts) {
+    attempts += 1
+    try {
+      return await updateFn(data)
+    } catch (error) {
+      const unknownArg = getUnknownArgumentName(error)
+      if (unknownArg && Object.prototype.hasOwnProperty.call(data, unknownArg)) {
+        const { [unknownArg]: _ignored, ...rest } = data
+        data = rest
+        continue
+      }
+      throw error
+    }
+  }
+
+  throw new Error('Character update failed after stripping unsupported Prisma fields.')
+}
+
+async function repairLegacyCharacterWallet(character: {
+  id: string
+  walletAddress: string
+  config: unknown
+}) {
+  const ownerId = `character:${character.id}`
+  const smartAccount = await kiteAAProvider.createSmartAccount({ ownerId })
+  const safeConfig = asRecord(character.config)
+  const nextConfig = {
+    ...safeConfig,
+    ownerId,
+  }
+
+  await updateWithUnknownArgStripping(
+    (data) =>
+      (prisma.character as any).update({
+        where: { id: character.id },
+        data,
+      }),
+    {
+      walletAddress: smartAccount.address,
+      aaChainId: smartAccount.chainId,
+      aaProvider: smartAccount.provider,
+      smartAccountId: smartAccount.smartAccountId,
+      smartAccountStatus: 'created',
+      config: nextConfig as unknown as Prisma.InputJsonValue,
+    }
+  )
+
+  return smartAccount.address
+}
+
 const createCharacterSchema = z
   .object({
     name: z.string().trim().min(1),
@@ -558,7 +622,35 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
       })
 
-      return NextResponse.json(characters.map((character) => toApiCharacter(character)))
+      const normalizedCharacters = await Promise.all(
+        characters.map(async (character) => {
+          if (!isLegacyPlaceholderWallet(character.walletAddress, character.aaChainId)) {
+            return character
+          }
+
+          try {
+            const newWalletAddress = await repairLegacyCharacterWallet({
+              id: character.id,
+              walletAddress: character.walletAddress,
+              config: character.config,
+            })
+
+            return {
+              ...character,
+              walletAddress: newWalletAddress,
+              smartAccountStatus: 'created',
+            }
+          } catch (error) {
+            console.warn(
+              `[API] Failed to auto-repair wallet for character ${character.id}:`,
+              error
+            )
+            return character
+          }
+        })
+      )
+
+      return NextResponse.json(normalizedCharacters.map((character) => toApiCharacter(character)))
     } catch (relationError) {
       if (!isProjectsRelationRuntimeError(relationError)) {
         throw relationError
@@ -594,8 +686,36 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
       })
 
+      const normalizedLegacyCharacters = await Promise.all(
+        legacyCharacters.map(async (character) => {
+          if (!isLegacyPlaceholderWallet(character.walletAddress, character.aaChainId)) {
+            return character
+          }
+
+          try {
+            const newWalletAddress = await repairLegacyCharacterWallet({
+              id: character.id,
+              walletAddress: character.walletAddress,
+              config: character.config,
+            })
+
+            return {
+              ...character,
+              walletAddress: newWalletAddress,
+              smartAccountStatus: 'created',
+            }
+          } catch (error) {
+            console.warn(
+              `[API] Failed to auto-repair legacy wallet for character ${character.id}:`,
+              error
+            )
+            return character
+          }
+        })
+      )
+
       return NextResponse.json(
-        legacyCharacters.map((character) =>
+        normalizedLegacyCharacters.map((character) =>
           toApiCharacter({
             ...character,
             projects: character.projectId ? [{ id: character.projectId }] : [],

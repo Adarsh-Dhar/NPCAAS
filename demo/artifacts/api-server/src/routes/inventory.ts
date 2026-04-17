@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { db } from '@workspace/db';
 import { inventory } from '@workspace/db/schema';
 import { eq, ilike, or } from 'drizzle-orm';
+import { PRIMARY_TOKEN_SYMBOL } from '@workspace/db/token-config';
 
 export const inventoryRouter = Router();
 
@@ -22,7 +23,7 @@ inventoryRouter.post('/query', async (req, res) => {
     }
 
     const formattedResults = results.map(item =>
-      `- ${item.itemName}: ${item.quantity} in stock (Price: ${item.price} CU). Description: ${item.description}`
+      `- ${item.itemName}: ${item.quantity} in stock (Price: ${item.price} ${PRIMARY_TOKEN_SYMBOL}). Description: ${item.description}`
     ).join('\n');
 
     return res.json({

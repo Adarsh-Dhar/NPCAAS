@@ -15,6 +15,7 @@ import {
 import type { TradeIntent } from "@/components/ChatWindow";
 import { formatNpcDisplayName, PROTOCOL_BABEL_NODE_NAMES } from "@/lib/protocolBabel";
 import { usePlayerState } from "@/context/PlayerStateContext";
+import { PRIMARY_TOKEN_SYMBOL } from "@/lib/token-config";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -174,7 +175,7 @@ export function HUD({
         </div>
         <div style={{ color: "#334466" }}>OBJECTIVE: Acquire the Root Key</div>
         <div className="mt-1" style={{ color: "#66d9ff" }}>
-          CREDITS: {credits.toLocaleString()} KITE
+          BALANCE: {credits.toLocaleString()} {PRIMARY_TOKEN_SYMBOL}
         </div>
         <div style={{ color: escrowFunded ? "#7dff9b" : "#ffd166" }}>
           ESCROW: {escrowFunded ? "FUNDED" : "PENDING"}

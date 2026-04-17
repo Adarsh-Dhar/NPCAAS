@@ -16,7 +16,7 @@ const mockActivities: Activity[] = [
     timestamp: '08:14:02',
     agent: 'Thorin',
     role: 'Blacksmith',
-    action: 'executed Swap: 10 KITE_USD for 5 Iron Ore',
+    action: 'executed Swap: 10 KITE for 5 Iron Ore',
   },
   {
     id: '2',
@@ -58,7 +58,7 @@ const mockActivities: Activity[] = [
     timestamp: '08:45:09',
     agent: 'Elara',
     role: 'Merchant',
-    action: 'negotiated bulk deal: 500 units @ 8.5 KITE_USD each',
+    action: 'negotiated bulk deal: 500 units @ 8.5 KITE each',
   },
   {
     id: '8',

@@ -9,6 +9,7 @@ import LeftPanel from '@/components/creator/LeftPanel'
 import ConfigurationForm from '@/components/creator/ConfigurationForm'
 import FundWalletModal from '@/components/FundWalletModal'
 import RetroButton from '@/components/ui/RetroButton'
+import { PRIMARY_TOKEN_ADDRESS, PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -41,7 +42,6 @@ interface GameCharactersResponse {
 }
 
 const KITE_RPC = 'https://rpc-testnet.gokite.ai'
-const BOT_TRANSFER_TOKEN_ADDRESS = '0xC3ce3C5D32C7d622A230F3453ac6E7a008431F5d'
 const ERC20_BALANCE_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function decimals() view returns (uint8)',
@@ -175,7 +175,7 @@ export default function EditCharacterPage() {
       setBalanceLoading(true)
       try {
         const provider = new ethers.JsonRpcProvider(KITE_RPC)
-        const tokenContract = new ethers.Contract(BOT_TRANSFER_TOKEN_ADDRESS, ERC20_BALANCE_ABI, provider)
+        const tokenContract = new ethers.Contract(PRIMARY_TOKEN_ADDRESS, ERC20_BALANCE_ABI, provider)
         const [rawBalance, tokenRawBalance, tokenDecimals, tokenSymbol] = await Promise.all([
           provider.getBalance(character.walletAddress),
           tokenContract.balanceOf(character.walletAddress).catch(() => BigInt(0)),
@@ -286,7 +286,7 @@ export default function EditCharacterPage() {
             to: target.walletAddress,
             value: valueWei,
             data: '0x',
-            tokenAddress: BOT_TRANSFER_TOKEN_ADDRESS,
+            tokenAddress: PRIMARY_TOKEN_ADDRESS,
             amount: transferAmount,
           },
         }),
@@ -380,13 +380,13 @@ export default function EditCharacterPage() {
                     <p className="text-xs font-mono text-cyan-300 max-w-48 break-all">
                       {character.walletAddress}
                     </p>
-                    <p className="mt-3 text-xs text-gray-400 uppercase font-bold mb-1">KITE Balance</p>
+                    <p className="mt-3 text-xs text-gray-400 uppercase font-bold mb-1">Token Balance</p>
                     <p className="text-sm font-bold text-green-300">
-                      {balanceLoading ? 'Loading...' : kiteBalance ? `${kiteBalance} KITE` : 'Unavailable'}
+                      {balanceLoading ? 'Loading...' : kiteBalance ? `${kiteBalance} ${PRIMARY_TOKEN_SYMBOL}` : 'Unavailable'}
                     </p>
                     <p className="mt-2 text-xs text-gray-400 uppercase font-bold mb-1">ERC-20 Balance</p>
                     <p className="text-sm font-bold text-yellow-300">
-                      {balanceLoading ? 'Loading...' : erc20Balance ? `${erc20Balance} ${erc20Symbol}` : 'Unavailable'}
+                      {balanceLoading ? 'Loading...' : erc20Balance ? `${erc20Balance} ${erc20Symbol || PRIMARY_TOKEN_SYMBOL}` : 'Unavailable'}
                     </p>
 
                     <div className="mt-4 border-t border-cyan-500/30 pt-3 text-left">

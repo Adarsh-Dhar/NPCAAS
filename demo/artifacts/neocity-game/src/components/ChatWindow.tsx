@@ -1,8 +1,10 @@
 // src/components/ChatWindow.tsx
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Send, X } from 'lucide-react'
-import { getCharacterByName, getClient, isSdkReady } from '@/lib/sdk'
+import { getCharacterByName, getClient, GuildCraftError, isSdkReady } from '@/lib/sdk'
+import { usePlayerState } from '@/context/PlayerStateContext'
 import { formatNpcDisplayName, normalizeNpcName } from '@/lib/protocolBabel'
+import { PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 
 export interface TradeIntent {
   item: string
@@ -38,6 +40,8 @@ const NPC_GREETINGS: Record<string, string> = {
   NODE_ALPHA: 'Node-Alpha connected. Escrow state pending.',
   NODE_OMEGA: 'Node-Omega online. Complete the transaction.',
 }
+
+const REFILL_COST = 500
 
 function extractTradeIntent(text: string): { clean: string; trade: TradeIntent | null } {
   const match = text.match(/\[\[TRADE:(\{.*?\})\]\]/s)
@@ -122,6 +126,7 @@ function parseAgentResponse(rawText: string): ParsedNpcAction[] {
 
 export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindowProps) {
   const npcDisplayName = formatNpcDisplayName(npcName)
+  const { credits, debitCredits } = usePlayerState()
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'npc',
@@ -134,6 +139,8 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
   const [sdkActive, setSdkActive] = useState<boolean>(() => isSdkReady())
   const [characterId, setCharacterId] = useState<string | null>(null)
   const [charLookupError, setCharLookupError] = useState<string | null>(null)
+  const [isOutOfCompute, setIsOutOfCompute] = useState(false)
+  const [isRefilling, setIsRefilling] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -193,6 +200,7 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
           response?: string
           action?: string | null
           tradeIntent?: TradeIntent | null
+          worldEvent?: string | null
         }
 
         const rawText = String(response.response ?? '').trim()
@@ -219,15 +227,116 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
           })
         )
 
+        if (response.worldEvent === 'FIREWALL_CRACKED') {
+          window.dispatchEvent(new CustomEvent('FIREWALL_CRACKED'))
+        }
+
+        if (isOutOfCompute) {
+          setIsOutOfCompute(false)
+        }
+
         return true
       } catch (error) {
+        const guildError = error as { status?: number; body?: { error?: unknown } }
+        if (error instanceof GuildCraftError || typeof guildError.status === 'number') {
+          const bodyError =
+            guildError.body && typeof guildError.body.error === 'string' ? guildError.body.error : ''
+          const isComputeBudgetExceeded =
+            guildError.status === 429 && /compute budget exceeded/i.test(bodyError)
+
+          if (isComputeBudgetExceeded) {
+            setIsOutOfCompute(true)
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: 'system',
+                text: 'ERR: TEE COMPUTE LIMIT EXCEEDED. UPLINK SEVERED.',
+                timestamp: new Date(),
+              },
+            ])
+            return true
+          }
+        }
+
         const message = error instanceof Error ? error.message : 'Chat failed'
         setMessages((prev) => [...prev, { role: 'system', text: message, timestamp: new Date() }])
         return false
       }
     },
-    [characterId, npcId, npcName, onTradeIntent]
+    [characterId, isOutOfCompute, npcId, npcName, onTradeIntent]
   )
+
+  const handleRefill = useCallback(async () => {
+    if (isRefilling) return
+
+    if (!isSdkReady()) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'system',
+          text: 'GuildCraft SDK not configured. Refill unavailable.',
+          timestamp: new Date(),
+        },
+      ])
+      return
+    }
+
+    if (credits < REFILL_COST) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'system',
+          text: `Insufficient ${PRIMARY_TOKEN_SYMBOL}. ${REFILL_COST} ${PRIMARY_TOKEN_SYMBOL} required to restore ${npcDisplayName}.`,
+          timestamp: new Date(),
+        },
+      ])
+      return
+    }
+
+    const client = getClient()
+    if (!client) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'system',
+          text: 'GuildCraft client unavailable. Refill failed.',
+          timestamp: new Date(),
+        },
+      ])
+      return
+    }
+
+    setIsRefilling(true)
+    try {
+      await client.refillNpcCompute(npcName)
+      const didDebit = debitCredits(REFILL_COST)
+      if (!didDebit) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'system',
+            text: `UPLINK RESTORED, but token debit failed. Check wallet state.`,
+            timestamp: new Date(),
+          },
+        ])
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'system',
+            text: `UPLINK RESTORED. ${REFILL_COST} ${PRIMARY_TOKEN_SYMBOL} DEDUCTED.`,
+            timestamp: new Date(),
+          },
+        ])
+      }
+      setIsOutOfCompute(false)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to refill compute budget'
+      setMessages((prev) => [...prev, { role: 'system', text: message, timestamp: new Date() }])
+    } finally {
+      setIsRefilling(false)
+    }
+  }, [credits, debitCredits, isRefilling, npcDisplayName, npcName])
 
   const sendMessage = useCallback(async () => {
     const text = input.trim()
@@ -273,6 +382,7 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
   }
 
   const busy = isThinking
+  const sendDisabled = !input.trim() || !sdkActive || busy || isOutOfCompute
 
   return (
     <div
@@ -345,25 +455,41 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
       </div>
 
       <div className="flex-shrink-0 border-t border-white/10 p-3">
-        <div className="flex items-end gap-2">
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={`Message ${npcDisplayName}...`}
-            disabled={!sdkActive || busy}
-            className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/40 disabled:opacity-60"
-          />
-          <button
-            onClick={() => void sendMessage()}
-            disabled={!input.trim() || !sdkActive || busy}
-            className="flex items-center gap-2 rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50 disabled:hover:bg-cyan-500/10"
-          >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-            Send
-          </button>
-        </div>
+        {isOutOfCompute ? (
+          <div className="flex flex-col gap-3 rounded-lg border border-red-500/40 bg-red-900/30 p-3 text-center">
+            <p className="text-xs font-bold uppercase tracking-wider text-red-300">
+              Warning: {npcDisplayName} core logic halted. Compute injection required.
+            </p>
+            <p className="text-[11px] text-red-100/80">Available {PRIMARY_TOKEN_SYMBOL}: {credits}</p>
+            <button
+              onClick={() => void handleRefill()}
+              disabled={isRefilling || credits < REFILL_COST}
+              className="rounded-lg border border-cyan-500/40 bg-black px-3 py-2 text-xs font-bold tracking-wider text-cyan-300 hover:bg-cyan-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isRefilling ? 'INJECTING...' : `PAY ${REFILL_COST} ${PRIMARY_TOKEN_SYMBOL} TO RESTORE UPLINK`}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-end gap-2">
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={`Message ${npcDisplayName}...`}
+              disabled={!sdkActive || busy}
+              className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/40 disabled:opacity-60"
+            />
+            <button
+              onClick={() => void sendMessage()}
+              disabled={sendDisabled}
+              className="flex items-center gap-2 rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50 disabled:hover:bg-cyan-500/10"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              Send
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

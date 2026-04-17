@@ -40,14 +40,14 @@ async function seed() {
     {
       ownerName: 'Forge_9',
       itemName: 'Encrypted Comms Token',
-      description: 'Grants one-time secure channel with Protocol Babel nodes.',
+      description: `Grants one-time secure channel with Protocol Babel nodes.`,
       quantity: 2,
       price: 800,
     },
     {
       ownerName: 'Node_Alpha',
       itemName: 'Escrow Release Code',
-      description: 'Triggers escrow release for pending transactions.',
+      description: `Triggers escrow release for pending transactions.`,
       quantity: 1,
       price: 3000,
     },

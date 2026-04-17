@@ -506,6 +506,59 @@ describe('5 · Chat API', () => {
     assert.equal(typeof body.compute.remainingTokens, 'string')
   })
 
+  test('POST /api/npcs/:name/refill — missing auth returns 401', async () => {
+    const { status, body } = await req(`/npcs/${state.characterId}/refill`, {
+      method: 'POST',
+    })
+
+    assert.equal(status, 401)
+    assert.ok(body.error)
+  })
+
+  test('POST /api/npcs/:name/refill — unknown npc returns 404', async () => {
+    const { status, body } = await req('/npcs/nonexistent_npc_999/refill', {
+      method: 'POST',
+      apiKey: state.apiKey,
+    })
+
+    assert.equal(status, 404)
+    assert.ok(body.error)
+  })
+
+  test('POST /api/npcs/:name/refill — restores budget so chat can continue', async () => {
+    // Exhaust budget first
+    const exhausted = await req('/chat', {
+      method: 'POST',
+      apiKey: state.apiKey,
+      body: JSON.stringify({
+        characterId: state.characterId,
+        message: 'Still blocked before refill?',
+      }),
+    })
+    assert.equal(exhausted.status, 429)
+
+    const refill = await req(`/npcs/${state.characterId}/refill`, {
+      method: 'POST',
+      apiKey: state.apiKey,
+    })
+    assert.equal(refill.status, 200)
+    assert.equal(refill.body.success, true)
+    assert.ok(refill.body.compute)
+    assert.equal(refill.body.compute.usageTokens, '0')
+    assert.ok(refill.body.compute.resetAt)
+
+    const afterRefill = await req('/chat', {
+      method: 'POST',
+      apiKey: state.apiKey,
+      body: JSON.stringify({
+        characterId: state.characterId,
+        message: 'Back online after refill?',
+      }),
+    })
+    assert.equal(afterRefill.status, 200)
+    assert.ok(typeof afterRefill.body.response === 'string')
+  })
+
   test('POST /api/chat — tee enabled response includes attestation metadata', async () => {
     const { status: patchStatus } = await req('/characters', {
       method: 'PATCH',

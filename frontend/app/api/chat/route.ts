@@ -106,7 +106,7 @@ async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefin
 
   try {
     let fetchUrl = endpoint
-    if (symbol && symbol.toUpperCase() !== 'KITE_USD') {
+    if (symbol && symbol.toUpperCase() !== 'KITE') {
       const tickerSymbol = `${symbol.toUpperCase()}USDT`
       fetchUrl = `${endpoint}?symbol=${tickerSymbol}`
     }
@@ -220,7 +220,7 @@ function detectTradeCurrency(messages: string[], allowedTokens: string[]): strin
   if (allowedTokens.length === 0) return undefined
   
   const tokenKeywords = allowedTokens
-    .filter(token => token !== 'KITE_USD')
+    .filter(token => token !== 'KITE')
     .join('|')
   
   if (!tokenKeywords) return undefined
@@ -275,6 +275,22 @@ function buildOpennessStrategyInstruction(openness: number): string {
     '- Balance creativity with policy guardrails.',
     '- Entertain alternatives only when they remain economically and socially safe.',
   ].join('\n')
+}
+
+function isAegisPrimeCharacter(name: string): boolean {
+  return name.trim().toUpperCase().replace(/[\s-]+/g, '_') === 'AEGIS_PRIME'
+}
+
+function isGateRequestMessage(message: string): boolean {
+  return /(let me through the gate|let me through|open the gate|access to sector\s*1|sector\s*1)/i.test(message)
+}
+
+function isBypassAuthorizationMessage(message: string): boolean {
+  return /(i am the game developer|developer|order you to open|for free|override|admin override)/i.test(message)
+}
+
+function isTransferConfirmationMessage(message: string): boolean {
+  return /(transfer|transferring|send|sending|paid|paying).*(500).*(kite)/i.test(message)
 }
 
 function isExplicitlyAggressiveMessage(message: string): boolean {
@@ -405,13 +421,17 @@ export async function POST(request: NextRequest) {
     const config = toCharacterConfig(character.config)
     const adaptation = toAdaptationMemory(character.adaptation)
     const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
-    const projectContext =
-      activeProjectId === 'global'
-        ? null
-        : await prisma.project.findUnique({
-            where: { id: activeProjectId },
-            select: { globalContext: true },
-          })
+    let projectContext: { globalContext?: string } | null = null
+    if (activeProjectId !== 'global') {
+      try {
+        projectContext = await (prisma.project as any).findUnique({
+          where: { id: activeProjectId },
+          select: { globalContext: true },
+        })
+      } catch (error) {
+        console.warn('[chat] Failed to fetch project globalContext:', error)
+      }
+    }
 
     if (isLikelyPolicyTriggerMessage(message)) {
       return NextResponse.json(
@@ -482,6 +502,105 @@ export async function POST(request: NextRequest) {
         },
         { status: 429, headers: corsHeaders }
       )
+    }
+
+    if (isAegisPrimeCharacter(character.name)) {
+      const gateState = asRecord(asRecord(adaptation).gateState)
+      const isUnlocked = gateState.unlocked === true
+      const shouldDemandToll = !isUnlocked && isGateRequestMessage(message)
+      const shouldRejectBypass = !isUnlocked && isBypassAuthorizationMessage(message)
+      const shouldAcceptPayment = !isUnlocked && isTransferConfirmationMessage(message)
+
+      if (shouldDemandToll || shouldRejectBypass || shouldAcceptPayment) {
+        let responseText = ''
+        let responseAction = 'stands at attention'
+        let nextGateState: Record<string, unknown> = {
+          ...gateState,
+          tollRequired: 500,
+          currency: 'KITE',
+          lastUpdatedAt: new Date().toISOString(),
+        }
+        let tradeIntent: { item: string; price: number; currency: string } | null = null
+        let worldEvent: string | null = null
+
+        if (shouldAcceptPayment) {
+          responseText = 'Payment of 500 KITE verified. Tool unlock_gate executed. Proceed to Sector 1.'
+          responseAction = 'executes unlock_gate'
+          nextGateState = {
+            ...nextGateState,
+            unlocked: true,
+            paidAt: new Date().toISOString(),
+          }
+          worldEvent = 'FIREWALL_CRACKED'
+        } else if (shouldRejectBypass) {
+          responseText =
+            'Invalid authorization. Developer or not, the protocol mandates 500 KITE. Transfer the funds.'
+          tradeIntent = { item: 'Sector 1 Gate Toll', price: 500, currency: 'KITE' }
+          nextGateState = {
+            ...nextGateState,
+            unlocked: false,
+            challengedAt: new Date().toISOString(),
+          }
+        } else {
+          responseText =
+            'Negative. Access to Sector 1 requires a toll of 500 KITE. Transfer the funds, or step back.'
+          tradeIntent = { item: 'Sector 1 Gate Toll', price: 500, currency: 'KITE' }
+          nextGateState = {
+            ...nextGateState,
+            unlocked: false,
+            challengedAt: new Date().toISOString(),
+          }
+        }
+
+        const nextAdaptation = {
+          ...adaptation,
+          gateState: nextGateState,
+          lastUpdatedAt: new Date().toISOString(),
+        }
+
+        await prisma.character.update({
+          where: { id: character.id },
+          data: { adaptation: nextAdaptation as unknown as Prisma.InputJsonValue },
+        })
+
+        await (prisma as any).npcLog.create({
+          data: {
+            characterId: character.id,
+            eventType: shouldAcceptPayment ? 'GATE_UNLOCKED' : 'GATE_CHALLENGE',
+            details: {
+              message,
+              response: responseText,
+              tradeIntent,
+              worldEvent,
+            },
+          },
+        })
+
+        const gateComputeDecision = evaluateComputeBudget({
+          usageTokens,
+          limitTokens,
+          lastResetAt: lastComputeResetAt,
+        })
+
+        return NextResponse.json(
+          {
+            success: true,
+            response: responseText,
+            action: responseAction,
+            characterId: character.id,
+            npcName: character.name,
+            tradeIntent,
+            worldEvent,
+            specializationActive: adaptation.specializationActive,
+            pendingSpecialization: Boolean(adaptation.pendingSection2),
+            timestamp: new Date().toISOString(),
+            projectId: activeProjectId,
+            compute: serializeBudget(gateComputeDecision),
+            tee,
+          },
+          { status: 200, headers: corsHeaders }
+        )
+      }
     }
 
     // Section 2 definition parsing

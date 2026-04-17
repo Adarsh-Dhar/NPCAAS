@@ -212,7 +212,7 @@ export class EconomicEngine {
     const openness = normalizeOpenness(input.openness)
     const discountTolerance = getDiscountTolerance(openness)
     const minPrice = EconomicEngine.calculateMinPrice(input.config, input.currentMarketRate)
-    const tradeCurrency = input.currentTradeCurrency ?? 'KITE_USD'
+    const tradeCurrency = input.currentTradeCurrency ?? 'KITE'
 
     const lines: string[] = [
       'ECONOMIC CONSTRAINTS:',
@@ -220,7 +220,7 @@ export class EconomicEngine {
     ]
 
     if (baseCapital !== undefined) {
-      lines.push(`- Base capital (KITE native): ${baseCapital}`)
+      lines.push(`- Base capital (${tradeCurrency}): ${baseCapital}`)
     }
 
     if (margin !== undefined) {
@@ -236,7 +236,7 @@ export class EconomicEngine {
     }
 
     if (input.liveWalletBalance !== undefined) {
-      lines.push(`- Live wallet balance (KITE native): ${input.liveWalletBalance}`)
+      lines.push(`- Live wallet balance (${tradeCurrency}): ${input.liveWalletBalance}`)
     }
 
     if (minPrice !== null) {

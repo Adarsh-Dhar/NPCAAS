@@ -1,6 +1,7 @@
 import { PrismaClient } from "../lib/generated/prisma/client";
 import type { Prisma } from "../lib/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { kiteAAProvider } from "../lib/aa-sdk";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -22,6 +23,12 @@ type SeedCharacter = {
   computeLimitTokens: bigint;
   config: Prisma.InputJsonValue;
 };
+
+function asRecord(value: Prisma.InputJsonValue): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
 
 const CHARACTERS: SeedCharacter[] = [
   {
@@ -339,13 +346,31 @@ async function main() {
   });
 
   for (const character of CHARACTERS) {
+    const ownerId = `character:${character.id}`;
+    const smartAccount = await kiteAAProvider.createSmartAccount({
+      ownerId,
+      metadata: {
+        npcName: character.name,
+        project: PROJECT_NAME,
+      },
+    });
+
+    const nextConfig = {
+      ...asRecord(character.config),
+      ownerId,
+    } as Prisma.InputJsonValue;
+
     await prisma.character.upsert({
       where: { id: character.id },
       update: {
         name: character.name,
-        walletAddress: character.walletAddress,
+        walletAddress: smartAccount.address,
+        aaChainId: smartAccount.chainId,
+        aaProvider: smartAccount.provider,
+        smartAccountId: smartAccount.smartAccountId,
+        smartAccountStatus: "created",
         computeLimitTokens: character.computeLimitTokens,
-        config: character.config,
+        config: nextConfig,
         projects: {
           connect: [{ id: project.id }],
         },
@@ -353,9 +378,13 @@ async function main() {
       create: {
         id: character.id,
         name: character.name,
-        walletAddress: character.walletAddress,
+        walletAddress: smartAccount.address,
+        aaChainId: smartAccount.chainId,
+        aaProvider: smartAccount.provider,
+        smartAccountId: smartAccount.smartAccountId,
+        smartAccountStatus: "created",
         computeLimitTokens: character.computeLimitTokens,
-        config: character.config,
+        config: nextConfig,
         projects: {
           connect: [{ id: project.id }],
         },

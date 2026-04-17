@@ -5,6 +5,7 @@ import { ethers } from 'ethers'
 import RetroButton from '@/components/ui/RetroButton'
 import RetroInput from '@/components/ui/RetroInput'
 import { useWallet } from '@/components/WalletContext'
+import { PRIMARY_TOKEN_ADDRESS, PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 
 interface FundWalletModalProps {
   characterName: string
@@ -13,7 +14,6 @@ interface FundWalletModalProps {
 }
 
 const KITE_EXPLORER = 'https://testnet.kitescan.ai'
-const FUNDING_TOKEN_ADDRESS = '0xC3ce3C5D32C7d622A230F3453ac6E7a008431F5d'
 const FUNDING_TOKEN_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)',
   'function decimals() view returns (uint8)',
@@ -82,7 +82,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
 
       console.log("signer", signer)
 
-      const tokenContract = new ethers.Contract(FUNDING_TOKEN_ADDRESS, FUNDING_TOKEN_ABI, signer)
+      const tokenContract = new ethers.Contract(PRIMARY_TOKEN_ADDRESS, FUNDING_TOKEN_ABI, signer)
       const decimals = Number(await tokenContract.decimals().catch(() => 18))
       const tokenAmount = ethers.parseUnits(parsedAmount.toString(), Number.isFinite(decimals) ? decimals : 18)
       const tx = await tokenContract.transfer(walletAddress, tokenAmount)
@@ -158,7 +158,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
           {status === 'success' ? (
             <div>
               <div className="border-4 border-green-400 bg-green-950/20 p-4 mb-4">
-                <p className="text-green-400 text-sm font-bold mb-2">✓ {amount} token sent!</p>
+                <p className="text-green-400 text-sm font-bold mb-2">✓ {amount} {PRIMARY_TOKEN_SYMBOL} sent!</p>
                 <p className="text-xs text-gray-400 font-mono break-all">
                   Tx: {txHash.slice(0, 20)}...{txHash.slice(-8)}
                 </p>
@@ -194,7 +194,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
               />
 
               <p className="mt-2 text-xs text-gray-500 font-mono">
-                Sending ERC-20 token {FUNDING_TOKEN_ADDRESS} on KiteAI Testnet (Chain ID: 2368)
+                Sending {PRIMARY_TOKEN_SYMBOL} token {PRIMARY_TOKEN_ADDRESS} on KiteAI Testnet (Chain ID: 2368)
               </p>
 
               {(status === 'error' && error) && (

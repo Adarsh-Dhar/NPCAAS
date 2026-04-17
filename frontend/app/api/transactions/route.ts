@@ -14,6 +14,7 @@ import { parseEther } from 'ethers' // <--- ADD THIS IMPORT
 import { EconomicEngine } from '@/lib/economic-engine'
 import { kiteAAProvider } from '@/lib/aa-sdk'
 import { ethers } from 'ethers'
+import { PRIMARY_TOKEN_ADDRESS, PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -61,8 +62,7 @@ interface ExecutionErrorShape {
 
 const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
 const KITE_CHAIN_ID = Number(process.env.KITE_AA_CHAIN_ID ?? '2368')
-const DEFAULT_KITE_USD_TESTNET_TOKEN = '0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63'
-const BOT_TO_BOT_TOKEN_ADDRESS = '0xC3ce3C5D32C7d622A230F3453ac6E7a008431F5d'
+const BOT_TO_BOT_TOKEN_ADDRESS = PRIMARY_TOKEN_ADDRESS
 
 function getCorsHeaders(origin: string | null) {
   const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
@@ -103,7 +103,7 @@ async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefin
   try {
     // If symbol provided, append it to the Binance API endpoint
     let fetchUrl = endpoint
-    if (symbol && symbol.toUpperCase() !== 'KITE_USD') {
+    if (symbol && symbol.toUpperCase() !== PRIMARY_TOKEN_SYMBOL) {
       // Construct Binance ticker symbol (e.g., "SOL" -> "SOLUSDT")
       const tickerSymbol = `${symbol.toUpperCase()}USDT`
       fetchUrl = `${endpoint}?symbol=${tickerSymbol}`
@@ -208,11 +208,10 @@ function extractX402TokenAddress(config: unknown): string | null {
   const tokenMap = asRecord(payload.tokenContractAddresses)
 
   const candidate =
-    (typeof tokenMap.KITE_USD === 'string' ? tokenMap.KITE_USD : undefined) ??
     (typeof tokenMap.KITE === 'string' ? tokenMap.KITE : undefined) ??
-    (typeof payload.kiteUsdTokenAddress === 'string' ? payload.kiteUsdTokenAddress : undefined) ??
-    process.env.KITE_USD_TOKEN_ADDRESS ??
-    (KITE_CHAIN_ID === 2368 ? DEFAULT_KITE_USD_TESTNET_TOKEN : undefined)
+    (typeof payload.kiteTokenAddress === 'string' ? payload.kiteTokenAddress : undefined) ??
+    process.env.KITE_TOKEN_ADDRESS ??
+    PRIMARY_TOKEN_ADDRESS
 
   if (!candidate || !ethers.isAddress(candidate)) {
     return null
@@ -414,7 +413,7 @@ export async function POST(request: NextRequest) {
 
       const txRequest = {
         to: character.walletAddress, // Receiver is the NPC
-        // Converts decimal KITE amount to Wei string
+        // Converts decimal token amount to Wei string
         value: parseEther(tradeIntent.price.toString()).toString(),
         data: "0x",
       }
@@ -531,7 +530,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
               {
                 error: 'Insufficient sender balance',
-                details: `Sender has ${ethers.formatEther(senderBalance)} KITE, attempted ${ethers.formatEther(valueBigInt)} KITE.`,
+                details: `Sender has ${ethers.formatEther(senderBalance)} ${PRIMARY_TOKEN_SYMBOL}, attempted ${ethers.formatEther(valueBigInt)} ${PRIMARY_TOKEN_SYMBOL}.`,
                 hint: 'Fund the source NPC wallet or lower the transfer amount.',
               },
               { status: 400, headers: cors }
@@ -559,8 +558,8 @@ export async function POST(request: NextRequest) {
           return NextResponse.json(
             {
               error: 'Transfer fallback unavailable',
-              details: 'Native transfer was rejected and no x402 token contract was configured.',
-              hint: 'Add config.tokenContractAddresses.KITE_USD (or env KITE_USD_TOKEN_ADDRESS).',
+              details: 'Native transfer was rejected and no token contract was configured.',
+              hint: `Add config.tokenContractAddresses.${PRIMARY_TOKEN_SYMBOL} (or env KITE_TOKEN_ADDRESS).`,
             },
             { status: 400, headers: cors }
           )
@@ -589,7 +588,7 @@ export async function POST(request: NextRequest) {
               {
                 error: 'Insufficient x402 token balance',
                 details: `Sender has ${tokenBalanceRaw.toString()} token units but needs ${tokenAmount.toString()}.`,
-                hint: 'Fund the source NPC with x402 token (KITE_USD/USDT) or lower amount.',
+                hint: `Fund the source NPC with ${PRIMARY_TOKEN_SYMBOL} or lower amount.`,
               },
               { status: 400, headers: cors }
             )
@@ -628,7 +627,7 @@ export async function POST(request: NextRequest) {
               characterId,
               transaction: directTx,
               usedFallback: 'x402_erc20',
-              message: 'Native transfer path was rejected. Sent via x402 ERC-20 fallback.',
+              message: 'Native transfer path was rejected. Sent via ERC-20 fallback.',
             },
             { status: 200, headers: cors }
           )
@@ -681,7 +680,7 @@ export async function POST(request: NextRequest) {
             {
               error: 'Insufficient token balance',
               details: `Sender has ${tokenBalanceRaw.toString()} token units but needs ${tokenAmount.toString()}.`,
-              hint: 'Fund source NPC with token or lower transfer amount.',
+                hint: `Fund source NPC with ${PRIMARY_TOKEN_SYMBOL} or lower transfer amount.`,
             },
             { status: 400, headers: cors }
           )
@@ -738,7 +737,7 @@ export async function POST(request: NextRequest) {
           characterId,
           transaction: directTx,
           message: execution.mode === 'sponsored'
-              ? 'Transaction sent — gas sponsored by Kite.'
+              ? `Transaction sent — gas sponsored by Kite.`
               : 'Sponsorship unavailable. Fallback requires user-paid gas.',
         },
         { status: 200, headers: cors }
