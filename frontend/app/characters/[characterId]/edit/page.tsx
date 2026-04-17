@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { ethers } from 'ethers'
 import TopNav from '@/components/TopNav'
 import LeftPanel from '@/components/creator/LeftPanel'
 import ConfigurationForm from '@/components/creator/ConfigurationForm'
@@ -21,8 +22,31 @@ interface CharacterRecord {
   id: string
   name: string
   walletAddress: string
+  projectIds?: string[]
   config: Record<string, unknown>
 }
+
+interface GameCharacterOption {
+  id: string
+  name: string
+  walletAddress: string
+}
+
+interface GameCharactersResponse {
+  game: {
+    id: string
+    name: string
+  }
+  characters: GameCharacterOption[]
+}
+
+const KITE_RPC = 'https://rpc-testnet.gokite.ai'
+const BOT_TRANSFER_TOKEN_ADDRESS = '0xC3ce3C5D32C7d622A230F3453ac6E7a008431F5d'
+const ERC20_BALANCE_ABI = [
+  'function balanceOf(address) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
+]
 
 interface CharacterLookupResponse {
   character: CharacterRecord
@@ -103,6 +127,16 @@ export default function EditCharacterPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showFundModal, setShowFundModal] = useState(false)
+  const [kiteBalance, setKiteBalance] = useState<string | null>(null)
+  const [erc20Balance, setErc20Balance] = useState<string | null>(null)
+  const [erc20Symbol, setErc20Symbol] = useState('TOKEN')
+  const [balanceLoading, setBalanceLoading] = useState(false)
+  const [transferTargets, setTransferTargets] = useState<GameCharacterOption[]>([])
+  const [targetCharacterId, setTargetCharacterId] = useState('')
+  const [transferAmount, setTransferAmount] = useState('0.01')
+  const [transferLoading, setTransferLoading] = useState(false)
+  const [transferError, setTransferError] = useState('')
+  const [transferSuccess, setTransferSuccess] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -127,6 +161,173 @@ export default function EditCharacterPage() {
     if (characterId) loadCharacter()
     return () => { cancelled = true }
   }, [characterId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadBalance = async () => {
+      if (!character?.walletAddress) {
+        setKiteBalance(null)
+        setErc20Balance(null)
+        return
+      }
+
+      setBalanceLoading(true)
+      try {
+        const provider = new ethers.JsonRpcProvider(KITE_RPC)
+        const tokenContract = new ethers.Contract(BOT_TRANSFER_TOKEN_ADDRESS, ERC20_BALANCE_ABI, provider)
+        const [rawBalance, tokenRawBalance, tokenDecimals, tokenSymbol] = await Promise.all([
+          provider.getBalance(character.walletAddress),
+          tokenContract.balanceOf(character.walletAddress).catch(() => BigInt(0)),
+          tokenContract.decimals().catch(() => 18),
+          tokenContract.symbol().catch(() => 'TOKEN'),
+        ])
+
+        if (!cancelled) {
+          setKiteBalance(ethers.formatEther(rawBalance))
+          setErc20Balance(ethers.formatUnits(tokenRawBalance, Number(tokenDecimals)))
+          setErc20Symbol(typeof tokenSymbol === 'string' ? tokenSymbol : 'TOKEN')
+        }
+      } catch {
+        if (!cancelled) {
+          setKiteBalance(null)
+          setErc20Balance(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setBalanceLoading(false)
+        }
+      }
+    }
+
+    void loadBalance()
+
+    return () => {
+      cancelled = true
+    }
+  }, [character?.walletAddress])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadTransferTargets = async () => {
+      const gameId = character?.projectIds?.[0]
+      if (!gameId || !character?.id) {
+        setTransferTargets([])
+        setTargetCharacterId('')
+        return
+      }
+
+      try {
+        const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/characters`)
+        if (!response.ok) {
+          throw new Error('Failed to load transfer targets')
+        }
+
+        const payload = (await response.json()) as GameCharactersResponse
+        const options = (Array.isArray(payload.characters) ? payload.characters : []).filter(
+          (candidate) => candidate.id !== character.id
+        )
+
+        if (!cancelled) {
+          setTransferTargets(options)
+          setTargetCharacterId((current) => {
+            if (current && options.some((option) => option.id === current)) return current
+            return options[0]?.id ?? ''
+          })
+        }
+      } catch {
+        if (!cancelled) {
+          setTransferTargets([])
+          setTargetCharacterId('')
+        }
+      }
+    }
+
+    void loadTransferTargets()
+
+    return () => {
+      cancelled = true
+    }
+  }, [character?.id, character?.projectIds])
+
+  const submitBotToBotTransfer = async () => {
+    if (!character) return
+
+    const target = transferTargets.find((option) => option.id === targetCharacterId)
+    if (!target) {
+      setTransferError('Select a target character first.')
+      setTransferSuccess('')
+      return
+    }
+
+    const parsed = Number(transferAmount)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setTransferError('Enter a transfer amount greater than 0.')
+      setTransferSuccess('')
+      return
+    }
+
+    setTransferLoading(true)
+    setTransferError('')
+    setTransferSuccess('')
+
+    try {
+      const valueWei = ethers.parseEther(parsed.toString()).toString()
+      const response = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          characterId: character.id,
+          transferMode: 'bot_to_bot',
+          transaction: {
+            to: target.walletAddress,
+            value: valueWei,
+            data: '0x',
+            tokenAddress: BOT_TRANSFER_TOKEN_ADDRESS,
+            amount: transferAmount,
+          },
+        }),
+      })
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        txHash?: string
+        error?: string
+        details?: string
+        hint?: string
+        newWalletAddress?: string
+      }
+
+      if (!response.ok) {
+        if (response.status === 409 && payload.newWalletAddress) {
+          const refreshed = await fetch(`/api/characters/${encodeURIComponent(character.id)}`)
+          if (refreshed.ok) {
+            const refreshedPayload = (await refreshed.json()) as CharacterLookupResponse
+            setCharacter(refreshedPayload.character)
+          }
+        }
+
+        const errorMessage = payload.error ?? 'Transfer failed'
+        const detailLine = payload.details ? `\n${payload.details}` : ''
+        const hintLine = payload.hint ? `\nHint: ${payload.hint}` : ''
+        throw new Error(`${errorMessage}${detailLine}${hintLine}`)
+      }
+
+      setTransferSuccess(
+        payload.txHash
+          ? `x402 transfer sent. Tx hash: ${payload.txHash}`
+          : 'x402 transfer submitted.'
+      )
+    } catch (transferRequestError) {
+      const message =
+        transferRequestError instanceof Error ? transferRequestError.message : 'Transfer failed'
+      setTransferError(message)
+    } finally {
+      setTransferLoading(false)
+    }
+  }
 
   return (
     <main className="bg-black min-h-screen flex flex-col text-white">
@@ -179,6 +380,66 @@ export default function EditCharacterPage() {
                     <p className="text-xs font-mono text-cyan-300 max-w-48 break-all">
                       {character.walletAddress}
                     </p>
+                    <p className="mt-3 text-xs text-gray-400 uppercase font-bold mb-1">KITE Balance</p>
+                    <p className="text-sm font-bold text-green-300">
+                      {balanceLoading ? 'Loading...' : kiteBalance ? `${kiteBalance} KITE` : 'Unavailable'}
+                    </p>
+                    <p className="mt-2 text-xs text-gray-400 uppercase font-bold mb-1">ERC-20 Balance</p>
+                    <p className="text-sm font-bold text-yellow-300">
+                      {balanceLoading ? 'Loading...' : erc20Balance ? `${erc20Balance} ${erc20Symbol}` : 'Unavailable'}
+                    </p>
+
+                    <div className="mt-4 border-t border-cyan-500/30 pt-3 text-left">
+                      <p className="text-xs text-gray-400 uppercase font-bold mb-2">x402 Bot-to-Bot Transfer</p>
+
+                      <label className="block text-[11px] text-gray-400 uppercase font-bold mb-1">
+                        Target Character
+                      </label>
+                      <select
+                        value={targetCharacterId}
+                        onChange={(event) => setTargetCharacterId(event.target.value)}
+                        className="w-full bg-gray-900 border-2 border-cyan-500/40 text-cyan-200 text-xs font-mono px-2 py-2 mb-2"
+                      >
+                        {transferTargets.length === 0 ? (
+                          <option value="">No available targets</option>
+                        ) : (
+                          transferTargets.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.name}
+                            </option>
+                          ))
+                        )}
+                      </select>
+
+                      <label className="block text-[11px] text-gray-400 uppercase font-bold mb-1">
+                        Amount (PYUSD)
+                      </label>
+                      <input
+                        type="number"
+                        min="0.000000000000000001"
+                        step="0.001"
+                        value={transferAmount}
+                        onChange={(event) => setTransferAmount(event.target.value)}
+                        className="w-full bg-gray-900 border-2 border-cyan-500/40 text-cyan-200 text-xs font-mono px-2 py-2 mb-2"
+                      />
+
+                      <RetroButton
+                        variant="cyan"
+                        size="sm"
+                        onClick={submitBotToBotTransfer}
+                        disabled={transferLoading || !targetCharacterId || !transferAmount}
+                        className="w-full text-xs"
+                      >
+                        {transferLoading ? 'SENDING X402...' : 'SEND X402 TX'}
+                      </RetroButton>
+
+                      {transferSuccess ? (
+                        <p className="mt-2 text-[11px] text-green-300 font-mono break-all">{transferSuccess}</p>
+                      ) : null}
+                      {transferError ? (
+                        <p className="mt-2 text-[11px] text-red-300 font-mono">{transferError}</p>
+                      ) : null}
+                    </div>
                   </div>
                   <RetroButton
                     variant="yellow"

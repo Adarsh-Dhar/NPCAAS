@@ -13,6 +13,11 @@ interface FundWalletModalProps {
 }
 
 const KITE_EXPLORER = 'https://testnet.kitescan.ai'
+const FUNDING_TOKEN_ADDRESS = '0xC3ce3C5D32C7d622A230F3453ac6E7a008431F5d'
+const FUNDING_TOKEN_ABI = [
+  'function transfer(address to, uint256 amount) returns (bool)',
+  'function decimals() view returns (uint8)',
+]
 
 export default function FundWalletModal({ characterName, walletAddress, onClose }: FundWalletModalProps) {
   const { address, connecting, onKiteNetwork, connect, switchToKite } = useWallet()
@@ -77,10 +82,10 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
 
       console.log("signer", signer)
 
-      const tx = await signer.sendTransaction({
-        to: walletAddress,
-        value: ethers.parseEther(parsedAmount.toString()),
-      })
+      const tokenContract = new ethers.Contract(FUNDING_TOKEN_ADDRESS, FUNDING_TOKEN_ABI, signer)
+      const decimals = Number(await tokenContract.decimals().catch(() => 18))
+      const tokenAmount = ethers.parseUnits(parsedAmount.toString(), Number.isFinite(decimals) ? decimals : 18)
+      const tx = await tokenContract.transfer(walletAddress, tokenAmount)
       console.log("tx", tx)
 
       setTxHash(tx.hash)
@@ -93,8 +98,8 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
         msg.includes('ACTION_REJECTED')
       ) {
         setError('Transaction was rejected by the user.')
-      } else if (msg.includes('insufficient funds')) {
-        setError('Insufficient KITE balance in your wallet.')
+      } else if (msg.includes('insufficient funds') || msg.includes('transfer amount exceeds balance')) {
+        setError('Insufficient ERC-20 token balance in your wallet.')
       } else {
         setError(msg)
       }
@@ -108,7 +113,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
     if (status === 'connecting') return 'CONNECTING WALLET...'
     if (status === 'switching') return 'SWITCHING NETWORK...'
     if (status === 'sending') return 'SENDING...'
-    if (address) return 'SEND KITE'
+    if (address) return 'SEND TOKEN'
     return 'CONNECT & SEND'
   }
 
@@ -153,7 +158,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
           {status === 'success' ? (
             <div>
               <div className="border-4 border-green-400 bg-green-950/20 p-4 mb-4">
-                <p className="text-green-400 text-sm font-bold mb-2">✓ {amount} KITE sent!</p>
+                <p className="text-green-400 text-sm font-bold mb-2">✓ {amount} token sent!</p>
                 <p className="text-xs text-gray-400 font-mono break-all">
                   Tx: {txHash.slice(0, 20)}...{txHash.slice(-8)}
                 </p>
@@ -178,7 +183,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
             <>
               <RetroInput
                 borderColor="yellow"
-                label="Amount (KITE)"
+                label="Amount (Token)"
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
@@ -189,7 +194,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
               />
 
               <p className="mt-2 text-xs text-gray-500 font-mono">
-                Sending native KITE tokens on KiteAI Testnet (Chain ID: 2368)
+                Sending ERC-20 token {FUNDING_TOKEN_ADDRESS} on KiteAI Testnet (Chain ID: 2368)
               </p>
 
               {(status === 'error' && error) && (

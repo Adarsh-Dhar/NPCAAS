@@ -1,7 +1,7 @@
 {
 	"servers": {
 		"KITE": {
-			"url": "https://docs.gokite.ai/~gitbook/mcp",
+			"url": "https://docs.gokite.ai/~gitbook/mcp/",
 			"type": "http"
 		}
 	},
