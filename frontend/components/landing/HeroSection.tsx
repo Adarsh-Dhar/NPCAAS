@@ -22,7 +22,7 @@ export default function HeroSection() {
           Meet the future of autonomous agents. 
           <br />
           Create dynamic AI NPCs with <span className="text-yellow-400">Account Abstraction</span> on{' '}
-          <span className="text-green-400">Kite Chain</span>.
+          <span className="text-green-400">KITE_USD Network</span>.
         </p>
 
         {/* CTA Button */}

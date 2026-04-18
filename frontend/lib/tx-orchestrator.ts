@@ -4,7 +4,7 @@
  * Production write-transaction pipeline using the real gokite-aa-sdk.
  *
  * Flow:
- *   1. Attempt sponsored execution via the Kite bundler (gasless for the user)
+ *   1. Attempt sponsored execution via the KITE_USD bundler (gasless for the user)
  *   2. If sponsorship fails, throw an explicit error.
  *
  * The NPC's ownerId is required for signing — it must match the value used
@@ -15,7 +15,7 @@
 import { kiteAAProvider } from '@/lib/aa-sdk'
 import type { SponsoredTx } from '@/lib/aa-sdk'
 import { buildTeeGateResult } from '@/lib/tee-gate'
-import { PRIMARY_TOKEN_ADDRESS, PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
+import { PRIMARY_TOKEN_ADDRESS, PRIMARY_TOKEN_DECIMALS, PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -55,7 +55,7 @@ export interface SponsoredExecutionResult {
  * For ERC-20 token transfers: pass tokenAddress or ensure characterConfig contains
  *   tokenContractAddresses mapping for the active currency label.
  * 
- * Gas is always sponsored via KITE EIP-4337 bundler.
+ * Gas is always sponsored via the KITE_USD EIP-4337 bundler.
  */
 export async function executeWriteTransaction(
   input: WriteTransactionInput
@@ -72,7 +72,7 @@ export async function executeWriteTransaction(
     input.tokenAddress ??
     (input.currency && tokenContractAddresses?.[input.currency]) ??
     tokenContractAddresses?.[PRIMARY_TOKEN_SYMBOL] ??
-    tokenContractAddresses?.KITE ??
+    tokenContractAddresses?.KITE_USD ??
     PRIMARY_TOKEN_ADDRESS
 
   const isTokenTransfer = Boolean(resolvedTokenAddress)
@@ -82,29 +82,24 @@ export async function executeWriteTransaction(
   let finalData = input.data ?? '0x'
 
   if (isTokenTransfer) {
-    // ERC-20 multi-token transfer
-    const { ethers } = await import('ethers')
-    
-    // Encode ERC-20 transfer() call
-    const erc20ABI = ['function transfer(address to, uint256 amount) returns (bool)']
-    const iface = new ethers.Interface(erc20ABI)
-    
-    // Convert amount to wei (assuming 18 decimals - standard for most tokens)
-    const amountInWei = ethers.parseEther(input.value)
-    
-    // Encode the transfer call
-    finalData = iface.encodeFunctionData('transfer', [input.to, amountInWei])
-    
-    // Target the token contract, not the recipient
     finalTo = resolvedTokenAddress
-    
-    // No native value transfer for ERC-20
     finalValue = '0'
-    
-    console.debug(`[tx-orchestrator] Encoding ${input.currency} transfer to ${input.to}, amount: ${input.value}`, {
-      tokenContract: resolvedTokenAddress,
-      encodedData: finalData,
-    })
+
+    if (finalData === '0x') {
+      // Allow callers to provide a plain amount for token transfers.
+      const { ethers } = await import('ethers')
+
+      const erc20ABI = ['function transfer(address to, uint256 amount) returns (bool)']
+      const iface = new ethers.Interface(erc20ABI)
+      const tokenAmount = ethers.parseUnits(input.value, PRIMARY_TOKEN_DECIMALS)
+
+      finalData = iface.encodeFunctionData('transfer', [input.to, tokenAmount])
+
+      console.debug(`[tx-orchestrator] Encoding ${input.currency ?? PRIMARY_TOKEN_SYMBOL} transfer to ${input.to}, amount: ${input.value}`, {
+        tokenContract: resolvedTokenAddress,
+        encodedData: finalData,
+      })
+    }
   }
 
   try {
@@ -132,6 +127,52 @@ export async function executeWriteTransaction(
     // Map bundler statuses to our result type
     if (result.status === 'failed' || result.status === 'reverted') {
       throw new Error(`UserOperation ${result.status}: ${result.userOpHash}`)
+    }
+
+    // Some EntryPoint executions can return a mined tx while the inner
+    // UserOperation is marked unsuccessful. Validate event-level success.
+    if (result.txHash && result.userOpHash) {
+      try {
+        const { ethers } = await import('ethers')
+        const provider = new ethers.JsonRpcProvider(
+          process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
+        )
+        const receipt = await provider.getTransactionReceipt(result.txHash)
+
+        if (receipt) {
+          const iface = new ethers.Interface([
+            'event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)',
+          ])
+
+          const expected = result.userOpHash.toLowerCase()
+          for (const log of receipt.logs) {
+            try {
+              const parsed = iface.parseLog(log)
+              if (!parsed || parsed.name !== 'UserOperationEvent') continue
+
+              const logUserOpHash = String(parsed.args.userOpHash).toLowerCase()
+              if (logUserOpHash !== expected) continue
+
+              const opSuccess = Boolean(parsed.args.success)
+              if (!opSuccess) {
+                throw new Error(
+                  `UserOperationEvent success=false (sender=${parsed.args.sender}, userOpHash=${result.userOpHash})`
+                )
+              }
+
+              break
+            } catch {
+              // Ignore non-matching logs.
+            }
+          }
+        }
+      } catch (validationError) {
+        const message =
+          validationError instanceof Error
+            ? validationError.message
+            : String(validationError)
+        throw new Error(`On-chain UserOperation validation failed: ${message}`)
+      }
     }
 
     return {

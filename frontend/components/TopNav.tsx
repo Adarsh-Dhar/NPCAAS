@@ -27,7 +27,7 @@ export default function TopNav() {
   const buttonLabel = () => {
     if (connecting) return '[ CONNECTING... ]'
     if (!address) return '[ CONNECT WALLET ]'
-    if (!onKiteNetwork) return '[ SWITCH TO KITE ]'
+    if (!onKiteNetwork) return '[ SWITCH TO KITE_USD ]'
     return `[ ${shortAddress} ]`
   }
 
@@ -59,7 +59,7 @@ export default function TopNav() {
         {address && onKiteNetwork && (
           <div className="flex items-center gap-1">
             <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-green-400 text-xs font-mono">Kite Testnet</span>
+            <span className="text-green-400 text-xs font-mono">KITE_USD Testnet</span>
           </div>
         )}
         <RetroButton

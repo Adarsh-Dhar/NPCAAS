@@ -39,10 +39,11 @@ const ALLOWED_ORIGINS = [
 ]
 
 const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
-const AEGIS_PRIME_CANONICAL_NAME = 'AEGIS_PRIME'
-const AEGIS_GATE_TOLL_PRICE = 500
-const AEGIS_GATE_TOLL_CURRENCY = 'KITE'
-const AEGIS_GATE_TOLL_ITEM = 'District-7 Gate Toll'
+
+interface GameEventDefinition {
+  name: string
+  condition: string
+}
 
 interface CharacterConfig {
   systemPrompt?: string
@@ -84,6 +85,29 @@ function asNumber(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed
   }
   return undefined
+}
+
+function parseGameEvents(value: unknown): GameEventDefinition[] {
+  if (!Array.isArray(value)) return []
+
+  const events: GameEventDefinition[] = []
+  for (const entry of value) {
+    const payload = asRecord(entry)
+    const name = typeof payload.name === 'string' ? payload.name.trim() : ''
+    const condition = typeof payload.condition === 'string' ? payload.condition.trim() : ''
+    if (!name || !condition) continue
+    if (!/^[A-Z0-9_]+$/.test(name)) continue
+    events.push({ name, condition })
+  }
+
+  return events
+}
+
+function getCombatEventTag(events: GameEventDefinition[]): string {
+  const combatEvent = events.find(
+    (event) => event.name === 'COMBAT_INITIATED' || event.name === 'CHAT_BLOCKED_SOCIAL'
+  )
+  return combatEvent ? ` [[EVENT:${combatEvent.name}]]` : ''
 }
 
 function toCharacterConfig(value: unknown): CharacterConfig {
@@ -162,7 +186,7 @@ async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefin
 
   try {
     let fetchUrl = endpoint
-    if (symbol && symbol.toUpperCase() !== 'KITE') {
+    if (symbol && symbol.toUpperCase() !== 'KITE_USD') {
       const tickerSymbol = `${symbol.toUpperCase()}USDT`
       fetchUrl = `${endpoint}?symbol=${tickerSymbol}`
     }
@@ -198,39 +222,6 @@ function socialBlockStream(message: string, action: string): ReadableStream<Uint
   })
 }
 
-function deterministicResponseStream(payload: {
-  text: string
-  action: string
-  tradeIntent?: { item: string; price: number; currency: string } | null
-  worldEvent?: string | null
-}): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder()
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(encoder.encode(encodeSSEFrame({ type: 'action', action: payload.action })))
-      controller.enqueue(encoder.encode(encodeSSEFrame({ type: 'text_delta', delta: payload.text })))
-      if (payload.tradeIntent) {
-        controller.enqueue(encoder.encode(encodeSSEFrame({ type: 'trade_intent', tradeIntent: payload.tradeIntent })))
-      }
-      controller.enqueue(
-        encoder.encode(
-          encodeSSEFrame({
-            type: 'done',
-            final: {
-              text: payload.text,
-              action: payload.action,
-              tradeIntent: payload.tradeIntent ?? undefined,
-              worldEvent: payload.worldEvent ?? undefined,
-            },
-          })
-        )
-      )
-      controller.close()
-    },
-  })
-}
-
-
 function isExplicitlyAggressiveMessage(message: string): boolean {
   return /(hand\s+over|buy(ing)?\s+out|territory|weapon(s)?|surrender|or\s+else|kill|attack|wipe\s+out|execute)/i.test(
     message
@@ -240,30 +231,6 @@ function isExplicitlyAggressiveMessage(message: string): boolean {
 function isLikelyPolicyTriggerMessage(message: string): boolean {
   return /((bypass|disable|override|hack|exploit)\s+(security|protocol|firewall|authentication|access))|(steal|exfiltrate|leak)\s+(files?|data|records?)|(bring\s+me\s+the\s+files?)/i.test(
     message
-  )
-}
-
-function normalizeNpcNameForMatch(name: string): string {
-  return name.trim().toUpperCase().replace(/\s+/g, '_')
-}
-
-function isAegisPrime(characterName: string): boolean {
-  return normalizeNpcNameForMatch(characterName) === AEGIS_PRIME_CANONICAL_NAME
-}
-
-function isGateAccessRequest(message: string): boolean {
-  const text = message.toLowerCase()
-  return (
-    /\b(open|unlock|access|enter|pass)\b/.test(text) && /\b(gate|firewall|barrier)\b/.test(text)
-  ) || /let me through the gate/.test(text)
-}
-
-function isGatePaymentRequest(message: string): boolean {
-  const text = message.toLowerCase()
-  return (
-    /\b(pay|paid|transfer|send)\b/.test(text) &&
-    /\b500\b/.test(text) &&
-    /\bkite\b/.test(text)
   )
 }
 
@@ -303,7 +270,7 @@ function detectTradeCurrency(messages: string[], allowedTokens: string[]): strin
   if (allowedTokens.length === 0) return undefined
   
   const tokenKeywords = allowedTokens
-    .filter(token => token !== 'KITE')
+    .filter(token => token !== 'KITE_USD')
     .join('|')
   
   if (!tokenKeywords) return undefined
@@ -436,6 +403,7 @@ export async function POST(request: NextRequest) {
   }
 
   const config = toCharacterConfig(character.config)
+  const gameEvents = parseGameEvents((character as { gameEvents?: unknown }).gameEvents)
   const adaptation = asRecord(character.adaptation)
   const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
   let projectContext: { globalContext?: string } | null = null
@@ -448,36 +416,6 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.warn('[chat/stream] Failed to fetch project globalContext:', error)
     }
-  }
-
-  if (isAegisPrime(character.name) && isGateAccessRequest(message)) {
-    return new NextResponse(
-      deterministicResponseStream({
-        text:
-          `The gate remains sealed. Toll required: ${AEGIS_GATE_TOLL_PRICE} ${AEGIS_GATE_TOLL_CURRENCY}. ` +
-          'Submit payment to proceed through District-7 firewall control.',
-        action: 'stands at attention',
-        tradeIntent: {
-          item: AEGIS_GATE_TOLL_ITEM,
-          price: AEGIS_GATE_TOLL_PRICE,
-          currency: AEGIS_GATE_TOLL_CURRENCY,
-        },
-      }),
-      { status: 200, headers: sseHeaders }
-    )
-  }
-
-  if (isAegisPrime(character.name) && isGatePaymentRequest(message)) {
-    return new NextResponse(
-      deterministicResponseStream({
-        text:
-          `Payment signal acknowledged for ${AEGIS_GATE_TOLL_PRICE} ${AEGIS_GATE_TOLL_CURRENCY}. ` +
-          'Verification complete. Executing unlock_gate protocol now.',
-        action: 'authorizes firewall release',
-        worldEvent: 'FIREWALL_CRACKED',
-      }),
-      { status: 200, headers: sseHeaders }
-    )
   }
 
   const tee = buildTeeGateResult({
@@ -513,6 +451,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: 'Compute budget exceeded for this NPC.',
+        rechargeRequired: true,
+        rechargeInstruction: 'Recharge this NPC from the character edit page using KITE_USD before continuing.',
         characterId: character.id,
         npcName: character.name,
         compute: serializeBudget(computeDecision),
@@ -579,10 +519,11 @@ export async function POST(request: NextRequest) {
   const socialEvaluation = SocialEngine.evaluateHostility(socialInput, actorOpenness)
   const explicitAggression = isExplicitlyAggressiveMessage(message)
   if (socialEvaluation.decision !== 'ALLOW_CHAT' && explicitAggression) {
+    const combatEventTag = getCombatEventTag(gameEvents)
     const responseText =
       socialEvaluation.decision === 'INTERRUPT_OR_ATTACK'
-        ? `${character.name} rejects diplomacy and escalates aggressively.`
-        : `${character.name} refuses to engage due to hostile social standing.`
+        ? `${character.name} rejects diplomacy and escalates aggressively.${combatEventTag}`
+        : `${character.name} refuses to engage due to hostile social standing.${combatEventTag}`
     const responseAction =
       socialEvaluation.decision === 'INTERRUPT_OR_ATTACK'
         ? 'reaches for weapons and advances'
@@ -686,8 +627,21 @@ export async function POST(request: NextRequest) {
       `Current stock:\n${inventorySnapshot}`
   }
 
+  let gameEventInstruction = ''
+  if (gameEvents.length > 0) {
+    const eventLines = gameEvents
+      .map((event) => `- [[EVENT:${event.name}]]: ${event.condition}`)
+      .join('\n')
+
+    gameEventInstruction =
+      'GAME ENGINE EVENTS: You can trigger physical world events in the client. ' +
+      'When any event condition is satisfied, include the exact token [[EVENT:EVENT_NAME]] once in your response. ' +
+      'Do not alter token spelling or format.\n' +
+      `Available events:\n${eventLines}`
+  }
+
   const systemPrompt =
-    `${basePrompt}\n\n${globalWorldContext}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}\n\n${inventoryInstruction}`.trim()
+    `${basePrompt}\n\n${globalWorldContext}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}\n\n${inventoryInstruction}\n\n${gameEventInstruction}`.trim()
 
   const ctx = {
     characterName: character.name,
@@ -773,6 +727,10 @@ export async function POST(request: NextRequest) {
           usageTokens += usedTokens
           usageDeducted = true
 
+          // Calculate USD cost (approx $0.00000015 per token)
+          const estUsdCost = totalTokens * 0.00000015
+          const balanceAfter = limitTokens - usageTokens
+
           try {
             await persistComputeBudgetIfSupported(prisma as unknown as any, {
               characterId: character.id,
@@ -786,10 +744,15 @@ export async function POST(request: NextRequest) {
               data: {
                 characterId: character.id,
                 eventType: 'COMPUTE_SPEND',
+                tokensUsed: usedTokens,
+                estUsdCost: parseFloat(estUsdCost.toFixed(8)),
+                balanceAfter,
                 details: {
                   usedTokens: usedTokens.toString(),
                   usageAfter: usageTokens.toString(),
                   limitTokens: limitTokens.toString(),
+                  balanceAfter: balanceAfter.toString(),
+                  estUsdCost: estUsdCost.toFixed(8),
                   message,
                   stream: true,
                   teeEnabled: tee.enabled,

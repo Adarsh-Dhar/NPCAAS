@@ -8,6 +8,8 @@ import TopNav from '@/components/TopNav'
 import LeftPanel from '@/components/creator/LeftPanel'
 import ConfigurationForm from '@/components/creator/ConfigurationForm'
 import FundWalletModal from '@/components/FundWalletModal'
+import { ComputeBalance } from '@/components/ComputeBalance'
+import { ComputeRechargeDialog } from '@/components/ComputeRechargeDialog'
 import RetroButton from '@/components/ui/RetroButton'
 import { PRIMARY_TOKEN_ADDRESS, PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 import {
@@ -25,6 +27,10 @@ interface CharacterRecord {
   walletAddress: string
   projectIds?: string[]
   config: Record<string, unknown>
+  gameEvents?: Array<{
+    name: string
+    condition: string
+  }>
 }
 
 interface GameCharacterOption {
@@ -42,11 +48,20 @@ interface GameCharactersResponse {
 }
 
 const KITE_RPC = 'https://rpc-testnet.gokite.ai'
+const DEFAULT_TEE_RECHARGE_ADDRESS = '0xFe5e03799Fe833D93e950d22406F9aD901Ff3Bb9'
+const TEE_RECHARGE_ADDRESS = (() => {
+  const configured = process.env.NEXT_PUBLIC_TEE_RECHARGE_ADDRESS?.trim()
+  if (configured && ethers.isAddress(configured)) {
+    return ethers.getAddress(configured)
+  }
+  return DEFAULT_TEE_RECHARGE_ADDRESS
+})()
 const ERC20_BALANCE_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function decimals() view returns (uint8)',
   'function symbol() view returns (string)',
 ]
+const NATIVE_GAS_SYMBOL = 'KITE'
 
 interface CharacterLookupResponse {
   character: CharacterRecord
@@ -131,14 +146,20 @@ export default function EditCharacterPage() {
   const [showFundModal, setShowFundModal] = useState(false)
   const [kiteBalance, setKiteBalance] = useState<string | null>(null)
   const [erc20Balance, setErc20Balance] = useState<string | null>(null)
-  const [erc20Symbol, setErc20Symbol] = useState('TOKEN')
+  const [erc20Symbol, setErc20Symbol] = useState(PRIMARY_TOKEN_SYMBOL)
   const [balanceLoading, setBalanceLoading] = useState(false)
   const [transferTargets, setTransferTargets] = useState<GameCharacterOption[]>([])
   const [targetCharacterId, setTargetCharacterId] = useState('')
+    const [computeBalance, setComputeBalance] = useState<any>(null)
   const [transferAmount, setTransferAmount] = useState('0.01')
+  const [teeFundingAmount, setTeeFundingAmount] = useState('5')
+  const [teeFundingDestination, setTeeFundingDestination] = useState(TEE_RECHARGE_ADDRESS)
   const [transferLoading, setTransferLoading] = useState(false)
   const [transferError, setTransferError] = useState('')
   const [transferSuccess, setTransferSuccess] = useState('')
+  const [teeFundingLoading, setTeeFundingLoading] = useState(false)
+  const [teeFundingError, setTeeFundingError] = useState('')
+  const [teeFundingSuccess, setTeeFundingSuccess] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -171,6 +192,7 @@ export default function EditCharacterPage() {
       if (!character?.walletAddress) {
         setKiteBalance(null)
         setErc20Balance(null)
+        setErc20Symbol(PRIMARY_TOKEN_SYMBOL)
         return
       }
 
@@ -182,18 +204,19 @@ export default function EditCharacterPage() {
           provider.getBalance(character.walletAddress),
           tokenContract.balanceOf(character.walletAddress).catch(() => BigInt(0)),
           tokenContract.decimals().catch(() => 18),
-          tokenContract.symbol().catch(() => 'TOKEN'),
+          tokenContract.symbol().catch(() => PRIMARY_TOKEN_SYMBOL),
         ])
 
         if (!cancelled) {
           setKiteBalance(ethers.formatEther(rawBalance))
           setErc20Balance(ethers.formatUnits(tokenRawBalance, Number(tokenDecimals)))
-          setErc20Symbol(typeof tokenSymbol === 'string' ? tokenSymbol : 'TOKEN')
+          setErc20Symbol(typeof tokenSymbol === 'string' ? tokenSymbol : PRIMARY_TOKEN_SYMBOL)
         }
       } catch {
         if (!cancelled) {
           setKiteBalance(null)
           setErc20Balance(null)
+          setErc20Symbol(PRIMARY_TOKEN_SYMBOL)
         }
       } finally {
         if (!cancelled) {
@@ -208,6 +231,11 @@ export default function EditCharacterPage() {
       cancelled = true
     }
   }, [character?.walletAddress])
+
+  const normalizedPrimarySymbol = PRIMARY_TOKEN_SYMBOL.trim().toUpperCase()
+  const normalizedContractSymbol = erc20Symbol.trim().toUpperCase()
+  const showContractAlias =
+    Boolean(normalizedContractSymbol) && normalizedContractSymbol !== normalizedPrimarySymbol
 
   useEffect(() => {
     let cancelled = false
@@ -319,7 +347,7 @@ export default function EditCharacterPage() {
 
       setTransferSuccess(
         payload.txHash
-          ? `x402 transfer sent. Tx hash: ${payload.txHash}`
+          ? `x402 transfer sent in ${PRIMARY_TOKEN_SYMBOL} (${erc20Symbol || PRIMARY_TOKEN_SYMBOL}). Tx hash: ${payload.txHash}`
           : 'x402 transfer submitted.'
       )
     } catch (transferRequestError) {
@@ -328,6 +356,84 @@ export default function EditCharacterPage() {
       setTransferError(message)
     } finally {
       setTransferLoading(false)
+    }
+  }
+
+  const submitTeeExecutionFunding = async () => {
+    if (!character) return
+
+    const parsed = Number(teeFundingAmount)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setTeeFundingError('Enter a TEE funding amount greater than 0.')
+      setTeeFundingSuccess('')
+      return
+    }
+
+    const destination = teeFundingDestination.trim()
+    if (!ethers.isAddress(destination)) {
+      setTeeFundingError('Enter a valid TEE destination wallet address.')
+      setTeeFundingSuccess('')
+      return
+    }
+    const normalizedDestination = ethers.getAddress(destination)
+
+    if (normalizedDestination.toLowerCase() === PRIMARY_TOKEN_ADDRESS.toLowerCase()) {
+      setTeeFundingError('TEE destination cannot be the token contract address.')
+      setTeeFundingSuccess('')
+      return
+    }
+
+    setTeeFundingLoading(true)
+    setTeeFundingError('')
+    setTeeFundingSuccess('')
+
+    try {
+      const valueWei = ethers.parseEther(parsed.toString()).toString()
+      const response = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          characterId: character.id,
+          transferMode: 'bot_to_bot',
+          transaction: {
+            to: normalizedDestination,
+            value: valueWei,
+            data: '0x',
+            tokenAddress: PRIMARY_TOKEN_ADDRESS,
+            amount: teeFundingAmount,
+          },
+        }),
+      })
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        txHash?: string
+        error?: string
+        details?: string
+        hint?: string
+      }
+
+      if (!response.ok) {
+        const errorMessage = payload.error ?? 'TEE execution funding failed'
+        const detailLine = payload.details ? `\n${payload.details}` : ''
+        const hintLine = payload.hint ? `\nHint: ${payload.hint}` : ''
+        throw new Error(`${errorMessage}${detailLine}${hintLine}`)
+      }
+
+      setTeeFundingSuccess(
+        payload.txHash
+          ? `TEE execution fund tx sent to ${normalizedDestination} in ${PRIMARY_TOKEN_SYMBOL} (${erc20Symbol || PRIMARY_TOKEN_SYMBOL}) for ${teeFundingAmount}. Tx hash: ${payload.txHash}`
+          : `TEE execution fund tx submitted in ${PRIMARY_TOKEN_SYMBOL} for ${teeFundingAmount}.`
+      )
+    } catch (teeFundingRequestError) {
+      const message =
+        teeFundingRequestError instanceof Error
+          ? teeFundingRequestError.message
+          : 'TEE execution funding failed'
+      setTeeFundingError(message)
+    } finally {
+      setTeeFundingLoading(false)
     }
   }
 
@@ -382,13 +488,24 @@ export default function EditCharacterPage() {
                     <p className="text-xs font-mono text-cyan-300 max-w-48 break-all">
                       {character.walletAddress}
                     </p>
-                    <p className="mt-3 text-xs text-gray-400 uppercase font-bold mb-1">Token Balance</p>
+                    <p className="mt-3 text-xs text-gray-400 uppercase font-bold mb-1">Token Balance (ERC-20)</p>
                     <p className="text-sm font-bold text-green-300">
-                      {balanceLoading ? 'Loading...' : kiteBalance ? `${kiteBalance} ${PRIMARY_TOKEN_SYMBOL}` : 'Unavailable'}
+                      {balanceLoading ? 'Loading...' : erc20Balance ? `${erc20Balance} ${PRIMARY_TOKEN_SYMBOL}` : 'Unavailable'}
                     </p>
-                    <p className="mt-2 text-xs text-gray-400 uppercase font-bold mb-1">ERC-20 Balance</p>
+                    <p className="mt-1 text-[11px] text-gray-400 font-mono">
+                      {showContractAlias
+                        ? `${PRIMARY_TOKEN_SYMBOL} is the same token contract as ${erc20Symbol}.`
+                        : PRIMARY_TOKEN_SYMBOL}
+                    </p>
+                    <p className="mt-2 text-xs text-gray-400 uppercase font-bold mb-1">Native Gas Balance (${NATIVE_GAS_SYMBOL})</p>
                     <p className="text-sm font-bold text-yellow-300">
-                      {balanceLoading ? 'Loading...' : erc20Balance ? `${erc20Balance} ${erc20Symbol || PRIMARY_TOKEN_SYMBOL}` : 'Unavailable'}
+                      {balanceLoading ? 'Loading...' : kiteBalance ? `${kiteBalance} ${NATIVE_GAS_SYMBOL}` : 'Unavailable'}
+                    </p>
+                    <p className="mt-1 text-[11px] text-gray-400 font-mono">
+                      Sponsored ERC-20 transfers do not increase native gas balance.
+                    </p>
+                    <p className="mt-1 text-[11px] text-gray-400 font-mono break-all">
+                      Token contract: {PRIMARY_TOKEN_ADDRESS}
                     </p>
 
                     <div className="mt-4 border-t border-cyan-500/30 pt-3 text-left">
@@ -414,7 +531,7 @@ export default function EditCharacterPage() {
                       </select>
 
                       <label className="block text-[11px] text-gray-400 uppercase font-bold mb-1">
-                        Amount (PYUSD)
+                        Amount ({PRIMARY_TOKEN_SYMBOL})
                       </label>
                       <input
                         type="number"
@@ -435,22 +552,84 @@ export default function EditCharacterPage() {
                         {transferLoading ? 'SENDING X402...' : 'SEND X402 TX'}
                       </RetroButton>
 
+                      <label className="block text-[11px] text-gray-400 uppercase font-bold mt-2 mb-1">
+                        TEE Amount ({PRIMARY_TOKEN_SYMBOL})
+                      </label>
+                      <input
+                        type="number"
+                        min="0.000000000000000001"
+                        step="0.001"
+                        value={teeFundingAmount}
+                        onChange={(event) => setTeeFundingAmount(event.target.value)}
+                        className="w-full bg-gray-900 border-2 border-magenta-500/40 text-magenta-200 text-xs font-mono px-2 py-2 mb-2"
+                      />
+
+                      <label className="block text-[11px] text-gray-400 uppercase font-bold mb-1">
+                        TEE Destination Wallet
+                      </label>
+                      <input
+                        type="text"
+                        value={teeFundingDestination}
+                        onChange={(event) => setTeeFundingDestination(event.target.value)}
+                        className="w-full bg-gray-900 border-2 border-magenta-500/40 text-magenta-200 text-xs font-mono px-2 py-2 mb-2"
+                        placeholder="0x..."
+                        spellCheck={false}
+                      />
+
+                      <RetroButton
+                        variant="magenta"
+                        size="sm"
+                        onClick={submitTeeExecutionFunding}
+                        disabled={teeFundingLoading || !teeFundingAmount}
+                        className="w-full text-xs mt-2"
+                      >
+                        {teeFundingLoading ? 'FUNDING TEE...' : `FUND TEE EXECUTION (${PRIMARY_TOKEN_SYMBOL})`}
+                      </RetroButton>
+
+                      <p className="mt-2 text-[11px] text-gray-400 font-mono break-all">
+                        Default TEE recharge destination: {TEE_RECHARGE_ADDRESS}
+                      </p>
+
                       {transferSuccess ? (
                         <p className="mt-2 text-[11px] text-green-300 font-mono break-all">{transferSuccess}</p>
                       ) : null}
                       {transferError ? (
                         <p className="mt-2 text-[11px] text-red-300 font-mono">{transferError}</p>
                       ) : null}
+                      {teeFundingSuccess ? (
+                        <p className="mt-2 text-[11px] text-green-300 font-mono break-all">{teeFundingSuccess}</p>
+                      ) : null}
+                      {teeFundingError ? (
+                        <p className="mt-2 text-[11px] text-red-300 font-mono">{teeFundingError}</p>
+                      ) : null}
                     </div>
+                    
+                      <div className="mt-4 border-t border-cyan-500/30 pt-3">
+                        <p className="text-xs text-gray-400 uppercase font-bold mb-3">Compute Budget</p>
+                        <ComputeBalance
+                          characterId={character.id}
+                          npcName={character.name}
+                          onBalanceUpdated={setComputeBalance}
+                        />
+                      </div>
                   </div>
-                  <RetroButton
-                    variant="yellow"
-                    size="sm"
-                    onClick={() => setShowFundModal(true)}
-                    className="text-xs"
-                  >
-                    💰 FUND WALLET
-                  </RetroButton>
+                    <div className="flex flex-col gap-2 mt-4">
+                      {computeBalance && (
+                        <ComputeRechargeDialog
+                          characterId={character.id}
+                          npcName={character.name}
+                          maxAvailable={parseFloat(computeBalance.kiteUsdWalletBalance)}
+                        />
+                      )}
+                      <RetroButton
+                        variant="yellow"
+                        size="sm"
+                        onClick={() => setShowFundModal(true)}
+                        className="text-xs"
+                      >
+                        💰 FUND WALLET
+                      </RetroButton>
+                    </div>
                 </div>
               )}
             </div>
@@ -464,6 +643,7 @@ export default function EditCharacterPage() {
                 characterName={character.name}
                 characterId={character.id}
                 initialConfig={normalizeInitialConfig(character.config)}
+                initialGameEvents={character.gameEvents}
               />
             )}
 

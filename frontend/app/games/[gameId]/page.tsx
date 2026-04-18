@@ -187,7 +187,7 @@ export default function GameCharactersPage() {
               setContextSaved('')
             }}
             rows={8}
-            placeholder="You are in Protocol Babel, Sector 0. The currency is Compute Units (CU)..."
+            placeholder="You are in Protocol Babel, Sector 0. The currency is KITE_USD..."
           />
 
           <div className="mt-4 flex items-center gap-4">

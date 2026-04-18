@@ -20,6 +20,7 @@ export interface Character {
   smartAccountStatus: string
   config: Record<string, unknown>
   adaptation: Record<string, unknown>
+  gameEvents?: Array<{ name: string; condition: string }>
   isDeployedOnChain: boolean
   deploymentTxHash?: string
   projectIds: string[]

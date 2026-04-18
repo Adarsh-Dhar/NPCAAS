@@ -59,8 +59,11 @@ export function evaluateComputeBudget(snapshot: ComputeBudgetSnapshot): ComputeB
     ? snapshot.limitTokens - snapshot.usageTokens
     : ZERO
 
+  // Deny access if: (1) usage exceeds limit, or (2) limit is zero (no compute purchased)
+  const allowed = snapshot.usageTokens < snapshot.limitTokens && snapshot.limitTokens > ZERO
+
   return {
-    allowed: snapshot.usageTokens < snapshot.limitTokens,
+    allowed,
     remainingTokens,
     usageTokens: snapshot.usageTokens,
     limitTokens: snapshot.limitTokens,

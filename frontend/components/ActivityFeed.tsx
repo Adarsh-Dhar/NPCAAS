@@ -16,7 +16,7 @@ const mockActivities: Activity[] = [
     timestamp: '08:14:02',
     agent: 'Thorin',
     role: 'Blacksmith',
-    action: 'executed Swap: 10 KITE for 5 Iron Ore',
+    action: 'executed Swap: 10 KITE_USD for 5 Iron Ore',
   },
   {
     id: '2',
@@ -51,14 +51,14 @@ const mockActivities: Activity[] = [
     timestamp: '08:38:22',
     agent: 'Thorin',
     role: 'Blacksmith',
-    action: 'approved PayMaster sponsorship for batch transaction (gas: 0.45 KITE)',
+    action: 'approved PayMaster sponsorship for batch transaction (gas: 0.45 KITE_USD)',
   },
   {
     id: '7',
     timestamp: '08:45:09',
     agent: 'Elara',
     role: 'Merchant',
-    action: 'negotiated bulk deal: 500 units @ 8.5 KITE each',
+    action: 'negotiated bulk deal: 500 units @ 8.5 KITE_USD each',
   },
   {
     id: '8',
@@ -98,7 +98,7 @@ export default function ActivityFeed() {
           AGENTIC ACTIVITY FEED
         </h3>
         <p className="text-xs text-cyan-400 mt-1">
-          Real-time autonomous actions on Kite Chain
+          Real-time autonomous actions on KITE_USD Network
         </p>
       </div>
 

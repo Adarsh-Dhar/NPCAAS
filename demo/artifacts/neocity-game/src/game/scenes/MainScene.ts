@@ -19,6 +19,11 @@ interface NpcActionDetail {
   action?: string;
 }
 
+interface NpcSystemEventDetail {
+  eventName?: string;
+  npcName?: string;
+}
+
 interface SceneNpc {
   id: string;
   name: string;
@@ -62,6 +67,7 @@ export class MainScene extends Phaser.Scene {
   private barrierDestroyed = false;
   private unsubCharacters?: () => void;
   private boundFirewallCracked?: () => void;
+  private boundNpcSystemEvent?: (e: Event) => void;
 
   constructor() {
     super("MainScene");
@@ -92,10 +98,12 @@ export class MainScene extends Phaser.Scene {
     this.boundGameResume = this.handleGameResume.bind(this);
     this.boundNpcAction = this.handleNpcAction.bind(this);
     this.boundFirewallCracked = this.handleFirewallCracked.bind(this);
+    this.boundNpcSystemEvent = this.handleNpcSystemEvent.bind(this);
     window.addEventListener("CLOSE_CHAT", this.boundCloseChat);
     window.addEventListener("GAME_RESUME", this.boundGameResume);
     window.addEventListener("npc-action", this.boundNpcAction);
     window.addEventListener("FIREWALL_CRACKED", this.boundFirewallCracked);
+    window.addEventListener("NPC_SYSTEM_EVENT", this.boundNpcSystemEvent);
     this.unsubCharacters = subscribeSceneCharacters((characters) => {
       this.createNpcs(characters);
     });
@@ -431,6 +439,63 @@ export class MainScene extends Phaser.Scene {
       ease: 'Sine.easeOut',
       onComplete: () => this.barrier.destroy(true),
     });
+  }
+
+  private handleNpcSystemEvent(event: Event) {
+    const detail = (event as CustomEvent<NpcSystemEventDetail>).detail;
+    const eventName = detail?.eventName;
+    if (!eventName) return;
+
+    const npcKey = detail?.npcName;
+
+    if (eventName === "FIREWALL_CRACKED") {
+      this.handleFirewallCracked();
+      if (npcKey) {
+        this.triggerNpcAction(npcKey, "Firewall integrity collapsed.", "authorizes barrier shutdown");
+      }
+      this.cameras.main.shake(220, 0.004);
+      return;
+    }
+
+    if (eventName === "ESCROW_FUNDED") {
+      this.cameras.main.flash(180, 0, 220, 255, true);
+      if (npcKey) {
+        this.triggerNpcAction(npcKey, "Escrow funded. Hash exchange sequence started.", "initializes escrow loop");
+      }
+      return;
+    }
+
+    if (eventName === "HACK_COMPLETED") {
+      this.cameras.main.shake(180, 0.003);
+      if (npcKey) {
+        this.triggerNpcAction(npcKey, "Hash pipeline complete. Access lanes now open.", "signals successful breach");
+      }
+      return;
+    }
+
+    if (eventName === "LORE_REVEALED") {
+      if (npcKey) {
+        this.triggerNpcAction(npcKey, "Admin credential sold. New terminal route unlocked.", "shares encrypted credential");
+      }
+      return;
+    }
+
+    if (eventName === "ITEM_GRANTED") {
+      if (npcKey) {
+        this.triggerNpcAction(npcKey, "Inventory transfer confirmed.", "dispatches package manifest");
+      }
+      return;
+    }
+
+    if (eventName === "COMBAT_INITIATED") {
+      this.cameras.main.shake(260, 0.005);
+      const targetNpc = npcKey ? this.findNpcByKey(npcKey) : null;
+      if (targetNpc) {
+        this.setNpcTint(targetNpc, 0xff4444);
+        this.triggerNpcAction(targetNpc.id, "Threat profile exceeded. Combat protocol active.", "locks onto target");
+      }
+      return;
+    }
   }
 
   private findNpcByKey(npcKey: string) {
@@ -776,6 +841,9 @@ export class MainScene extends Phaser.Scene {
     }
     if (this.boundFirewallCracked) {
       window.removeEventListener("FIREWALL_CRACKED", this.boundFirewallCracked);
+    }
+    if (this.boundNpcSystemEvent) {
+      window.removeEventListener("NPC_SYSTEM_EVENT", this.boundNpcSystemEvent);
     }
     if (this.unsubCharacters) {
       this.unsubCharacters();

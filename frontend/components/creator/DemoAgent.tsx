@@ -240,7 +240,7 @@ export default function DemoAgent({ currentAction }: DemoAgentProps) {
       <div className="space-y-2 text-xs text-gray-300">
         <div className="flex justify-between">
           <span>CAPITAL:</span>
-          <span className="text-green-400 font-bold">1000 KITE</span>
+          <span className="text-green-400 font-bold">1000 KITE_USD</span>
         </div>
         <div className="flex justify-between">
           <span>HEALTH:</span>

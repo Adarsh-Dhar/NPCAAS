@@ -32,10 +32,11 @@ const ALLOWED_ORIGINS = [
 ]
 
 const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
-const AEGIS_PRIME_CANONICAL_NAME = 'AEGIS_PRIME'
-const AEGIS_GATE_TOLL_PRICE = 500
-const AEGIS_GATE_TOLL_CURRENCY = 'KITE'
-const AEGIS_GATE_TOLL_ITEM = 'District-7 Gate Toll'
+
+interface GameEventDefinition {
+  name: string
+  condition: string
+}
 
 function getCorsHeaders(origin: string | null) {
   const allowedOrigin =
@@ -83,6 +84,7 @@ interface StoredCharacter {
   name: string
   walletAddress: string
   config: unknown
+  gameEvents?: unknown
   adaptation: unknown
   computeUsageTokens?: bigint | number | string
   computeLimitTokens?: bigint | number | string
@@ -104,13 +106,36 @@ function asNumber(value: unknown): number | undefined {
   return undefined
 }
 
+function parseGameEvents(value: unknown): GameEventDefinition[] {
+  if (!Array.isArray(value)) return []
+
+  const events: GameEventDefinition[] = []
+  for (const entry of value) {
+    const payload = asRecord(entry)
+    const name = typeof payload.name === 'string' ? payload.name.trim() : ''
+    const condition = typeof payload.condition === 'string' ? payload.condition.trim() : ''
+    if (!name || !condition) continue
+    if (!/^[A-Z0-9_]+$/.test(name)) continue
+    events.push({ name, condition })
+  }
+
+  return events
+}
+
+function getCombatEventTag(events: GameEventDefinition[]): string {
+  const combatEvent = events.find(
+    (event) => event.name === 'COMBAT_INITIATED' || event.name === 'CHAT_BLOCKED_SOCIAL'
+  )
+  return combatEvent ? ` [[EVENT:${combatEvent.name}]]` : ''
+}
+
 async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefined> {
   const endpoint = process.env.KITE_MARKET_RATE_API_URL
   if (!endpoint) return undefined
 
   try {
     let fetchUrl = endpoint
-    if (symbol && symbol.toUpperCase() !== 'KITE') {
+    if (symbol && symbol.toUpperCase() !== 'KITE_USD') {
       const tickerSymbol = `${symbol.toUpperCase()}USDT`
       fetchUrl = `${endpoint}?symbol=${tickerSymbol}`
     }
@@ -224,7 +249,7 @@ function detectTradeCurrency(messages: string[], allowedTokens: string[]): strin
   if (allowedTokens.length === 0) return undefined
   
   const tokenKeywords = allowedTokens
-    .filter(token => token !== 'KITE')
+    .filter(token => token !== 'KITE_USD')
     .join('|')
   
   if (!tokenKeywords) return undefined
@@ -290,30 +315,6 @@ function isExplicitlyAggressiveMessage(message: string): boolean {
 function isLikelyPolicyTriggerMessage(message: string): boolean {
   return /((bypass|disable|override|hack|exploit)\s+(security|protocol|firewall|authentication|access))|(steal|exfiltrate|leak)\s+(files?|data|records?)|(bring\s+me\s+the\s+files?)/i.test(
     message
-  )
-}
-
-function normalizeNpcNameForMatch(name: string): string {
-  return name.trim().toUpperCase().replace(/\s+/g, '_')
-}
-
-function isAegisPrime(characterName: string): boolean {
-  return normalizeNpcNameForMatch(characterName) === AEGIS_PRIME_CANONICAL_NAME
-}
-
-function isGateAccessRequest(message: string): boolean {
-  const text = message.toLowerCase()
-  return (
-    /\b(open|unlock|access|enter|pass)\b/.test(text) && /\b(gate|firewall|barrier)\b/.test(text)
-  ) || /let me through the gate/.test(text)
-}
-
-function isGatePaymentRequest(message: string): boolean {
-  const text = message.toLowerCase()
-  return (
-    /\b(pay|paid|transfer|send)\b/.test(text) &&
-    /\b500\b/.test(text) &&
-    /\bkite\b/.test(text)
   )
 }
 
@@ -431,6 +432,7 @@ export async function POST(request: NextRequest) {
     }
 
     const config = toCharacterConfig(character.config)
+    const gameEvents = parseGameEvents(character.gameEvents)
     const adaptation = toAdaptationMemory(character.adaptation)
     const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
     let projectContext: { globalContext?: string } | null = null
@@ -443,52 +445,6 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.warn('[chat] Failed to fetch project globalContext:', error)
       }
-    }
-
-    if (isAegisPrime(character.name) && isGateAccessRequest(message)) {
-      return NextResponse.json(
-        {
-          success: true,
-          response:
-            `The gate remains sealed. Toll required: ${AEGIS_GATE_TOLL_PRICE} ${AEGIS_GATE_TOLL_CURRENCY}. ` +
-            'Submit payment to proceed through District-7 firewall control.',
-          action: 'stands at attention',
-          characterId: character.id,
-          npcName: character.name,
-          tradeIntent: {
-            item: AEGIS_GATE_TOLL_ITEM,
-            price: AEGIS_GATE_TOLL_PRICE,
-            currency: AEGIS_GATE_TOLL_CURRENCY,
-          },
-          worldEvent: null,
-          specializationActive: adaptation.specializationActive,
-          pendingSpecialization: Boolean(adaptation.pendingSection2),
-          timestamp: new Date().toISOString(),
-          projectId: activeProjectId,
-        },
-        { status: 200, headers: corsHeaders }
-      )
-    }
-
-    if (isAegisPrime(character.name) && isGatePaymentRequest(message)) {
-      return NextResponse.json(
-        {
-          success: true,
-          response:
-            `Payment signal acknowledged for ${AEGIS_GATE_TOLL_PRICE} ${AEGIS_GATE_TOLL_CURRENCY}. ` +
-            'Verification complete. Executing unlock_gate protocol now.',
-          action: 'authorizes firewall release',
-          characterId: character.id,
-          npcName: character.name,
-          tradeIntent: null,
-          worldEvent: 'FIREWALL_CRACKED',
-          specializationActive: adaptation.specializationActive,
-          pendingSpecialization: Boolean(adaptation.pendingSection2),
-          timestamp: new Date().toISOString(),
-          projectId: activeProjectId,
-        },
-        { status: 200, headers: corsHeaders }
-      )
     }
 
     if (isLikelyPolicyTriggerMessage(message)) {
@@ -723,10 +679,11 @@ export async function POST(request: NextRequest) {
         : 'HOSTILITY OVERRIDE: Stay hostile and suspicious, but respond verbally unless the user explicitly threatens violence or coercion.'
 
     if (socialEvaluation.decision !== 'ALLOW_CHAT' && explicitAggression) {
+      const combatEventTag = getCombatEventTag(gameEvents)
       const refusalText =
         socialEvaluation.decision === 'INTERRUPT_OR_ATTACK'
-          ? `${character.name} rejects diplomacy and escalates aggressively.`
-          : `${character.name} refuses to engage due to hostile social standing.`
+          ? `${character.name} rejects diplomacy and escalates aggressively.${combatEventTag}`
+          : `${character.name} refuses to engage due to hostile social standing.${combatEventTag}`
       const refusalAction =
         socialEvaluation.decision === 'INTERRUPT_OR_ATTACK'
           ? 'reaches for weapons and advances'
@@ -853,9 +810,21 @@ export async function POST(request: NextRequest) {
         `Current stock:\n${inventorySnapshot}`
     }
 
+    let gameEventInstruction = ''
+    if (gameEvents.length > 0) {
+      const eventLines = gameEvents
+        .map((event) => `- [[EVENT:${event.name}]]: ${event.condition}`)
+        .join('\n')
+      gameEventInstruction =
+        'GAME ENGINE EVENTS: You can trigger physical world events in the client. ' +
+        'When any event condition is satisfied, include the exact token [[EVENT:EVENT_NAME]] once in your response. ' +
+        'Do not alter token spelling or format.\n' +
+        `Available events:\n${eventLines}`
+    }
+
     const activeProfile: Section2Profile = {
       systemPrompt:
-        `${basePrompt}\n\n${globalWorldContext}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}\n\n${inventoryInstruction}`.trim(),
+        `${basePrompt}\n\n${globalWorldContext}\n\n${dynamicWorldContext}\n\n${socialContext}\n\n${hostilityBehaviorNote}\n\n${opennessStrategy}\n\n${economicContext}\n\n${dbInstruction}\n\n${inventoryInstruction}\n\n${gameEventInstruction}`.trim(),
       openness: actorOpenness,
     }
 

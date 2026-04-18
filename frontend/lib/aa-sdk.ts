@@ -21,6 +21,16 @@ import type {
 } from 'gokite-aa-sdk'
 import { ethers } from 'ethers'
 
+const UINT128_MASK = (BigInt(1) << BigInt(128)) - BigInt(1)
+
+function unpackUint128Pair(value: string): { high: bigint; low: bigint } {
+  const packed = BigInt(value)
+  return {
+    high: packed >> BigInt(128),
+    low: packed & UINT128_MASK,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Config helpers
 // ---------------------------------------------------------------------------
@@ -179,6 +189,10 @@ export class KiteAAProvider {
         }
       )
 
+      if (status.status === 'failed' || status.status === 'reverted') {
+        throw new Error(`UserOperation ${status.status}: ${userOpHash}`)
+      }
+
       const txHash = status.transactionHash ?? userOpHash
 
       return {
@@ -206,6 +220,10 @@ export class KiteAAProvider {
               maxRetries: 30,
             }
           )
+
+          if (status.status === 'failed' || status.status === 'reverted') {
+            throw new Error(`UserOperation ${status.status}: ${userOpHash}`)
+          }
 
           const txHash = status.transactionHash ?? userOpHash
 
@@ -287,7 +305,61 @@ export class KiteAAProvider {
                     console.debug('callStatic check failed:', staticErrOuter instanceof Error ? staticErrOuter.message : String(staticErrOuter))
                   }
 
-                  const directTxHash = await sdk.sendUserOperationDirectly(signer.address, userOp)
+                  const entryPointAddr = (sdk as any).config.entryPoint
+                  const providerAny = (sdk as any).ethersProvider
+                  const serverPk = process.env.PRIVATE_KEY
+                  if (!serverPk) {
+                    throw new Error('PRIVATE_KEY is required for direct EntryPoint fallback')
+                  }
+
+                  const serverWallet = new (ethers as any).Wallet(serverPk, providerAny)
+
+                  // No-paymaster fallback requires sender to pre-fund native gas.
+                  // Top up the smart account when needed to avoid AA21 reverts.
+                  {
+                    const gasLimits = unpackUint128Pair(userOp.accountGasLimits ?? '0x0')
+                    const gasFees = unpackUint128Pair(userOp.gasFees ?? '0x0')
+                    const maxFeePerGas = gasFees.high > gasFees.low ? gasFees.high : gasFees.low
+                    const preVerificationGas = BigInt(userOp.preVerificationGas ?? 0)
+                    const totalGas = gasLimits.high + gasLimits.low + preVerificationGas
+                    const requiredPrefund = (totalGas * maxFeePerGas * BigInt(12)) / BigInt(10)
+                    const senderBalance = await providerAny.getBalance(userOp.sender)
+
+                    if (senderBalance < requiredPrefund) {
+                      const topUpAmount = requiredPrefund - senderBalance
+                      const topUpTx = await serverWallet.sendTransaction({
+                        to: userOp.sender,
+                        value: topUpAmount,
+                      })
+                      await topUpTx.wait()
+                    }
+                  }
+
+                  const entryPoint = new (ethers as any).Contract(
+                    entryPointAddr,
+                    ['function handleOps((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes)[] ops, address payable beneficiary) external'],
+                    serverWallet
+                  )
+
+                  const packedUserOp = [
+                    userOp.sender,
+                    userOp.nonce,
+                    userOp.initCode,
+                    userOp.callData,
+                    userOp.accountGasLimits,
+                    userOp.preVerificationGas,
+                    userOp.gasFees,
+                    userOp.paymasterAndData,
+                    userOp.signature,
+                  ]
+
+                  const directTx = await entryPoint.handleOps([packedUserOp], serverWallet.address)
+                  const directReceipt = await directTx.wait()
+                  if (!directReceipt || directReceipt.status !== 1) {
+                    throw new Error(`EntryPoint.handleOps reverted (tx=${directTx.hash})`)
+                  }
+
+                  const directTxHash = directTx.hash
 
                 return {
                   txHash: directTxHash,

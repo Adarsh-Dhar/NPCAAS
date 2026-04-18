@@ -6,6 +6,64 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
+type GameEventDefinition = {
+  name: string
+  condition: string
+}
+
+const PROTOCOL_BABEL_EVENT_DEFAULTS: Record<string, GameEventDefinition[]> = {
+  Aegis_Prime: [
+    { name: 'FIREWALL_CRACKED', condition: 'Trigger immediately after the player successfully transfers the 500 KITE_USD toll.' },
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  Node_Alpha: [
+    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.' },
+    { name: 'HACK_COMPLETED', condition: 'Trigger after Node-Alpha and Node-Omega complete their hash exchange loop.' },
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  Node_Omega: [
+    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.' },
+    { name: 'HACK_COMPLETED', condition: 'Trigger after Node-Alpha and Node-Omega complete their hash exchange loop.' },
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  Vex: [
+    { name: 'LORE_REVEALED', condition: 'Trigger when Vex sells the Sector 0 Admin Password to the player.' },
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  Silicate: [
+    { name: 'ITEM_GRANTED', condition: 'Trigger alongside a successful sale when inventory items are purchased.' },
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  The_Weaver: [
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  Forge_9: [
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+}
+
+function parseGameEvents(value: unknown): GameEventDefinition[] {
+  if (!Array.isArray(value)) return []
+  const events: GameEventDefinition[] = []
+
+  for (const entry of value) {
+    const payload = asRecord(entry)
+    const name = typeof payload.name === 'string' ? payload.name.trim() : ''
+    const condition = typeof payload.condition === 'string' ? payload.condition.trim() : ''
+    if (!name || !condition) continue
+    if (!/^[A-Z0-9_]+$/.test(name)) continue
+    events.push({ name, condition })
+  }
+
+  return events
+}
+
+function resolveGameEvents(name: string, value: unknown): GameEventDefinition[] {
+  const parsed = parseGameEvents(value)
+  if (parsed.length > 0) return parsed
+  return PROTOCOL_BABEL_EVENT_DEFAULTS[name] ?? []
+}
+
 function shouldFallbackToLegacyProjectRelation(error: unknown): boolean {
   const message = error instanceof Error ? error.message : ''
   const errorCode =
@@ -76,6 +134,7 @@ type CharacterWithProjectRelations = {
   adaptation: unknown
   isDeployedOnChain: boolean
   deploymentTxHash: string | null
+  gameEvents?: unknown
   createdAt: Date
   projectId?: string
   projects?: ApiProject[]
@@ -104,6 +163,7 @@ function toApiCharacter(character: {
   adaptation: unknown
   isDeployedOnChain: boolean
   deploymentTxHash: string | null
+  gameEvents?: unknown
   createdAt: Date
   projectId?: string
   projects?: Array<{ id: string; name: string; apiKey: string; createdAt: Date }>
@@ -121,6 +181,7 @@ function toApiCharacter(character: {
     smartAccountStatus: character.smartAccountStatus,
     config: asRecord(character.config),
     adaptation: asRecord(character.adaptation),
+    gameEvents: resolveGameEvents(character.name, character.gameEvents),
     isDeployedOnChain: character.isDeployedOnChain,
     deploymentTxHash: character.deploymentTxHash ?? undefined,
     projectIds: relatedProjects.map((project) => project.id),

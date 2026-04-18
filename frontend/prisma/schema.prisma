@@ -33,6 +33,7 @@ model Character {
   computeLimitTokens BigInt        @default(5000)
   lastComputeResetAt DateTime      @default(now())
   teeAttestationProof String?
+  gameEvents         Json?
   config             Json
   adaptation         Json?
   projects           Project[]
@@ -43,15 +44,23 @@ model Character {
 }
 
 model NpcLog {
-  id          String    @id @default(cuid())
-  characterId String
-  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  eventType   String    // "CHAT", "TRADE", "BROADCAST", "LOOP", "TRIGGER"
-  details     Json
-  createdAt   DateTime  @default(now())
+  id                     String    @id @default(cuid())
+  characterId            String
+  character              Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  eventType              String    // "CHAT", "TRADE", "BROADCAST", "LOOP", "TRIGGER", "COMPUTE_SPEND", "COMPUTE_RECHARGE"
+  details                Json
+  // Compute-specific fields
+  kiteUsdAmount          Decimal?  @db.Decimal(10, 2)  // Amount of KITE_USD used for recharge
+  computeTokensAwarded   BigInt?   // Tokens awarded in recharge (kiteUsdAmount * 1000)
+  tokensUsed             BigInt?   // Tokens consumed in chat
+  estUsdCost             Decimal?  @db.Decimal(10, 6)  // Estimated USD cost of tokens used
+  balanceAfter           BigInt?   // Compute balance after transaction
+  txHash                 String?   // Transaction hash (if applicable)
+  createdAt              DateTime  @default(now())
 
   @@index([characterId])
   @@index([characterId, eventType])
+  @@index([eventType])
 }
 
 model ActionQueue {

@@ -17,6 +17,11 @@ interface InventoryFormItem {
   quantity: string
 }
 
+interface GameEventFormItem {
+  name: string
+  condition: string
+}
+
 function createEmptyInventoryItem(): InventoryFormItem {
   return {
     id: '',
@@ -24,6 +29,13 @@ function createEmptyInventoryItem(): InventoryFormItem {
     description: '',
     price: '0',
     quantity: '1',
+  }
+}
+
+function createEmptyGameEventItem(): GameEventFormItem {
+  return {
+    name: '',
+    condition: '',
   }
 }
 
@@ -56,6 +68,10 @@ interface ConfigurationFormProps {
       quantity: number | string
     }>
   }>
+  initialGameEvents?: Array<{
+    name: string
+    condition: string
+  }>
   onDeploySuccess?: (characterId: string, characterName: string) => void
   onSaveSuccess?: () => void
   onRequireProject?: () => void
@@ -82,6 +98,7 @@ export default function ConfigurationForm({
   characterName = 'MY_NPC',
   characterId,
   initialConfig,
+  initialGameEvents,
   onDeploySuccess,
   onSaveSuccess,
   onRequireProject,
@@ -108,6 +125,7 @@ export default function ConfigurationForm({
     inventoryEnabled: false,
   })
   const [inventoryItems, setInventoryItems] = useState<InventoryFormItem[]>([])
+  const [gameEvents, setGameEvents] = useState<GameEventFormItem[]>([])
   const [deploying, setDeploying] = useState(false)
   const [deployError, setDeployError] = useState('')
 
@@ -153,7 +171,58 @@ export default function ConfigurationForm({
     } else {
       setInventoryItems([])
     }
-  }, [initialConfig, characterId, characterName])
+
+    if (Array.isArray(initialGameEvents)) {
+      setGameEvents(
+        initialGameEvents.map((event) => ({
+          name: String(event.name ?? '').trim(),
+          condition: String(event.condition ?? '').trim(),
+        }))
+      )
+    } else {
+      setGameEvents([])
+    }
+  }, [initialConfig, initialGameEvents, characterId, characterName])
+
+  useEffect(() => {
+    if (!characterId) return
+    if (Array.isArray(initialGameEvents)) return
+
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const response = await fetch(`/api/characters/${encodeURIComponent(characterId)}`)
+        if (!response.ok) return
+
+        const payload = (await response.json()) as {
+          character?: {
+            gameEvents?: Array<{ name?: unknown; condition?: unknown }>
+          }
+        }
+
+        const incoming = payload.character?.gameEvents
+        if (!Array.isArray(incoming) || cancelled) return
+
+        const normalized = incoming
+          .map((event) => ({
+            name: String(event.name ?? '').trim(),
+            condition: String(event.condition ?? '').trim(),
+          }))
+          .filter((event) => event.name && event.condition)
+
+        if (!cancelled && normalized.length > 0) {
+          setGameEvents(normalized)
+        }
+      } catch {
+        // Ignore fallback fetch failures.
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [characterId, initialGameEvents])
 
   const handleInputChange = (field: string, value: string | number | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
@@ -181,6 +250,31 @@ export default function ConfigurationForm({
 
   const addInventoryItem = () => {
     setInventoryItems((prev) => [...prev, createEmptyInventoryItem()])
+  }
+
+  const handleGameEventChange = (
+    index: number,
+    field: keyof GameEventFormItem,
+    value: string
+  ) => {
+    setGameEvents((prev) => {
+      const next = [...prev]
+      const current = next[index]
+      if (!current) return prev
+      next[index] = {
+        ...current,
+        [field]: value,
+      }
+      return next
+    })
+  }
+
+  const addGameEvent = () => {
+    setGameEvents((prev) => [...prev, createEmptyGameEventItem()])
+  }
+
+  const removeGameEvent = (index: number) => {
+    setGameEvents((prev) => prev.filter((_, idx) => idx !== index))
   }
 
   const removeInventoryItem = (index: number) => {
@@ -211,6 +305,30 @@ export default function ConfigurationForm({
       if (!Number.isFinite(quantity) || quantity < 0) {
         return `Inventory item ${index + 1}: Quantity must be 0 or greater.`
       }
+    }
+
+    return null
+  }
+
+  const validateGameEvents = (): string | null => {
+    if (gameEvents.length === 0) return null
+
+    const seenNames = new Set<string>()
+    for (let index = 0; index < gameEvents.length; index += 1) {
+      const event = gameEvents[index]
+      const name = event.name.trim()
+      const condition = event.condition.trim()
+
+      if (!name) return `Game event ${index + 1}: Event name is required.`
+      if (!/^[A-Z0-9_]+$/.test(name)) {
+        return `Game event ${index + 1}: Event name must use only A-Z, 0-9, and _.`
+      }
+      if (seenNames.has(name)) {
+        return `Game event ${index + 1}: Event name '${name}' is duplicated.`
+      }
+      seenNames.add(name)
+
+      if (!condition) return `Game event ${index + 1}: Trigger condition is required.`
     }
 
     return null
@@ -247,6 +365,15 @@ export default function ConfigurationForm({
     return payload
   }
 
+  const buildGameEventsPayload = () => {
+    return gameEvents
+      .map((event) => ({
+        name: event.name.trim(),
+        condition: event.condition.trim(),
+      }))
+      .filter((event) => event.name && event.condition)
+  }
+
   const handleDeploy = async () => {
     if (!formData.name.trim()) {
       setDeployError('Character name is required')
@@ -256,6 +383,12 @@ export default function ConfigurationForm({
     const inventoryValidationError = validateInventory()
     if (inventoryValidationError) {
       setDeployError(inventoryValidationError)
+      return
+    }
+
+    const gameEventValidationError = validateGameEvents()
+    if (gameEventValidationError) {
+      setDeployError(gameEventValidationError)
       return
     }
 
@@ -271,6 +404,7 @@ export default function ConfigurationForm({
           gameIds: projectId ? [projectId] : undefined,
           name: name.trim(),
           config: buildConfigPayload(),
+          gameEvents: buildGameEventsPayload(),
         }),
       })
 
@@ -303,6 +437,12 @@ export default function ConfigurationForm({
       return
     }
 
+    const gameEventValidationError = validateGameEvents()
+    if (gameEventValidationError) {
+      setDeployError(gameEventValidationError)
+      return
+    }
+
     setDeploying(true)
     setDeployError('')
 
@@ -315,6 +455,7 @@ export default function ConfigurationForm({
           characterId,
           name: name.trim() || undefined,
           config: buildConfigPayload(),
+          gameEvents: buildGameEventsPayload(),
         }),
       })
 
@@ -671,6 +812,76 @@ export default function ConfigurationForm({
             </p>
           </>
         )}
+      </FormSection>
+
+      {/* Section 8: GAME ENGINE EVENTS */}
+      <FormSection
+        title="SECTION 8: GAME ENGINE EVENTS"
+        description="Define custom events that the NPC can emit using [[EVENT:NAME]] tags"
+        borderColor="purple"
+      >
+        <p className="text-xs text-gray-400 font-mono mb-4">
+          These events are injected into the NPC system prompt. The game client can parse and react
+          to emitted tags in real time.
+        </p>
+
+        {gameEvents.length === 0 && (
+          <p className="text-xs text-magenta-300 font-mono mb-3">
+            No custom events configured yet.
+          </p>
+        )}
+
+        <div className="space-y-3">
+          {gameEvents.map((event, index) => (
+            <div key={`game-event-${index}-${event.name}`} className="border-2 border-pink-500/60 p-3 space-y-3 bg-black/40">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase text-pink-300">Event {index + 1}</p>
+                <RetroButton
+                  variant="red"
+                  size="sm"
+                  type="button"
+                  onClick={() => removeGameEvent(index)}
+                  className="text-xs"
+                >
+                  Remove
+                </RetroButton>
+              </div>
+
+              <RetroInput
+                borderColor="magenta"
+                label="Event Name"
+                placeholder="FIREWALL_CRACKED"
+                value={event.name}
+                onChange={(e) =>
+                  handleGameEventChange(
+                    index,
+                    'name',
+                    e.target.value.toUpperCase().replace(/\s+/g, '_')
+                  )
+                }
+              />
+
+              <RetroTextarea
+                borderColor="magenta"
+                label="Trigger Condition"
+                rows={2}
+                placeholder="Trigger after player confirms a 500 KITE_USD transfer."
+                value={event.condition}
+                onChange={(e) => handleGameEventChange(index, 'condition', e.target.value)}
+              />
+            </div>
+          ))}
+        </div>
+
+        <RetroButton
+          variant="magenta"
+          size="sm"
+          type="button"
+          onClick={addGameEvent}
+          className="text-xs mt-3"
+        >
+          + ADD GAME EVENT
+        </RetroButton>
       </FormSection>
 
       {/* Error Message */}

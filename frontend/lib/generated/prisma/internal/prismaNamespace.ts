@@ -767,6 +767,7 @@ export const CharacterScalarFieldEnum = {
   computeLimitTokens: 'computeLimitTokens',
   lastComputeResetAt: 'lastComputeResetAt',
   teeAttestationProof: 'teeAttestationProof',
+  gameEvents: 'gameEvents',
   config: 'config',
   adaptation: 'adaptation',
   createdAt: 'createdAt',
@@ -781,6 +782,12 @@ export const NpcLogScalarFieldEnum = {
   characterId: 'characterId',
   eventType: 'eventType',
   details: 'details',
+  kiteUsdAmount: 'kiteUsdAmount',
+  computeTokensAwarded: 'computeTokensAwarded',
+  tokensUsed: 'tokensUsed',
+  estUsdCost: 'estUsdCost',
+  balanceAfter: 'balanceAfter',
+  txHash: 'txHash',
   createdAt: 'createdAt'
 } as const
 
@@ -808,19 +815,19 @@ export const SortOrder = {
 export type SortOrder = (typeof SortOrder)[keyof typeof SortOrder]
 
 
-export const JsonNullValueInput = {
-  JsonNull: JsonNull
-} as const
-
-export type JsonNullValueInput = (typeof JsonNullValueInput)[keyof typeof JsonNullValueInput]
-
-
 export const NullableJsonNullValueInput = {
   DbNull: DbNull,
   JsonNull: JsonNull
 } as const
 
 export type NullableJsonNullValueInput = (typeof NullableJsonNullValueInput)[keyof typeof NullableJsonNullValueInput]
+
+
+export const JsonNullValueInput = {
+  JsonNull: JsonNull
+} as const
+
+export type JsonNullValueInput = (typeof JsonNullValueInput)[keyof typeof JsonNullValueInput]
 
 
 export const QueryMode = {
@@ -928,6 +935,20 @@ export type JsonFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'J
  * Reference to a field of type 'QueryMode'
  */
 export type EnumQueryModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'QueryMode'>
+    
+
+
+/**
+ * Reference to a field of type 'Decimal'
+ */
+export type DecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Decimal'>
+    
+
+
+/**
+ * Reference to a field of type 'Decimal[]'
+ */
+export type ListDecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Decimal[]'>
     
 
 

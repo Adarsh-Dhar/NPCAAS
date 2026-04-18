@@ -68,7 +68,7 @@ export interface HUDProps {
 
 const AEGIS_PRIME_CANONICAL_NAME = "AEGIS_PRIME";
 const AEGIS_GATE_TOLL_PRICE = 500;
-const AEGIS_GATE_TOLL_CURRENCY = "KITE";
+const AEGIS_GATE_TOLL_CURRENCY = "KITE_USD";
 
 declare global {
   interface Window {
@@ -213,7 +213,7 @@ export function HUD({
 
         const chainId = await window.ethereum.request({ method: "eth_chainId" });
         if (typeof chainId === "string" && chainId.toLowerCase() !== "0x940") {
-          throw new Error("Wallet is on the wrong network. Switch to Kite chain (2368) and retry.");
+          throw new Error("Wallet is on the wrong network. Switch to KITE_USD Testnet (2368) and retry.");
         }
 
         const valueHex = `0x${BigInt(txRequest.value).toString(16)}`

@@ -208,14 +208,14 @@ function classifyExecutionError(error: unknown): ExecutionErrorShape {
       httpStatus: 400,
       error: 'On-chain execution reverted',
       details,
-      hint: 'Target smart account may reject native KITE transfer or sender policy/signer may be invalid.',
+      hint: 'Target smart account may reject native KITE_USD transfer or sender policy/signer may be invalid.',
     }
   }
 
   if (lower.includes('fetch failed') || lower.includes('network error')) {
     return {
       httpStatus: 502,
-      error: 'Kite bundler/network error',
+      error: 'KITE_USD bundler/network error',
       details,
       hint: 'Retry in a few seconds. If it persists, check KITE_AA_BUNDLER_URL and RPC connectivity.',
     }
@@ -233,9 +233,9 @@ function extractX402TokenAddress(config: unknown): string | null {
   const tokenMap = asRecord(payload.tokenContractAddresses)
 
   const candidate =
-    (typeof tokenMap.KITE === 'string' ? tokenMap.KITE : undefined) ??
-    (typeof payload.kiteTokenAddress === 'string' ? payload.kiteTokenAddress : undefined) ??
-    process.env.KITE_TOKEN_ADDRESS ??
+    (typeof tokenMap.KITE_USD === 'string' ? tokenMap.KITE_USD : undefined) ??
+    (typeof payload.kiteUsdTokenAddress === 'string' ? payload.kiteUsdTokenAddress : undefined) ??
+    process.env.KITE_USD_TOKEN_ADDRESS ??
     PRIMARY_TOKEN_ADDRESS
 
   if (!candidate || !ethers.isAddress(candidate)) {
@@ -283,6 +283,11 @@ async function repairLegacyCharacterWallet(character: ApiCharacter) {
 async function resolveMatchingOwnerId(character: ApiCharacter): Promise<string> {
   const tried = new Set<string>()
   const candidates: string[] = []
+  const configOwnerId = asRecord(character.config).ownerId
+
+  if (typeof configOwnerId === 'string' && configOwnerId.trim()) {
+    candidates.push(configOwnerId.trim())
+  }
 
   if (typeof character.smartAccountId === 'string' && character.smartAccountId.trim()) {
     candidates.push(character.smartAccountId)
@@ -331,11 +336,10 @@ async function resolveMatchingOwnerId(character: ApiCharacter): Promise<string> 
     }
   }
 
-  if (typeof character.smartAccountId === 'string' && character.smartAccountId.trim()) {
-    return character.smartAccountId
-  }
-
-  return `character:${character.id}`
+  throw new Error(
+    `No ownerId matched wallet ${character.walletAddress}. ` +
+    'The current signer secret may differ from the one used when this wallet was created.'
+  )
 }
 
 function encodeTradeData(t: TradeIntent): string {
@@ -612,14 +616,28 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const ownerId = await resolveMatchingOwnerId({
-        id: character.id,
-        name: character.name,
-        walletAddress: character.walletAddress,
-        smartAccountId: character.smartAccountId,
-        createdAt: character.createdAt,
-        config: character.config,
-      })
+      let ownerId: string
+      try {
+        ownerId = await resolveMatchingOwnerId({
+          id: character.id,
+          name: character.name,
+          walletAddress: character.walletAddress,
+          smartAccountId: character.smartAccountId,
+          createdAt: character.createdAt,
+          config: character.config,
+        })
+      } catch (ownerResolveError) {
+        const detail = compactErrorMessage(asErrorDetails(ownerResolveError))
+        return NextResponse.json(
+          {
+            error: 'Unable to derive signing owner for this wallet',
+            details: detail,
+            hint:
+              'Restore the original KITE_SIGNER_SECRET used at wallet creation, or migrate funds to a newly derived wallet.',
+          },
+          { status: 409, headers: cors }
+        )
+      }
 
       let shouldAttemptX402Fallback = false
 
@@ -808,7 +826,7 @@ export async function POST(request: NextRequest) {
           characterId,
           transaction: directTx,
           message: execution.mode === 'sponsored'
-              ? `Transaction sent — gas sponsored by Kite.`
+              ? `Transaction sent — gas sponsored by KITE_USD.`
               : 'Sponsorship unavailable. Fallback requires user-paid gas.',
         },
         { status: 200, headers: cors }

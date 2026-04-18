@@ -20,14 +20,38 @@ export type NpcLogModel = runtime.Types.Result.DefaultSelection<Prisma.$NpcLogPa
 
 export type AggregateNpcLog = {
   _count: NpcLogCountAggregateOutputType | null
+  _avg: NpcLogAvgAggregateOutputType | null
+  _sum: NpcLogSumAggregateOutputType | null
   _min: NpcLogMinAggregateOutputType | null
   _max: NpcLogMaxAggregateOutputType | null
+}
+
+export type NpcLogAvgAggregateOutputType = {
+  kiteUsdAmount: runtime.Decimal | null
+  computeTokensAwarded: number | null
+  tokensUsed: number | null
+  estUsdCost: runtime.Decimal | null
+  balanceAfter: number | null
+}
+
+export type NpcLogSumAggregateOutputType = {
+  kiteUsdAmount: runtime.Decimal | null
+  computeTokensAwarded: bigint | null
+  tokensUsed: bigint | null
+  estUsdCost: runtime.Decimal | null
+  balanceAfter: bigint | null
 }
 
 export type NpcLogMinAggregateOutputType = {
   id: string | null
   characterId: string | null
   eventType: string | null
+  kiteUsdAmount: runtime.Decimal | null
+  computeTokensAwarded: bigint | null
+  tokensUsed: bigint | null
+  estUsdCost: runtime.Decimal | null
+  balanceAfter: bigint | null
+  txHash: string | null
   createdAt: Date | null
 }
 
@@ -35,6 +59,12 @@ export type NpcLogMaxAggregateOutputType = {
   id: string | null
   characterId: string | null
   eventType: string | null
+  kiteUsdAmount: runtime.Decimal | null
+  computeTokensAwarded: bigint | null
+  tokensUsed: bigint | null
+  estUsdCost: runtime.Decimal | null
+  balanceAfter: bigint | null
+  txHash: string | null
   createdAt: Date | null
 }
 
@@ -43,15 +73,43 @@ export type NpcLogCountAggregateOutputType = {
   characterId: number
   eventType: number
   details: number
+  kiteUsdAmount: number
+  computeTokensAwarded: number
+  tokensUsed: number
+  estUsdCost: number
+  balanceAfter: number
+  txHash: number
   createdAt: number
   _all: number
 }
 
 
+export type NpcLogAvgAggregateInputType = {
+  kiteUsdAmount?: true
+  computeTokensAwarded?: true
+  tokensUsed?: true
+  estUsdCost?: true
+  balanceAfter?: true
+}
+
+export type NpcLogSumAggregateInputType = {
+  kiteUsdAmount?: true
+  computeTokensAwarded?: true
+  tokensUsed?: true
+  estUsdCost?: true
+  balanceAfter?: true
+}
+
 export type NpcLogMinAggregateInputType = {
   id?: true
   characterId?: true
   eventType?: true
+  kiteUsdAmount?: true
+  computeTokensAwarded?: true
+  tokensUsed?: true
+  estUsdCost?: true
+  balanceAfter?: true
+  txHash?: true
   createdAt?: true
 }
 
@@ -59,6 +117,12 @@ export type NpcLogMaxAggregateInputType = {
   id?: true
   characterId?: true
   eventType?: true
+  kiteUsdAmount?: true
+  computeTokensAwarded?: true
+  tokensUsed?: true
+  estUsdCost?: true
+  balanceAfter?: true
+  txHash?: true
   createdAt?: true
 }
 
@@ -67,6 +131,12 @@ export type NpcLogCountAggregateInputType = {
   characterId?: true
   eventType?: true
   details?: true
+  kiteUsdAmount?: true
+  computeTokensAwarded?: true
+  tokensUsed?: true
+  estUsdCost?: true
+  balanceAfter?: true
+  txHash?: true
   createdAt?: true
   _all?: true
 }
@@ -109,6 +179,18 @@ export type NpcLogAggregateArgs<ExtArgs extends runtime.Types.Extensions.Interna
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
    * 
+   * Select which fields to average
+  **/
+  _avg?: NpcLogAvgAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
+   * Select which fields to sum
+  **/
+  _sum?: NpcLogSumAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
    * Select which fields to find the minimum value
   **/
   _min?: NpcLogMinAggregateInputType
@@ -139,6 +221,8 @@ export type NpcLogGroupByArgs<ExtArgs extends runtime.Types.Extensions.InternalA
   take?: number
   skip?: number
   _count?: NpcLogCountAggregateInputType | true
+  _avg?: NpcLogAvgAggregateInputType
+  _sum?: NpcLogSumAggregateInputType
   _min?: NpcLogMinAggregateInputType
   _max?: NpcLogMaxAggregateInputType
 }
@@ -148,8 +232,16 @@ export type NpcLogGroupByOutputType = {
   characterId: string
   eventType: string
   details: runtime.JsonValue
+  kiteUsdAmount: runtime.Decimal | null
+  computeTokensAwarded: bigint | null
+  tokensUsed: bigint | null
+  estUsdCost: runtime.Decimal | null
+  balanceAfter: bigint | null
+  txHash: string | null
   createdAt: Date
   _count: NpcLogCountAggregateOutputType | null
+  _avg: NpcLogAvgAggregateOutputType | null
+  _sum: NpcLogSumAggregateOutputType | null
   _min: NpcLogMinAggregateOutputType | null
   _max: NpcLogMaxAggregateOutputType | null
 }
@@ -177,6 +269,12 @@ export type NpcLogWhereInput = {
   characterId?: Prisma.StringFilter<"NpcLog"> | string
   eventType?: Prisma.StringFilter<"NpcLog"> | string
   details?: Prisma.JsonFilter<"NpcLog">
+  kiteUsdAmount?: Prisma.DecimalNullableFilter<"NpcLog"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: Prisma.BigIntNullableFilter<"NpcLog"> | bigint | number | null
+  tokensUsed?: Prisma.BigIntNullableFilter<"NpcLog"> | bigint | number | null
+  estUsdCost?: Prisma.DecimalNullableFilter<"NpcLog"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: Prisma.BigIntNullableFilter<"NpcLog"> | bigint | number | null
+  txHash?: Prisma.StringNullableFilter<"NpcLog"> | string | null
   createdAt?: Prisma.DateTimeFilter<"NpcLog"> | Date | string
   character?: Prisma.XOR<Prisma.CharacterScalarRelationFilter, Prisma.CharacterWhereInput>
 }
@@ -186,6 +284,12 @@ export type NpcLogOrderByWithRelationInput = {
   characterId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
   details?: Prisma.SortOrder
+  kiteUsdAmount?: Prisma.SortOrderInput | Prisma.SortOrder
+  computeTokensAwarded?: Prisma.SortOrderInput | Prisma.SortOrder
+  tokensUsed?: Prisma.SortOrderInput | Prisma.SortOrder
+  estUsdCost?: Prisma.SortOrderInput | Prisma.SortOrder
+  balanceAfter?: Prisma.SortOrderInput | Prisma.SortOrder
+  txHash?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   character?: Prisma.CharacterOrderByWithRelationInput
 }
@@ -198,6 +302,12 @@ export type NpcLogWhereUniqueInput = Prisma.AtLeast<{
   characterId?: Prisma.StringFilter<"NpcLog"> | string
   eventType?: Prisma.StringFilter<"NpcLog"> | string
   details?: Prisma.JsonFilter<"NpcLog">
+  kiteUsdAmount?: Prisma.DecimalNullableFilter<"NpcLog"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: Prisma.BigIntNullableFilter<"NpcLog"> | bigint | number | null
+  tokensUsed?: Prisma.BigIntNullableFilter<"NpcLog"> | bigint | number | null
+  estUsdCost?: Prisma.DecimalNullableFilter<"NpcLog"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: Prisma.BigIntNullableFilter<"NpcLog"> | bigint | number | null
+  txHash?: Prisma.StringNullableFilter<"NpcLog"> | string | null
   createdAt?: Prisma.DateTimeFilter<"NpcLog"> | Date | string
   character?: Prisma.XOR<Prisma.CharacterScalarRelationFilter, Prisma.CharacterWhereInput>
 }, "id">
@@ -207,10 +317,18 @@ export type NpcLogOrderByWithAggregationInput = {
   characterId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
   details?: Prisma.SortOrder
+  kiteUsdAmount?: Prisma.SortOrderInput | Prisma.SortOrder
+  computeTokensAwarded?: Prisma.SortOrderInput | Prisma.SortOrder
+  tokensUsed?: Prisma.SortOrderInput | Prisma.SortOrder
+  estUsdCost?: Prisma.SortOrderInput | Prisma.SortOrder
+  balanceAfter?: Prisma.SortOrderInput | Prisma.SortOrder
+  txHash?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   _count?: Prisma.NpcLogCountOrderByAggregateInput
+  _avg?: Prisma.NpcLogAvgOrderByAggregateInput
   _max?: Prisma.NpcLogMaxOrderByAggregateInput
   _min?: Prisma.NpcLogMinOrderByAggregateInput
+  _sum?: Prisma.NpcLogSumOrderByAggregateInput
 }
 
 export type NpcLogScalarWhereWithAggregatesInput = {
@@ -221,6 +339,12 @@ export type NpcLogScalarWhereWithAggregatesInput = {
   characterId?: Prisma.StringWithAggregatesFilter<"NpcLog"> | string
   eventType?: Prisma.StringWithAggregatesFilter<"NpcLog"> | string
   details?: Prisma.JsonWithAggregatesFilter<"NpcLog">
+  kiteUsdAmount?: Prisma.DecimalNullableWithAggregatesFilter<"NpcLog"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: Prisma.BigIntNullableWithAggregatesFilter<"NpcLog"> | bigint | number | null
+  tokensUsed?: Prisma.BigIntNullableWithAggregatesFilter<"NpcLog"> | bigint | number | null
+  estUsdCost?: Prisma.DecimalNullableWithAggregatesFilter<"NpcLog"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: Prisma.BigIntNullableWithAggregatesFilter<"NpcLog"> | bigint | number | null
+  txHash?: Prisma.StringNullableWithAggregatesFilter<"NpcLog"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"NpcLog"> | Date | string
 }
 
@@ -228,6 +352,12 @@ export type NpcLogCreateInput = {
   id?: string
   eventType: string
   details: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: bigint | number | null
+  tokensUsed?: bigint | number | null
+  estUsdCost?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: bigint | number | null
+  txHash?: string | null
   createdAt?: Date | string
   character: Prisma.CharacterCreateNestedOneWithoutLogsInput
 }
@@ -237,6 +367,12 @@ export type NpcLogUncheckedCreateInput = {
   characterId: string
   eventType: string
   details: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: bigint | number | null
+  tokensUsed?: bigint | number | null
+  estUsdCost?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: bigint | number | null
+  txHash?: string | null
   createdAt?: Date | string
 }
 
@@ -244,6 +380,12 @@ export type NpcLogUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  tokensUsed?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  estUsdCost?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  txHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   character?: Prisma.CharacterUpdateOneRequiredWithoutLogsNestedInput
 }
@@ -253,6 +395,12 @@ export type NpcLogUncheckedUpdateInput = {
   characterId?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  tokensUsed?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  estUsdCost?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  txHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -261,6 +409,12 @@ export type NpcLogCreateManyInput = {
   characterId: string
   eventType: string
   details: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: bigint | number | null
+  tokensUsed?: bigint | number | null
+  estUsdCost?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: bigint | number | null
+  txHash?: string | null
   createdAt?: Date | string
 }
 
@@ -268,6 +422,12 @@ export type NpcLogUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  tokensUsed?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  estUsdCost?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  txHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -276,6 +436,12 @@ export type NpcLogUncheckedUpdateManyInput = {
   characterId?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  tokensUsed?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  estUsdCost?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  txHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -294,13 +460,33 @@ export type NpcLogCountOrderByAggregateInput = {
   characterId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
   details?: Prisma.SortOrder
+  kiteUsdAmount?: Prisma.SortOrder
+  computeTokensAwarded?: Prisma.SortOrder
+  tokensUsed?: Prisma.SortOrder
+  estUsdCost?: Prisma.SortOrder
+  balanceAfter?: Prisma.SortOrder
+  txHash?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+}
+
+export type NpcLogAvgOrderByAggregateInput = {
+  kiteUsdAmount?: Prisma.SortOrder
+  computeTokensAwarded?: Prisma.SortOrder
+  tokensUsed?: Prisma.SortOrder
+  estUsdCost?: Prisma.SortOrder
+  balanceAfter?: Prisma.SortOrder
 }
 
 export type NpcLogMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   characterId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
+  kiteUsdAmount?: Prisma.SortOrder
+  computeTokensAwarded?: Prisma.SortOrder
+  tokensUsed?: Prisma.SortOrder
+  estUsdCost?: Prisma.SortOrder
+  balanceAfter?: Prisma.SortOrder
+  txHash?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
 }
 
@@ -308,7 +494,21 @@ export type NpcLogMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   characterId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
+  kiteUsdAmount?: Prisma.SortOrder
+  computeTokensAwarded?: Prisma.SortOrder
+  tokensUsed?: Prisma.SortOrder
+  estUsdCost?: Prisma.SortOrder
+  balanceAfter?: Prisma.SortOrder
+  txHash?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+}
+
+export type NpcLogSumOrderByAggregateInput = {
+  kiteUsdAmount?: Prisma.SortOrder
+  computeTokensAwarded?: Prisma.SortOrder
+  tokensUsed?: Prisma.SortOrder
+  estUsdCost?: Prisma.SortOrder
+  balanceAfter?: Prisma.SortOrder
 }
 
 export type NpcLogCreateNestedManyWithoutCharacterInput = {
@@ -353,10 +553,32 @@ export type NpcLogUncheckedUpdateManyWithoutCharacterNestedInput = {
   deleteMany?: Prisma.NpcLogScalarWhereInput | Prisma.NpcLogScalarWhereInput[]
 }
 
+export type NullableDecimalFieldUpdateOperationsInput = {
+  set?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  increment?: runtime.Decimal | runtime.DecimalJsLike | number | string
+  decrement?: runtime.Decimal | runtime.DecimalJsLike | number | string
+  multiply?: runtime.Decimal | runtime.DecimalJsLike | number | string
+  divide?: runtime.Decimal | runtime.DecimalJsLike | number | string
+}
+
+export type NullableBigIntFieldUpdateOperationsInput = {
+  set?: bigint | number | null
+  increment?: bigint | number
+  decrement?: bigint | number
+  multiply?: bigint | number
+  divide?: bigint | number
+}
+
 export type NpcLogCreateWithoutCharacterInput = {
   id?: string
   eventType: string
   details: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: bigint | number | null
+  tokensUsed?: bigint | number | null
+  estUsdCost?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: bigint | number | null
+  txHash?: string | null
   createdAt?: Date | string
 }
 
@@ -364,6 +586,12 @@ export type NpcLogUncheckedCreateWithoutCharacterInput = {
   id?: string
   eventType: string
   details: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: bigint | number | null
+  tokensUsed?: bigint | number | null
+  estUsdCost?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: bigint | number | null
+  txHash?: string | null
   createdAt?: Date | string
 }
 
@@ -401,6 +629,12 @@ export type NpcLogScalarWhereInput = {
   characterId?: Prisma.StringFilter<"NpcLog"> | string
   eventType?: Prisma.StringFilter<"NpcLog"> | string
   details?: Prisma.JsonFilter<"NpcLog">
+  kiteUsdAmount?: Prisma.DecimalNullableFilter<"NpcLog"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: Prisma.BigIntNullableFilter<"NpcLog"> | bigint | number | null
+  tokensUsed?: Prisma.BigIntNullableFilter<"NpcLog"> | bigint | number | null
+  estUsdCost?: Prisma.DecimalNullableFilter<"NpcLog"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: Prisma.BigIntNullableFilter<"NpcLog"> | bigint | number | null
+  txHash?: Prisma.StringNullableFilter<"NpcLog"> | string | null
   createdAt?: Prisma.DateTimeFilter<"NpcLog"> | Date | string
 }
 
@@ -408,6 +642,12 @@ export type NpcLogCreateManyCharacterInput = {
   id?: string
   eventType: string
   details: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: bigint | number | null
+  tokensUsed?: bigint | number | null
+  estUsdCost?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: bigint | number | null
+  txHash?: string | null
   createdAt?: Date | string
 }
 
@@ -415,6 +655,12 @@ export type NpcLogUpdateWithoutCharacterInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  tokensUsed?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  estUsdCost?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  txHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -422,6 +668,12 @@ export type NpcLogUncheckedUpdateWithoutCharacterInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  tokensUsed?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  estUsdCost?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  txHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -429,6 +681,12 @@ export type NpcLogUncheckedUpdateManyWithoutCharacterInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  kiteUsdAmount?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  computeTokensAwarded?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  tokensUsed?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  estUsdCost?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  balanceAfter?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  txHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -439,6 +697,12 @@ export type NpcLogSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   characterId?: boolean
   eventType?: boolean
   details?: boolean
+  kiteUsdAmount?: boolean
+  computeTokensAwarded?: boolean
+  tokensUsed?: boolean
+  estUsdCost?: boolean
+  balanceAfter?: boolean
+  txHash?: boolean
   createdAt?: boolean
   character?: boolean | Prisma.CharacterDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["npcLog"]>
@@ -448,6 +712,12 @@ export type NpcLogSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extens
   characterId?: boolean
   eventType?: boolean
   details?: boolean
+  kiteUsdAmount?: boolean
+  computeTokensAwarded?: boolean
+  tokensUsed?: boolean
+  estUsdCost?: boolean
+  balanceAfter?: boolean
+  txHash?: boolean
   createdAt?: boolean
   character?: boolean | Prisma.CharacterDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["npcLog"]>
@@ -457,6 +727,12 @@ export type NpcLogSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extens
   characterId?: boolean
   eventType?: boolean
   details?: boolean
+  kiteUsdAmount?: boolean
+  computeTokensAwarded?: boolean
+  tokensUsed?: boolean
+  estUsdCost?: boolean
+  balanceAfter?: boolean
+  txHash?: boolean
   createdAt?: boolean
   character?: boolean | Prisma.CharacterDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["npcLog"]>
@@ -466,10 +742,16 @@ export type NpcLogSelectScalar = {
   characterId?: boolean
   eventType?: boolean
   details?: boolean
+  kiteUsdAmount?: boolean
+  computeTokensAwarded?: boolean
+  tokensUsed?: boolean
+  estUsdCost?: boolean
+  balanceAfter?: boolean
+  txHash?: boolean
   createdAt?: boolean
 }
 
-export type NpcLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "characterId" | "eventType" | "details" | "createdAt", ExtArgs["result"]["npcLog"]>
+export type NpcLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "characterId" | "eventType" | "details" | "kiteUsdAmount" | "computeTokensAwarded" | "tokensUsed" | "estUsdCost" | "balanceAfter" | "txHash" | "createdAt", ExtArgs["result"]["npcLog"]>
 export type NpcLogInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   character?: boolean | Prisma.CharacterDefaultArgs<ExtArgs>
 }
@@ -490,6 +772,12 @@ export type $NpcLogPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
     characterId: string
     eventType: string
     details: runtime.JsonValue
+    kiteUsdAmount: runtime.Decimal | null
+    computeTokensAwarded: bigint | null
+    tokensUsed: bigint | null
+    estUsdCost: runtime.Decimal | null
+    balanceAfter: bigint | null
+    txHash: string | null
     createdAt: Date
   }, ExtArgs["result"]["npcLog"]>
   composites: {}
@@ -919,6 +1207,12 @@ export interface NpcLogFieldRefs {
   readonly characterId: Prisma.FieldRef<"NpcLog", 'String'>
   readonly eventType: Prisma.FieldRef<"NpcLog", 'String'>
   readonly details: Prisma.FieldRef<"NpcLog", 'Json'>
+  readonly kiteUsdAmount: Prisma.FieldRef<"NpcLog", 'Decimal'>
+  readonly computeTokensAwarded: Prisma.FieldRef<"NpcLog", 'BigInt'>
+  readonly tokensUsed: Prisma.FieldRef<"NpcLog", 'BigInt'>
+  readonly estUsdCost: Prisma.FieldRef<"NpcLog", 'Decimal'>
+  readonly balanceAfter: Prisma.FieldRef<"NpcLog", 'BigInt'>
+  readonly txHash: Prisma.FieldRef<"NpcLog", 'String'>
   readonly createdAt: Prisma.FieldRef<"NpcLog", 'DateTime'>
 }
     

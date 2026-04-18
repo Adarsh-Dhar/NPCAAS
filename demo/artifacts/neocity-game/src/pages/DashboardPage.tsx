@@ -32,6 +32,11 @@ type LogPayload = {
   logs: Array<{ id: string; type: string; timestamp: string; summary: string; details?: Record<string, unknown> }>
 }
 
+type DashboardErrorState = {
+  wallet?: string
+  logs?: string
+}
+
 interface DashboardPageProps {
   characters?: CharacterSnapshot[]
   onClose?: () => void
@@ -44,9 +49,20 @@ function parseAmount(value: string) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function toErrorText(error: unknown) {
+  if (error instanceof Error && error.message) return error.message
+  if (error && typeof error === 'object') {
+    const payload = error as Record<string, unknown>
+    const message = typeof payload.message === 'string' ? payload.message : null
+    if (message) return message
+  }
+  return 'request failed'
+}
+
 export default function DashboardPage({ characters = [], onClose }: DashboardPageProps) {
   const [balances, setBalances] = useState<Record<string, WalletBalancePayload | null>>({})
   const [logs, setLogs] = useState<Record<string, LogPayload | null>>({})
+  const [errors, setErrors] = useState<Record<string, DashboardErrorState>>({})
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
   const [fundingEscrow, setFundingEscrow] = useState(false)
   const [fundEscrowMessage, setFundEscrowMessage] = useState<string | null>(null)
@@ -134,21 +150,30 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
       try {
         const nextBalances: Record<string, WalletBalancePayload | null> = {}
         const nextLogs: Record<string, LogPayload | null> = {}
+        const nextErrors: Record<string, DashboardErrorState> = {}
 
         await Promise.all(
           activeNames.map(async (npcName) => {
             try {
               const balanceResponse = (await client.getWalletBalances(npcName)) as WalletBalancePayload
               nextBalances[npcName] = balanceResponse
-            } catch {
+            } catch (error) {
               nextBalances[npcName] = null
+              nextErrors[npcName] = {
+                ...(nextErrors[npcName] ?? {}),
+                wallet: toErrorText(error),
+              }
             }
 
             try {
               const logResponse = (await client.getNpcLogs(npcName, { limit: 10 })) as LogPayload
               nextLogs[npcName] = logResponse
-            } catch {
+            } catch (error) {
               nextLogs[npcName] = null
+              nextErrors[npcName] = {
+                ...(nextErrors[npcName] ?? {}),
+                logs: toErrorText(error),
+              }
             }
           })
         )
@@ -157,6 +182,7 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
 
         setBalances(nextBalances)
         setLogs(nextLogs)
+        setErrors(nextErrors)
         setLastUpdatedAt(new Date().toISOString())
 
         const alpha = nextBalances['Node_Alpha'] ?? null
@@ -249,6 +275,7 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
               {activeNames.map((npcName) => {
                 const row = balances[npcName]
                 const balance = row ? row.native.balanceFormatted : '—'
+                const walletError = errors[npcName]?.wallet
                 return (
                   <div key={npcName} className="rounded border border-white/10 bg-black/40 p-3">
                     <div className="flex items-center justify-between text-sm">
@@ -258,6 +285,9 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
                     <div className="mt-2 text-[11px] text-white/45 break-all">
                       {row?.walletAddress ?? 'wallet unavailable'}
                     </div>
+                    {!row && walletError ? (
+                      <div className="mt-2 text-[10px] text-red-300 break-all">wallet error: {walletError}</div>
+                    ) : null}
                   </div>
                 )
               })}
@@ -272,12 +302,18 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
             <div className="space-y-3 max-h-[calc(100vh-10rem)] overflow-y-auto pr-1">
               {activeNames.map((npcName) => {
                 const rows = logs[npcName]?.logs ?? []
+                const logsError = errors[npcName]?.logs
                 return (
                   <div key={npcName} className="rounded border border-white/10 bg-black/40 p-3">
                     <div className="mb-2 text-sm text-white">{formatNpcDisplayName(npcName)}</div>
                     <div className="space-y-2">
                       {rows.length === 0 ? (
-                        <p className="text-xs text-white/40">Waiting for backend logs...</p>
+                        <>
+                          <p className="text-xs text-white/40">Waiting for backend logs...</p>
+                          {logsError ? (
+                            <p className="text-[10px] text-red-300 break-all">logs error: {logsError}</p>
+                          ) : null}
+                        </>
                       ) : rows.slice(0, 3).map((log) => (
                         <div key={log.id} className="text-[11px] leading-snug text-white/70">
                           <span className="mr-2 inline-block rounded bg-white/10 px-1.5 py-0.5 uppercase text-[9px] text-white/80">

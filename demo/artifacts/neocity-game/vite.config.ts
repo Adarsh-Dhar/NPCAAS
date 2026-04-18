@@ -27,7 +27,7 @@ const isReplitDev =
 
 export default defineConfig({
   base: basePath,
-  envDir: path.resolve(import.meta.dirname, "..", ".."),
+  envDir: path.resolve(import.meta.dirname),
   plugins: [
     react(),
     tailwindcss(),

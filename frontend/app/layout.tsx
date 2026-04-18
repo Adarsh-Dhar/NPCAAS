@@ -18,7 +18,7 @@ const vt323 = VT323({
 
 export const metadata: Metadata = {
   title: 'GuildCraft | Retro 8-Bit NPC Creator',
-  description: 'Create autonomous AI NPCs for Kite Chain with a retro 8-bit aesthetic',
+  description: 'Create autonomous AI NPCs for the KITE_USD network with a retro 8-bit aesthetic',
   generator: 'v0.app',
   icons: {
     icon: [

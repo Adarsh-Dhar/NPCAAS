@@ -4,9 +4,9 @@ export default function ExplainerGrid() {
   const cards = [
     {
       icon: '⛓️',
-      title: 'KITE ECOSYSTEM',
+      title: 'KITE_USD ECOSYSTEM',
       description:
-        'Deploy to Kite Chain, the first Web3 ecosystem designed for autonomous economic agents.',
+        'Deploy on the KITE_USD network, the first Web3 ecosystem designed for autonomous economic agents.',
       borderColor: 'cyan',
     },
     {

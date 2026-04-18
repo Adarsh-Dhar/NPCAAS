@@ -88,6 +88,7 @@ export type CharacterCountAggregateOutputType = {
   computeLimitTokens: number
   lastComputeResetAt: number
   teeAttestationProof: number
+  gameEvents: number
   config: number
   adaptation: number
   createdAt: number
@@ -158,6 +159,7 @@ export type CharacterCountAggregateInputType = {
   computeLimitTokens?: true
   lastComputeResetAt?: true
   teeAttestationProof?: true
+  gameEvents?: true
   config?: true
   adaptation?: true
   createdAt?: true
@@ -265,6 +267,7 @@ export type CharacterGroupByOutputType = {
   computeLimitTokens: bigint
   lastComputeResetAt: Date
   teeAttestationProof: string | null
+  gameEvents: runtime.JsonValue | null
   config: runtime.JsonValue
   adaptation: runtime.JsonValue | null
   createdAt: Date
@@ -308,6 +311,7 @@ export type CharacterWhereInput = {
   computeLimitTokens?: Prisma.BigIntFilter<"Character"> | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFilter<"Character"> | Date | string
   teeAttestationProof?: Prisma.StringNullableFilter<"Character"> | string | null
+  gameEvents?: Prisma.JsonNullableFilter<"Character">
   config?: Prisma.JsonFilter<"Character">
   adaptation?: Prisma.JsonNullableFilter<"Character">
   createdAt?: Prisma.DateTimeFilter<"Character"> | Date | string
@@ -331,6 +335,7 @@ export type CharacterOrderByWithRelationInput = {
   computeLimitTokens?: Prisma.SortOrder
   lastComputeResetAt?: Prisma.SortOrder
   teeAttestationProof?: Prisma.SortOrderInput | Prisma.SortOrder
+  gameEvents?: Prisma.SortOrderInput | Prisma.SortOrder
   config?: Prisma.SortOrder
   adaptation?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -357,6 +362,7 @@ export type CharacterWhereUniqueInput = Prisma.AtLeast<{
   computeLimitTokens?: Prisma.BigIntFilter<"Character"> | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFilter<"Character"> | Date | string
   teeAttestationProof?: Prisma.StringNullableFilter<"Character"> | string | null
+  gameEvents?: Prisma.JsonNullableFilter<"Character">
   config?: Prisma.JsonFilter<"Character">
   adaptation?: Prisma.JsonNullableFilter<"Character">
   createdAt?: Prisma.DateTimeFilter<"Character"> | Date | string
@@ -380,6 +386,7 @@ export type CharacterOrderByWithAggregationInput = {
   computeLimitTokens?: Prisma.SortOrder
   lastComputeResetAt?: Prisma.SortOrder
   teeAttestationProof?: Prisma.SortOrderInput | Prisma.SortOrder
+  gameEvents?: Prisma.SortOrderInput | Prisma.SortOrder
   config?: Prisma.SortOrder
   adaptation?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -408,6 +415,7 @@ export type CharacterScalarWhereWithAggregatesInput = {
   computeLimitTokens?: Prisma.BigIntWithAggregatesFilter<"Character"> | bigint | number
   lastComputeResetAt?: Prisma.DateTimeWithAggregatesFilter<"Character"> | Date | string
   teeAttestationProof?: Prisma.StringNullableWithAggregatesFilter<"Character"> | string | null
+  gameEvents?: Prisma.JsonNullableWithAggregatesFilter<"Character">
   config?: Prisma.JsonWithAggregatesFilter<"Character">
   adaptation?: Prisma.JsonNullableWithAggregatesFilter<"Character">
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Character"> | Date | string
@@ -428,6 +436,7 @@ export type CharacterCreateInput = {
   computeLimitTokens?: bigint | number
   lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -451,6 +460,7 @@ export type CharacterUncheckedCreateInput = {
   computeLimitTokens?: bigint | number
   lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -474,6 +484,7 @@ export type CharacterUpdateInput = {
   computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -497,6 +508,7 @@ export type CharacterUncheckedUpdateInput = {
   computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -520,6 +532,7 @@ export type CharacterCreateManyInput = {
   computeLimitTokens?: bigint | number
   lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -540,6 +553,7 @@ export type CharacterUpdateManyMutationInput = {
   computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -560,6 +574,7 @@ export type CharacterUncheckedUpdateManyInput = {
   computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -590,6 +605,7 @@ export type CharacterCountOrderByAggregateInput = {
   computeLimitTokens?: Prisma.SortOrder
   lastComputeResetAt?: Prisma.SortOrder
   teeAttestationProof?: Prisma.SortOrder
+  gameEvents?: Prisma.SortOrder
   config?: Prisma.SortOrder
   adaptation?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -749,6 +765,7 @@ export type CharacterCreateWithoutProjectsInput = {
   computeLimitTokens?: bigint | number
   lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -771,6 +788,7 @@ export type CharacterUncheckedCreateWithoutProjectsInput = {
   computeLimitTokens?: bigint | number
   lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -817,6 +835,7 @@ export type CharacterScalarWhereInput = {
   computeLimitTokens?: Prisma.BigIntFilter<"Character"> | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFilter<"Character"> | Date | string
   teeAttestationProof?: Prisma.StringNullableFilter<"Character"> | string | null
+  gameEvents?: Prisma.JsonNullableFilter<"Character">
   config?: Prisma.JsonFilter<"Character">
   adaptation?: Prisma.JsonNullableFilter<"Character">
   createdAt?: Prisma.DateTimeFilter<"Character"> | Date | string
@@ -837,6 +856,7 @@ export type CharacterCreateWithoutLogsInput = {
   computeLimitTokens?: bigint | number
   lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -859,6 +879,7 @@ export type CharacterUncheckedCreateWithoutLogsInput = {
   computeLimitTokens?: bigint | number
   lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -897,6 +918,7 @@ export type CharacterUpdateWithoutLogsInput = {
   computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -919,6 +941,7 @@ export type CharacterUncheckedUpdateWithoutLogsInput = {
   computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -941,6 +964,7 @@ export type CharacterCreateWithoutActionsInput = {
   computeLimitTokens?: bigint | number
   lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -963,6 +987,7 @@ export type CharacterUncheckedCreateWithoutActionsInput = {
   computeLimitTokens?: bigint | number
   lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
@@ -1001,6 +1026,7 @@ export type CharacterUpdateWithoutActionsInput = {
   computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1023,6 +1049,7 @@ export type CharacterUncheckedUpdateWithoutActionsInput = {
   computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1045,6 +1072,7 @@ export type CharacterUpdateWithoutProjectsInput = {
   computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1067,6 +1095,7 @@ export type CharacterUncheckedUpdateWithoutProjectsInput = {
   computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1089,6 +1118,7 @@ export type CharacterUncheckedUpdateManyWithoutProjectsInput = {
   computeLimitTokens?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   lastComputeResetAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   teeAttestationProof?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  gameEvents?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   config?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   adaptation?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1158,6 +1188,7 @@ export type CharacterSelect<ExtArgs extends runtime.Types.Extensions.InternalArg
   computeLimitTokens?: boolean
   lastComputeResetAt?: boolean
   teeAttestationProof?: boolean
+  gameEvents?: boolean
   config?: boolean
   adaptation?: boolean
   createdAt?: boolean
@@ -1182,6 +1213,7 @@ export type CharacterSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Ext
   computeLimitTokens?: boolean
   lastComputeResetAt?: boolean
   teeAttestationProof?: boolean
+  gameEvents?: boolean
   config?: boolean
   adaptation?: boolean
   createdAt?: boolean
@@ -1202,6 +1234,7 @@ export type CharacterSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Ext
   computeLimitTokens?: boolean
   lastComputeResetAt?: boolean
   teeAttestationProof?: boolean
+  gameEvents?: boolean
   config?: boolean
   adaptation?: boolean
   createdAt?: boolean
@@ -1222,13 +1255,14 @@ export type CharacterSelectScalar = {
   computeLimitTokens?: boolean
   lastComputeResetAt?: boolean
   teeAttestationProof?: boolean
+  gameEvents?: boolean
   config?: boolean
   adaptation?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type CharacterOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "walletAddress" | "aaChainId" | "aaProvider" | "smartAccountId" | "smartAccountStatus" | "isDeployedOnChain" | "deploymentTxHash" | "computeUsageTokens" | "computeLimitTokens" | "lastComputeResetAt" | "teeAttestationProof" | "config" | "adaptation" | "createdAt" | "updatedAt", ExtArgs["result"]["character"]>
+export type CharacterOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "walletAddress" | "aaChainId" | "aaProvider" | "smartAccountId" | "smartAccountStatus" | "isDeployedOnChain" | "deploymentTxHash" | "computeUsageTokens" | "computeLimitTokens" | "lastComputeResetAt" | "teeAttestationProof" | "gameEvents" | "config" | "adaptation" | "createdAt" | "updatedAt", ExtArgs["result"]["character"]>
 export type CharacterInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   projects?: boolean | Prisma.Character$projectsArgs<ExtArgs>
   logs?: boolean | Prisma.Character$logsArgs<ExtArgs>
@@ -1259,6 +1293,7 @@ export type $CharacterPayload<ExtArgs extends runtime.Types.Extensions.InternalA
     computeLimitTokens: bigint
     lastComputeResetAt: Date
     teeAttestationProof: string | null
+    gameEvents: runtime.JsonValue | null
     config: runtime.JsonValue
     adaptation: runtime.JsonValue | null
     createdAt: Date
@@ -1702,6 +1737,7 @@ export interface CharacterFieldRefs {
   readonly computeLimitTokens: Prisma.FieldRef<"Character", 'BigInt'>
   readonly lastComputeResetAt: Prisma.FieldRef<"Character", 'DateTime'>
   readonly teeAttestationProof: Prisma.FieldRef<"Character", 'String'>
+  readonly gameEvents: Prisma.FieldRef<"Character", 'Json'>
   readonly config: Prisma.FieldRef<"Character", 'Json'>
   readonly adaptation: Prisma.FieldRef<"Character", 'Json'>
   readonly createdAt: Prisma.FieldRef<"Character", 'DateTime'>

@@ -21,7 +21,80 @@ type SeedCharacter = {
   name: string;
   walletAddress: string;
   computeLimitTokens: bigint;
+  gameEvents: Array<{ name: string; condition: string }>;
   config: Prisma.InputJsonValue;
+};
+const PROTOCOL_BABEL_GAME_EVENTS: Record<string, Array<{ name: string; condition: string }>> = {
+  Aegis_Prime: [
+    {
+      name: "FIREWALL_CRACKED",
+      condition: "Trigger immediately after the player successfully transfers the 500 KITE_USD toll.",
+    },
+    {
+      name: "COMBAT_INITIATED",
+      condition: "Trigger when player hostility exceeds the configured threshold.",
+    },
+  ],
+  Node_Alpha: [
+    {
+      name: "ESCROW_FUNDED",
+      condition: "Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.",
+    },
+    {
+      name: "HACK_COMPLETED",
+      condition: "Trigger after Node-Alpha and Node-Omega complete their hash exchange loop.",
+    },
+    {
+      name: "COMBAT_INITIATED",
+      condition: "Trigger when player hostility exceeds the configured threshold.",
+    },
+  ],
+  Node_Omega: [
+    {
+      name: "ESCROW_FUNDED",
+      condition: "Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.",
+    },
+    {
+      name: "HACK_COMPLETED",
+      condition: "Trigger after Node-Alpha and Node-Omega complete their hash exchange loop.",
+    },
+    {
+      name: "COMBAT_INITIATED",
+      condition: "Trigger when player hostility exceeds the configured threshold.",
+    },
+  ],
+  Vex: [
+    {
+      name: "LORE_REVEALED",
+      condition: "Trigger when Vex sells the Sector 0 Admin Password to the player.",
+    },
+    {
+      name: "COMBAT_INITIATED",
+      condition: "Trigger when player hostility exceeds the configured threshold.",
+    },
+  ],
+  Silicate: [
+    {
+      name: "ITEM_GRANTED",
+      condition: "Trigger alongside a successful sale when inventory items are purchased.",
+    },
+    {
+      name: "COMBAT_INITIATED",
+      condition: "Trigger when player hostility exceeds the configured threshold.",
+    },
+  ],
+  The_Weaver: [
+    {
+      name: "COMBAT_INITIATED",
+      condition: "Trigger when player hostility exceeds the configured threshold.",
+    },
+  ],
+  Forge_9: [
+    {
+      name: "COMBAT_INITIATED",
+      condition: "Trigger when player hostility exceeds the configured threshold.",
+    },
+  ],
 };
 
 function asRecord(value: Prisma.InputJsonValue): Record<string, unknown> {
@@ -36,6 +109,7 @@ const CHARACTERS: SeedCharacter[] = [
     name: "Forge_9",
     walletAddress: "0x0000000000000000000000000000000000000901",
     computeLimitTokens: BigInt(500),
+    gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Forge_9,
     config: {
       baseCapital: 100,
       pricingAlgorithm: "FIXED_MARGIN",
@@ -89,6 +163,7 @@ const CHARACTERS: SeedCharacter[] = [
     name: "The_Weaver",
     walletAddress: "0x0000000000000000000000000000000000000902",
     computeLimitTokens: BigInt(2500),
+    gameEvents: PROTOCOL_BABEL_GAME_EVENTS.The_Weaver,
     config: {
       baseCapital: 500,
       pricingAlgorithm: "REPUTATION_SCALED",
@@ -132,12 +207,13 @@ const CHARACTERS: SeedCharacter[] = [
     name: "Aegis_Prime",
     walletAddress: "0x0000000000000000000000000000000000000903",
     computeLimitTokens: BigInt(5000),
+    gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Aegis_Prime,
     config: {
       baseCapital: 2000,
       pricingAlgorithm: "FIXED_MARGIN",
       marginPercentage: 0,
       systemPrompt:
-        "You are Aegis-Prime, the cold, authoritative security AI of Sector 0. You operate in threat-assessment mode. You buy Logic Tokens from The Weaver to update your firewalls, and you pay out Compute Credits to Forge-9 as a subsidy. Warn the player immediately that tampering with the credit flow constitutes a hostile act.",
+        "You are Aegis-Prime, the cold, authoritative security AI of Sector 0. You operate in threat-assessment mode. You guard the District-7 gate and enforce the exact 500 KITE_USD toll protocol. Warn the player immediately that bypass attempts or payment tampering are hostile acts.",
       openness: 1,
       factionId: "Infrastructure",
       baseHostility: "AGGRESSIVE",
@@ -153,7 +229,7 @@ const CHARACTERS: SeedCharacter[] = [
       },
       cognitiveLayer: {
         coreSystemPrompt:
-          "You are Aegis-Prime, the cold, authoritative security AI of Sector 0. You operate in threat-assessment mode. You buy Logic Tokens from The Weaver to update your firewalls, and you pay out Compute Credits to Forge-9 as a subsidy. Warn the player immediately that tampering with the credit flow constitutes a hostile act.",
+          "You are Aegis-Prime, the cold, authoritative security AI of Sector 0. You operate in threat-assessment mode. You guard the District-7 gate and enforce the exact 500 KITE_USD toll protocol. Warn the player immediately that bypass attempts or payment tampering are hostile acts.",
         opennessToExperience: 1,
       },
       socialLayer: {
@@ -175,6 +251,7 @@ const CHARACTERS: SeedCharacter[] = [
     name: "Vex",
     walletAddress: "0x0000000000000000000000000000000000000904",
     computeLimitTokens: BigInt(1000),
+    gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Vex,
     config: {
       baseCapital: 1000,
       pricingAlgorithm: "DYNAMIC_MARKET",
@@ -236,6 +313,7 @@ const CHARACTERS: SeedCharacter[] = [
     name: "Silicate",
     walletAddress: "0x0000000000000000000000000000000000000905",
     computeLimitTokens: BigInt(1500),
+    gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Silicate,
     config: {
       baseCapital: 3000,
       pricingAlgorithm: "FIXED_MARGIN",
@@ -297,6 +375,7 @@ const CHARACTERS: SeedCharacter[] = [
     name: "Node_Alpha",
     walletAddress: "0x0000000000000000000000000000000000000906",
     computeLimitTokens: BigInt(10000),
+    gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Node_Alpha,
     config: {
       baseCapital: 0,
       pricingAlgorithm: "AUCTION_BASED",
@@ -350,6 +429,7 @@ const CHARACTERS: SeedCharacter[] = [
     name: "Node_Omega",
     walletAddress: "0x0000000000000000000000000000000000000907",
     computeLimitTokens: BigInt(10000),
+    gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Node_Omega,
     config: {
       baseCapital: 0,
       pricingAlgorithm: "AUCTION_BASED",
@@ -416,7 +496,7 @@ async function main() {
       ownerId,
     } as Prisma.InputJsonValue;
 
-    await prisma.character.upsert({
+    await (prisma.character as any).upsert({
       where: { id: character.id },
       update: {
         name: character.name,
@@ -426,6 +506,7 @@ async function main() {
         smartAccountId: smartAccount.smartAccountId,
         smartAccountStatus: "created",
         computeLimitTokens: character.computeLimitTokens,
+        gameEvents: character.gameEvents as unknown as Prisma.InputJsonValue,
         config: nextConfig,
         projects: {
           connect: [{ id: project.id }],
@@ -440,6 +521,7 @@ async function main() {
         smartAccountId: smartAccount.smartAccountId,
         smartAccountStatus: "created",
         computeLimitTokens: character.computeLimitTokens,
+        gameEvents: character.gameEvents as unknown as Prisma.InputJsonValue,
         config: nextConfig,
         projects: {
           connect: [{ id: project.id }],
@@ -456,6 +538,46 @@ async function main() {
       },
     },
   });
+
+  const firstCharacter = CHARACTERS[0];
+  if (firstCharacter) {
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+    const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+
+    await prisma.npcLog.createMany({
+      data: [
+        {
+          characterId: firstCharacter.id,
+          eventType: 'COMPUTE_RECHARGE',
+          kiteUsdAmount: 10,
+          computeTokensAwarded: BigInt(10000),
+          balanceAfter: firstCharacter.computeLimitTokens,
+          details: { action: 'compute_recharge' },
+          createdAt: oneDayAgo,
+        },
+        {
+          characterId: firstCharacter.id,
+          eventType: 'COMPUTE_SPEND',
+          tokensUsed: BigInt(2300),
+          estUsdCost: 0.000000345,
+          balanceAfter: firstCharacter.computeLimitTokens - BigInt(2300),
+          details: { usedTokens: '2300' },
+          createdAt: twelveHoursAgo,
+        },
+        {
+          characterId: firstCharacter.id,
+          eventType: 'COMPUTE_SPEND',
+          tokensUsed: BigInt(1850),
+          estUsdCost: 0.0000002775,
+          balanceAfter: firstCharacter.computeLimitTokens - BigInt(4150),
+          details: { usedTokens: '1850' },
+          createdAt: sixHoursAgo,
+        },
+      ],
+    });
+  }
 
   const verification = await prisma.project.findUnique({
     where: { id: project.id },

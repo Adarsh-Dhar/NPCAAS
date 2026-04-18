@@ -400,7 +400,7 @@ function buildSystemPrompt(ctx: AgentContext): string {
 
   const multiTokenNote = ctx.allowedTradeTokens && ctx.allowedTradeTokens.length > 0
     ? `You are authorized to negotiate and quote prices in these tokens: ${ctx.allowedTradeTokens.join(', ')}. ` +
-      `While your internal treasury and gas fees operate on the KITE network, you can offer trades in ${PRIMARY_TOKEN_SYMBOL}.`
+      `Your internal treasury and gas fees are handled separately, and you can offer trades in ${PRIMARY_TOKEN_SYMBOL}.`
     : ''
 
   const inventoryNote =

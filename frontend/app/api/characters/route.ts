@@ -9,12 +9,70 @@ import { TreasuryService } from '@/lib/treasury'
 import { parseComputeLimit } from '@/lib/compute-budget'
 import { buildTeeGateResult } from '@/lib/tee-gate'
 
+type GameEventDefinition = {
+  name: string
+  condition: string
+}
+
+const PROTOCOL_BABEL_EVENT_DEFAULTS: Record<string, GameEventDefinition[]> = {
+  Aegis_Prime: [
+    { name: 'FIREWALL_CRACKED', condition: 'Trigger immediately after the player successfully transfers the 500 KITE_USD toll.' },
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  Node_Alpha: [
+    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.' },
+    { name: 'HACK_COMPLETED', condition: 'Trigger after Node-Alpha and Node-Omega complete their hash exchange loop.' },
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  Node_Omega: [
+    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.' },
+    { name: 'HACK_COMPLETED', condition: 'Trigger after Node-Alpha and Node-Omega complete their hash exchange loop.' },
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  Vex: [
+    { name: 'LORE_REVEALED', condition: 'Trigger when Vex sells the Sector 0 Admin Password to the player.' },
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  Silicate: [
+    { name: 'ITEM_GRANTED', condition: 'Trigger alongside a successful sale when inventory items are purchased.' },
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  The_Weaver: [
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+  Forge_9: [
+    { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
+  ],
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
 function toInputJson(value: unknown): Prisma.InputJsonValue {
   return asRecord(value) as Prisma.InputJsonValue
+}
+
+function parseGameEvents(value: unknown): GameEventDefinition[] | undefined {
+  if (!Array.isArray(value)) return undefined
+
+  const events: GameEventDefinition[] = []
+  for (const entry of value) {
+    const payload = asRecord(entry)
+    const rawName = typeof payload.name === 'string' ? payload.name.trim() : ''
+    const rawCondition = typeof payload.condition === 'string' ? payload.condition.trim() : ''
+    if (!rawName || !rawCondition) continue
+    if (!/^[A-Z0-9_]+$/.test(rawName)) continue
+    events.push({ name: rawName, condition: rawCondition })
+  }
+
+  return events
+}
+
+function resolveGameEvents(name: string, value: unknown): GameEventDefinition[] {
+  const parsed = parseGameEvents(value) ?? []
+  if (parsed.length > 0) return parsed
+  return PROTOCOL_BABEL_EVENT_DEFAULTS[name] ?? []
 }
 
 function getBaseCapital(config: unknown): number {
@@ -75,6 +133,7 @@ function toApiCharacter(character: {
   computeLimitTokens?: bigint | number | string
   lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
+  gameEvents?: unknown
   createdAt: Date
   projects: Array<{ id: string }>
 }) {
@@ -102,6 +161,7 @@ function toApiCharacter(character: {
           ? character.lastComputeResetAt
           : undefined,
     teeAttestationProof: character.teeAttestationProof ?? undefined,
+    gameEvents: resolveGameEvents(character.name, character.gameEvents),
     projectIds: character.projects.map((project) => project.id),
     createdAt: character.createdAt.toISOString(),
   }
@@ -228,6 +288,15 @@ const createCharacterSchema = z
   .object({
     name: z.string().trim().min(1),
     config: z.record(z.string(), z.unknown()),
+    gameEvents: z
+      .array(
+        z.object({
+          name: z.string().trim().min(1),
+          condition: z.string().trim().min(1),
+        })
+      )
+      .max(20)
+      .optional(),
     gameIds: z.array(z.string().trim().min(1)).optional(),
     projectId: z.string().trim().min(1).optional(),
   })
@@ -238,6 +307,15 @@ const updateCharacterSchema = z
     characterId: z.string().trim().min(1),
     name: z.string().trim().min(1).optional(),
     config: z.record(z.string(), z.unknown()),
+    gameEvents: z
+      .array(
+        z.object({
+          name: z.string().trim().min(1),
+          condition: z.string().trim().min(1),
+        })
+      )
+      .max(20)
+      .optional(),
   })
   .strict()
 
@@ -272,7 +350,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { name, config, gameIds, projectId } = parsed.data
+    const { name, config, gameEvents, gameIds, projectId } = parsed.data
     const candidateGameIds = Array.from(new Set([...(gameIds ?? []), ...(projectId ? [projectId] : [])]))
 
     const games = candidateGameIds.length
@@ -305,6 +383,7 @@ export async function POST(request: NextRequest) {
     })
 
     const computeLimitTokens = getComputeLimit(config)
+    const sanitizedGameEvents = parseGameEvents(gameEvents)
     const teeGate = buildTeeGateResult({
       teeExecution: getTeeExecution(config),
       characterId,
@@ -325,6 +404,7 @@ export async function POST(request: NextRequest) {
       teeAttestationProof: teeGate.attestation
         ? JSON.stringify(teeGate.attestation)
         : undefined,
+      gameEvents: (sanitizedGameEvents ?? []) as unknown as Prisma.InputJsonValue,
       config: toInputJson(config),
       adaptation: {
         specializationActive: false,
@@ -511,7 +591,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        message: `Deployed ${name} to Kite Chain with wallet ${smartAccount.address.slice(0, 6)}...`,
+        message: `Deployed ${name} to the KITE_USD network with wallet ${smartAccount.address.slice(0, 6)}...`,
         character: toApiCharacter(character),
         walletAddress: smartAccount.address,
         treasuryProvision: provisioning,
@@ -541,7 +621,7 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    const { characterId, name, config } = parsed.data
+    const { characterId, name, config, gameEvents } = parsed.data
 
     const character = await prisma.character.findUnique({
       where: { id: characterId },
@@ -584,6 +664,10 @@ export async function PATCH(request: NextRequest) {
       updateData.teeAttestationProof = teeGate.attestation
         ? JSON.stringify(teeGate.attestation)
         : null
+    }
+
+    if (gameEvents !== undefined) {
+      updateData.gameEvents = (parseGameEvents(gameEvents) ?? []) as unknown as Prisma.InputJsonValue
     }
 
     const updated = await (prisma.character as any).update({

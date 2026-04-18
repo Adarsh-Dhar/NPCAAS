@@ -7,6 +7,9 @@
 import type { Character } from "../../../../../frontend/sdk";
 export type { Character } from "../../../../../frontend/sdk";
 
+const DEMO_FALLBACK_API_KEY = "gc_live_c814f7a2fac63fce275b4298b5949e6d";
+const DEMO_FALLBACK_BASE_URL = "/api";
+
 // ---------------------------------------------------------------------------
 // CJS interop — use ESM `import` and normalise CommonJS default exports
 // Vite will pre-bundle the CJS package via `optimizeDeps.include` when needed.
@@ -46,23 +49,24 @@ function getRuntimeApiKey(): string | undefined {
   if (viteKey) return viteKey;
   if (typeof window !== "undefined") {
     const windowKey = (window as any).__VITE_GC_API_KEY as string | null;
-    const localKey = localStorage.getItem("VITE_GC_API_KEY") as string | null;
-    return windowKey ?? localKey ?? undefined;
+    // Ignore localStorage overrides by default to avoid stale keys bricking the demo.
+    return windowKey ?? DEMO_FALLBACK_API_KEY;
   }
-  return undefined;
+  return DEMO_FALLBACK_API_KEY;
 }
 
 function getRuntimeBaseUrl(): string {
   const viteBase = (import.meta.env?.VITE_GC_BASE_URL as string | undefined) ?? undefined;
-  if (viteBase) return viteBase;
+  if (viteBase?.startsWith('/')) return viteBase;
   if (typeof window !== "undefined") {
-    return (
-      (window as any).__VITE_GC_BASE_URL as string | null ??
-      (localStorage.getItem("VITE_GC_BASE_URL") as string | null) ??
-      "http://localhost:3000/api"
-    );
+    const windowBase = (window as any).__VITE_GC_BASE_URL as string | null;
+    if (typeof windowBase === 'string' && windowBase.startsWith('/')) {
+      return windowBase;
+    }
+    // Ignore localStorage URL overrides by default to avoid CORS and stale-host issues.
+    return DEMO_FALLBACK_BASE_URL;
   }
-  return "http://localhost:3000/api";
+  return DEMO_FALLBACK_BASE_URL;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,10 +93,10 @@ class HttpGuildCraftClient {
   }
 
   async _request(path: string, options: any = {}) {
-    const headers = { ...this._authHeaders(), ...(options.headers ?? {}) }
     const method = options.method || 'GET'
     const fetchOnce = async (baseUrl: string) => {
       const url = `${baseUrl}${path}`
+      const headers = { ...this._authHeaders(), ...(options.headers ?? {}) }
       console.log(`[GuildCraft] 🔗 ${method} ${url}`)
       console.log(`[GuildCraft] Headers:`, headers)
       return fetch(url, { ...options, headers })
@@ -121,7 +125,20 @@ class HttpGuildCraftClient {
     }
 
     console.log(`[GuildCraft] Response status:`, res.status)
-    const body = await res.json().catch(() => ({}))
+    let body = await res.json().catch(() => ({}))
+
+    // If a stale key is present, auto-recover once with the known demo fallback key.
+    const invalidApiKey =
+      res.status === 401 &&
+      typeof body?.error === 'string' &&
+      body.error.toLowerCase().includes('invalid api key')
+    if (invalidApiKey && this.apiKey !== DEMO_FALLBACK_API_KEY) {
+      console.warn('[GuildCraft] Invalid API key detected. Retrying with demo fallback key.')
+      this.apiKey = DEMO_FALLBACK_API_KEY
+      res = await fetchOnce(this.baseUrl)
+      body = await res.json().catch(() => ({}))
+    }
+
     if (!res.ok) {
       console.error(`[GuildCraft] ❌ API Error:`, body)
       throw new GuildCraftError(body?.error ?? `HTTP ${res.status}`, res.status, body)
@@ -187,14 +204,6 @@ class HttpGuildCraftClient {
     return this._request(`/npcs/${encodeURIComponent(npcName)}/trigger`, {
       method: 'POST',
       body: JSON.stringify(payload),
-    })
-  }
-
-  async refillNpcCompute(npcName: string) {
-    if (!npcName) throw new GuildCraftError('npcName is required', 400, null)
-    return this._request(`/npcs/${encodeURIComponent(npcName)}/refill`, {
-      method: 'POST',
-      body: JSON.stringify({}),
     })
   }
 

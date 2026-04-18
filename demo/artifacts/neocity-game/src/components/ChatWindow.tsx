@@ -2,9 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Send, X } from 'lucide-react'
 import { getCharacterByName, getClient, GuildCraftError, isSdkReady } from '@/lib/sdk'
-import { usePlayerState } from '@/context/PlayerStateContext'
 import { formatNpcDisplayName, normalizeNpcName } from '@/lib/protocolBabel'
-import { PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 
 export interface TradeIntent {
   item: string
@@ -38,6 +36,11 @@ interface AegisGateUnlockedDetail {
   worldEvent?: string
 }
 
+interface ParsedGameEvent {
+  eventName: string | null
+  clean: string
+}
+
 const NPC_GREETINGS: Record<string, string> = {
   FORGE_9: 'Forge-9 online. State the request and the payment path.',
   THE_WEAVER: 'The Weaver is listening. Bring terms, not noise.',
@@ -48,7 +51,10 @@ const NPC_GREETINGS: Record<string, string> = {
   NODE_OMEGA: 'Node-Omega online. Complete the transaction.',
 }
 
-const REFILL_COST = 500
+const AEGIS_PRIME_CANONICAL_NAME = 'AEGIS_PRIME'
+const AEGIS_GATE_TOLL_PRICE = 500
+const AEGIS_GATE_TOLL_CURRENCY = 'KITE_USD'
+const AEGIS_GATE_TOLL_ITEM = 'District-7 Gate Toll'
 
 function extractTradeIntent(text: string): { clean: string; trade: TradeIntent | null } {
   const match = text.match(/\[\[TRADE:(\{.*?\})\]\]/s)
@@ -59,6 +65,14 @@ function extractTradeIntent(text: string): { clean: string; trade: TradeIntent |
   } catch {
     return { clean: text, trade: null }
   }
+}
+
+function extractGameEvent(text: string): ParsedGameEvent {
+  const match = text.match(/\[\[EVENT:([A-Z0-9_]+)\]\]/)
+  if (!match) return { eventName: null, clean: text }
+
+  const clean = text.replace(/\[\[EVENT:[A-Z0-9_]+\]\]/g, '').replace(/\s{2,}/g, ' ').trim()
+  return { eventName: match[1], clean }
 }
 
 function extractJsonObjects(rawText: string): string[] {
@@ -131,9 +145,35 @@ function parseAgentResponse(rawText: string): ParsedNpcAction[] {
   return [{ action: 'speaks', text: fallback || rawText }]
 }
 
+function inferAegisGateTradeIntent(input: {
+  npcName: string
+  userText: string
+  npcText: string
+}): TradeIntent | null {
+  if (normalizeNpcName(input.npcName) !== AEGIS_PRIME_CANONICAL_NAME) return null
+
+  const user = input.userText.toLowerCase()
+  const npc = input.npcText.toLowerCase()
+
+  const wantsAccess = /\b(pass|get past|enter|access|open|unlock|through)\b/.test(user)
+  const wantsToPay = /\b(pay|payment|transfer|send|ok do it|do it|i will pay)\b/.test(user)
+
+  const mentionsToll =
+    /\b500\b/.test(npc) &&
+    (/\bkite_usd\b/.test(npc) || /\btoll\b/.test(npc) || /\bpayment\b/.test(npc))
+
+  if (!mentionsToll) return null
+  if (!wantsAccess && !wantsToPay) return null
+
+  return {
+    item: AEGIS_GATE_TOLL_ITEM,
+    price: AEGIS_GATE_TOLL_PRICE,
+    currency: AEGIS_GATE_TOLL_CURRENCY,
+  }
+}
+
 export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindowProps) {
   const npcDisplayName = formatNpcDisplayName(npcName)
-  const { credits, debitCredits } = usePlayerState()
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'npc',
@@ -147,7 +187,6 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
   const [characterId, setCharacterId] = useState<string | null>(null)
   const [charLookupError, setCharLookupError] = useState<string | null>(null)
   const [isOutOfCompute, setIsOutOfCompute] = useState(false)
-  const [isRefilling, setIsRefilling] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -244,11 +283,20 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
 
         const rawText = String(response.response ?? '').trim()
         const { clean, trade } = extractTradeIntent(rawText)
-        const parsedResponses = parseAgentResponse(clean)
-        const primary = parsedResponses[0] ?? { action: response.action ?? 'speaks', text: clean || rawText }
+        const eventExtraction = extractGameEvent(clean)
+        const parsedResponses = parseAgentResponse(eventExtraction.clean)
+        const primary = parsedResponses[0] ?? {
+          action: response.action ?? 'speaks',
+          text: eventExtraction.clean || clean || rawText,
+        }
 
-        if (response.tradeIntent) onTradeIntent?.(response.tradeIntent)
-        if (trade) onTradeIntent?.(trade)
+        const inferredTradeIntent = inferAegisGateTradeIntent({
+          npcName,
+          userText,
+          npcText: primary.text,
+        })
+        const resolvedTradeIntent = response.tradeIntent ?? trade ?? inferredTradeIntent
+        if (resolvedTradeIntent) onTradeIntent?.(resolvedTradeIntent)
 
         setMessages((prev) => [
           ...prev,
@@ -266,8 +314,27 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
           })
         )
 
+        if (eventExtraction.eventName) {
+          window.dispatchEvent(
+            new CustomEvent('NPC_SYSTEM_EVENT', {
+              detail: {
+                eventName: eventExtraction.eventName,
+                npcName,
+              },
+            })
+          )
+        }
+
         if (response.worldEvent === 'FIREWALL_CRACKED') {
           window.dispatchEvent(new CustomEvent('FIREWALL_CRACKED'))
+          window.dispatchEvent(
+            new CustomEvent('NPC_SYSTEM_EVENT', {
+              detail: {
+                eventName: 'FIREWALL_CRACKED',
+                npcName,
+              },
+            })
+          )
         }
 
         if (isOutOfCompute) {
@@ -304,78 +371,6 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
     },
     [characterId, isOutOfCompute, npcId, npcName, onTradeIntent]
   )
-
-  const handleRefill = useCallback(async () => {
-    if (isRefilling) return
-
-    if (!isSdkReady()) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'system',
-          text: 'GuildCraft SDK not configured. Refill unavailable.',
-          timestamp: new Date(),
-        },
-      ])
-      return
-    }
-
-    if (credits < REFILL_COST) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'system',
-          text: `Insufficient ${PRIMARY_TOKEN_SYMBOL}. ${REFILL_COST} ${PRIMARY_TOKEN_SYMBOL} required to restore ${npcDisplayName}.`,
-          timestamp: new Date(),
-        },
-      ])
-      return
-    }
-
-    const client = getClient()
-    if (!client) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'system',
-          text: 'GuildCraft client unavailable. Refill failed.',
-          timestamp: new Date(),
-        },
-      ])
-      return
-    }
-
-    setIsRefilling(true)
-    try {
-      await client.refillNpcCompute(npcName)
-      const didDebit = debitCredits(REFILL_COST)
-      if (!didDebit) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'system',
-            text: `UPLINK RESTORED, but token debit failed. Check wallet state.`,
-            timestamp: new Date(),
-          },
-        ])
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'system',
-            text: `UPLINK RESTORED. ${REFILL_COST} ${PRIMARY_TOKEN_SYMBOL} DEDUCTED.`,
-            timestamp: new Date(),
-          },
-        ])
-      }
-      setIsOutOfCompute(false)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to refill compute budget'
-      setMessages((prev) => [...prev, { role: 'system', text: message, timestamp: new Date() }])
-    } finally {
-      setIsRefilling(false)
-    }
-  }, [credits, debitCredits, isRefilling, npcDisplayName, npcName])
 
   const sendMessage = useCallback(async () => {
     const text = input.trim()
@@ -497,16 +492,11 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
         {isOutOfCompute ? (
           <div className="flex flex-col gap-3 rounded-lg border border-red-500/40 bg-red-900/30 p-3 text-center">
             <p className="text-xs font-bold uppercase tracking-wider text-red-300">
-              Warning: {npcDisplayName} core logic halted. Compute injection required.
+              Warning: {npcDisplayName} core logic halted.
             </p>
-            <p className="text-[11px] text-red-100/80">Available {PRIMARY_TOKEN_SYMBOL}: {credits}</p>
-            <button
-              onClick={() => void handleRefill()}
-              disabled={isRefilling || credits < REFILL_COST}
-              className="rounded-lg border border-cyan-500/40 bg-black px-3 py-2 text-xs font-bold tracking-wider text-cyan-300 hover:bg-cyan-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isRefilling ? 'INJECTING...' : `PAY ${REFILL_COST} ${PRIMARY_TOKEN_SYMBOL} TO RESTORE UPLINK`}
-            </button>
+            <p className="text-[11px] text-red-100/80">
+              Recharge is disabled in the demo chat. Restore this NPC from the character edit page.
+            </p>
           </div>
         ) : (
           <div className="flex items-end gap-2">

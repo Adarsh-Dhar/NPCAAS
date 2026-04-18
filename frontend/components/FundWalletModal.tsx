@@ -51,7 +51,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
         }
       }
 
-      // Step 2: ensure we're on the Kite network
+      // Step 2: ensure we're on the KITE_USD network
       const currentChainIdHex = await window.ethereum.request({ method: 'eth_chainId' }) as string
       const currentChainId = parseInt(currentChainIdHex, 16)
       if (currentChainId !== 2368) {
@@ -61,7 +61,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
         const newChainIdHex = await window.ethereum.request({ method: 'eth_chainId' }) as string
         const newChainId = parseInt(newChainIdHex, 16)
         if (newChainId !== 2368) {
-          setError('Please switch to KiteAI Testnet (Chain ID 2368) in your wallet to continue.')
+          setError('Please switch to KITE_USD Testnet (Chain ID 2368) in your wallet to continue.')
           setStatus('error')
           return
         }
@@ -142,7 +142,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
               {!address
                 ? 'Wallet not connected'
                 : onKiteNetwork
-                  ? 'KiteAI Testnet ✓'
+                  ? 'KITE_USD Testnet ✓'
                   : 'Wrong network — will switch automatically on send'}
             </span>
           </div>
@@ -194,7 +194,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
               />
 
               <p className="mt-2 text-xs text-gray-500 font-mono">
-                Sending {PRIMARY_TOKEN_SYMBOL} token {PRIMARY_TOKEN_ADDRESS} on KiteAI Testnet (Chain ID: 2368)
+                Sending {PRIMARY_TOKEN_SYMBOL} token {PRIMARY_TOKEN_ADDRESS} on KITE_USD Testnet (Chain ID: 2368)
               </p>
 
               {(status === 'error' && error) && (

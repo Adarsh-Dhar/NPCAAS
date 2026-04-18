@@ -30,7 +30,7 @@ export default function Navigation() {
             rel="noopener noreferrer"
             className="text-white text-xs font-bold uppercase hover:text-cyan-400 transition-colors"
           >
-            KITE NETWORK
+            KITE_USD NETWORK
           </a>
         </div>
 
