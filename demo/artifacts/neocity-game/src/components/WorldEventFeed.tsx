@@ -7,13 +7,10 @@ import { subscribePlayerState } from '@/lib/playerState'
 import { Zap } from 'lucide-react'
 
 const ACTION_COLOR: Record<string, string> = {
-  CHAT:             '#00ffcc',
   PAYMENT_SENT:     '#ffcc00',
   ITEM_TRANSFERRED: '#00ff88',
   TRADE_ACCEPTED:   '#00ff88',
   TRADE_PROPOSED:   '#ff9900',
-  BROADCAST:        '#aaccdd',
-  BANKRUPTCY:       '#ff4466',
   MANIFEST_ACCEPTED: '#7df9ff',
   INVENTORY_COMPROMISED: '#ffb703',
   BRIEFCASE_LOCATED: '#ffd166',
@@ -21,8 +18,24 @@ const ACTION_COLOR: Record<string, string> = {
   SECURITY_ALERTED: '#ff5d73',
   ESCAPE_ROUTE_OPENED: '#80ed99',
   ARTIFACT_INTERCEPTED: '#00f5d4',
-  LOOP_TICK:        '#8888ff',
-  ACTION_QUEUED:    '#ffaa00',
+}
+
+const FEED_EVENT_WHITELIST = new Set([
+  'PAYMENT_SENT',
+  'ITEM_TRANSFERRED',
+  'TRADE_ACCEPTED',
+  'TRADE_PROPOSED',
+  'MANIFEST_ACCEPTED',
+  'INVENTORY_COMPROMISED',
+  'BRIEFCASE_LOCATED',
+  'BRIEFCASE_TRANSFERRED',
+  'SECURITY_ALERTED',
+  'ESCAPE_ROUTE_OPENED',
+  'ARTIFACT_INTERCEPTED',
+])
+
+function shouldDisplayEvent(event: WorldEvent) {
+  return FEED_EVENT_WHITELIST.has(event.actionType)
 }
 
 export function WorldEventFeed() {
@@ -31,6 +44,7 @@ export function WorldEventFeed() {
 
   useEffect(() => {
     const unsub = worldLoop.subscribe(event => {
+      if (!shouldDisplayEvent(event)) return
       setEvents(prev => [event, ...prev].slice(0, 30))
     })
     const unsubState = subscribePlayerState((snapshot) => {
@@ -39,6 +53,8 @@ export function WorldEventFeed() {
           typeof snapshot.lastEventType === 'string' && snapshot.lastEventType.trim()
             ? snapshot.lastEventType
             : 'PLAYER_EVENT'
+
+        if (!FEED_EVENT_WHITELIST.has(actionType)) return
 
         setEvents((prev) => [
           {
@@ -96,14 +112,10 @@ export function WorldEventFeed() {
         const color = ACTION_COLOR[event.actionType] ?? '#aaccdd'
         const payload = event.payload as any
         const summary =
-          event.actionType === 'CHAT'
-            ? `→ ${payload.to}: "${String(payload.message ?? '').slice(0, 40)}"`
-            : event.actionType === 'PAYMENT_SENT'
+          event.actionType === 'PAYMENT_SENT'
             ? `→ ${payload.to}: ${payload.amount} ${payload.currency} for ${payload.item}`
             : event.actionType === 'ITEM_TRANSFERRED'
             ? `→ ${payload.to}: transferred ${payload.item}`
-            : event.actionType === 'BANKRUPTCY'
-            ? 'Escrow depleted'
             : event.actionType === 'MANIFEST_ACCEPTED'
             ? 'Vinnie handed over the quartermaster cover'
             : event.actionType === 'INVENTORY_COMPROMISED'
@@ -118,10 +130,6 @@ export function WorldEventFeed() {
             ? 'Maintenance tunnel now available'
             : event.actionType === 'ARTIFACT_INTERCEPTED'
             ? 'Quantum drive access codes secured'
-            : event.actionType === 'LOOP_TICK'
-            ? 'Backend loop ticked'
-            : event.actionType === 'ACTION_QUEUED'
-            ? `Queued action for ${String(payload.target ?? 'NPC')}`
             : JSON.stringify(payload).slice(0, 50)
 
         return (
