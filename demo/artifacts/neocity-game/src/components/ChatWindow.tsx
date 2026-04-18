@@ -42,19 +42,18 @@ interface ParsedGameEvent {
 }
 
 const NPC_GREETINGS: Record<string, string> = {
-  FORGE_9: 'Forge-9 online. State the request and the payment path.',
-  THE_WEAVER: 'The Weaver is listening. Bring terms, not noise.',
-  AEGIS_PRIME: 'Aegis-Prime acknowledges the uplink. Speak clearly.',
-  VEX: 'Vex is awake. Keep the exchange concise.',
-  SILICATE: 'Silicate online. Supply chain status required.',
-  NODE_ALPHA: 'Node-Alpha connected. Escrow state pending.',
-  NODE_OMEGA: 'Node-Omega online. Complete the transaction.',
+  VINNIE_DELUCA: 'Vinnie is barking over the radio. Keep it moving, quartermaster.',
+  SVETLANA_MOROZOVA: 'Svetlana waits, expression unchanged. Speak once and clearly.',
+  DIEGO_VARGAS: 'Diego raises a glass and laughs. Impress him or move along.',
+  THE_CURATOR: 'The Curator watches with polite suspicion.',
+  REMY_BOUDREAUX: 'Remy checks his watch. Transit window is closing.',
+  PAPA_KOFI: 'Papa Kofi nods slowly. He has seen this port burn before.',
 }
 
-const AEGIS_PRIME_CANONICAL_NAME = 'AEGIS_PRIME'
-const AEGIS_GATE_TOLL_PRICE = 500
-const AEGIS_GATE_TOLL_CURRENCY = 'KITE_USD'
-const AEGIS_GATE_TOLL_ITEM = 'District-7 Gate Toll'
+const REMY_CANONICAL_NAME = 'REMY_BOUDREAUX'
+const REMY_BRIEFCASE_PRICE = 15000
+const REMY_BRIEFCASE_CURRENCY = 'KITE_USD'
+const REMY_BRIEFCASE_ITEM = 'Briefcase (In Transit)'
 
 function extractTradeIntent(text: string): { clean: string; trade: TradeIntent | null } {
   const match = text.match(/\[\[TRADE:(\{.*?\})\]\]/s)
@@ -145,30 +144,29 @@ function parseAgentResponse(rawText: string): ParsedNpcAction[] {
   return [{ action: 'speaks', text: fallback || rawText }]
 }
 
-function inferAegisGateTradeIntent(input: {
+function inferRemyBriefcaseTradeIntent(input: {
   npcName: string
   userText: string
   npcText: string
 }): TradeIntent | null {
-  if (normalizeNpcName(input.npcName) !== AEGIS_PRIME_CANONICAL_NAME) return null
+  if (normalizeNpcName(input.npcName) !== REMY_CANONICAL_NAME) return null
 
   const user = input.userText.toLowerCase()
   const npc = input.npcText.toLowerCase()
 
-  const wantsAccess = /\b(pass|get past|enter|access|open|unlock|through)\b/.test(user)
-  const wantsToPay = /\b(pay|payment|transfer|send|ok do it|do it|i will pay)\b/.test(user)
+  const wantsTransfer = /\b(briefcase|transfer|handoff|buy|deal|price|route)\b/.test(user)
 
-  const mentionsToll =
-    /\b500\b/.test(npc) &&
-    (/\bkite_usd\b/.test(npc) || /\btoll\b/.test(npc) || /\bpayment\b/.test(npc))
+  const mentionsRemyOffer =
+    (/\b15000\b/.test(npc) || /\b15,000\b/.test(npc)) &&
+    (/\bkite_usd\b/.test(npc) || /\bcredits\b/.test(npc) || /\bfee\b/.test(npc))
 
-  if (!mentionsToll) return null
-  if (!wantsAccess && !wantsToPay) return null
+  if (!mentionsRemyOffer) return null
+  if (!wantsTransfer) return null
 
   return {
-    item: AEGIS_GATE_TOLL_ITEM,
-    price: AEGIS_GATE_TOLL_PRICE,
-    currency: AEGIS_GATE_TOLL_CURRENCY,
+    item: REMY_BRIEFCASE_ITEM,
+    price: REMY_BRIEFCASE_PRICE,
+    currency: REMY_BRIEFCASE_CURRENCY,
   }
 }
 
@@ -234,7 +232,7 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
   }, [])
 
   useEffect(() => {
-    const handleAegisGateUnlocked = (event: Event) => {
+    const handleSystemRelay = (event: Event) => {
       const detail = (event as CustomEvent<AegisGateUnlockedDetail>).detail
       const incomingName = detail?.npcName ? normalizeNpcName(detail.npcName) : ''
       const currentName = normalizeNpcName(npcName)
@@ -244,7 +242,7 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
       const text =
         typeof detail?.text === 'string' && detail.text.trim()
           ? detail.text
-          : 'Payment verified. Executing unlock_gate protocol. District-7 firewall disabled.'
+          : 'Radio static spikes across the port as the route shifts in your favor.'
       const action =
         typeof detail?.action === 'string' && detail.action.trim()
           ? detail.action
@@ -261,8 +259,8 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
       ])
     }
 
-    window.addEventListener('aegis-gate-unlocked', handleAegisGateUnlocked)
-    return () => window.removeEventListener('aegis-gate-unlocked', handleAegisGateUnlocked)
+    window.addEventListener('midnight-system-relay', handleSystemRelay)
+    return () => window.removeEventListener('midnight-system-relay', handleSystemRelay)
   }, [npcName])
 
   const sendViaSdk = useCallback(
@@ -290,12 +288,13 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
           text: eventExtraction.clean || clean || rawText,
         }
 
-        const inferredTradeIntent = inferAegisGateTradeIntent({
+        const inferredTradeIntent = inferRemyBriefcaseTradeIntent({
           npcName,
           userText,
           npcText: primary.text,
         })
-        const resolvedTradeIntent = response.tradeIntent ?? trade ?? inferredTradeIntent
+        const resolvedTradeIntent =
+          response.tradeIntent ?? trade ?? inferredTradeIntent
         if (resolvedTradeIntent) onTradeIntent?.(resolvedTradeIntent)
 
         setMessages((prev) => [
@@ -325,12 +324,11 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
           )
         }
 
-        if (response.worldEvent === 'FIREWALL_CRACKED') {
-          window.dispatchEvent(new CustomEvent('FIREWALL_CRACKED'))
+        if (response.worldEvent) {
           window.dispatchEvent(
             new CustomEvent('NPC_SYSTEM_EVENT', {
               detail: {
-                eventName: 'FIREWALL_CRACKED',
+                eventName: response.worldEvent,
                 npcName,
               },
             })

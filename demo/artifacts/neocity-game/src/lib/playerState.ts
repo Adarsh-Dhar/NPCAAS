@@ -3,11 +3,25 @@ export interface PlayerInventoryItem {
   quantity: number
 }
 
+export interface MissionSnapshot {
+  phase: 1 | 2 | 3
+  chipsDelivered: number
+  cratesMislabeled: number
+  diegoIntelRevealed: boolean
+  bodyguardIntelRevealed: boolean
+  briefcaseLocated: boolean
+  briefcaseTransferred: boolean
+  escapeRouteOpened: boolean
+  frenzyActive: boolean
+  artifactIntercepted: boolean
+}
+
 export interface PlayerStateSnapshot {
   inventory: PlayerInventoryItem[]
   escrowFunded: boolean
   lastEventType?: string
   lastEventAt?: string
+  mission: MissionSnapshot
 }
 
 type PlayerStateListener = (snapshot: PlayerStateSnapshot) => void
@@ -15,6 +29,18 @@ type PlayerStateListener = (snapshot: PlayerStateSnapshot) => void
 let state: PlayerStateSnapshot = {
   inventory: [],
   escrowFunded: false,
+  mission: {
+    phase: 1,
+    chipsDelivered: 0,
+    cratesMislabeled: 0,
+    diegoIntelRevealed: false,
+    bodyguardIntelRevealed: false,
+    briefcaseLocated: false,
+    briefcaseTransferred: false,
+    escapeRouteOpened: false,
+    frenzyActive: false,
+    artifactIntercepted: false,
+  },
 }
 
 const listeners = new Set<PlayerStateListener>()
@@ -25,6 +51,9 @@ export function getPlayerState(): PlayerStateSnapshot {
     escrowFunded: state.escrowFunded,
     lastEventType: state.lastEventType,
     lastEventAt: state.lastEventAt,
+    mission: {
+      ...state.mission,
+    },
   }
 }
 
@@ -74,4 +103,38 @@ export function emitPlayerEvent(eventType: string) {
     lastEventAt: new Date().toISOString(),
   }
   notify()
+}
+
+export function patchMissionState(
+  patch: Partial<MissionSnapshot>,
+  eventType = 'MISSION_UPDATE'
+) {
+  state = {
+    ...state,
+    mission: {
+      ...state.mission,
+      ...patch,
+    },
+    lastEventType: eventType,
+    lastEventAt: new Date().toISOString(),
+  }
+  notify()
+}
+
+export function setMissionPhase(phase: 1 | 2 | 3) {
+  patchMissionState({ phase }, `PHASE_${phase}_STARTED`)
+}
+
+export function incrementChipDelivered() {
+  patchMissionState(
+    { chipsDelivered: state.mission.chipsDelivered + 1 },
+    'CHIP_DELIVERED'
+  )
+}
+
+export function incrementMislabeledCrate() {
+  patchMissionState(
+    { cratesMislabeled: state.mission.cratesMislabeled + 1 },
+    'CRATE_MISLABELED'
+  )
 }

@@ -1,11 +1,10 @@
 export const PROTOCOL_BABEL_NODE_NAMES = [
-  "Forge_9",
-  "The_Weaver",
-  "Aegis_Prime",
-  "Vex",
-  "Silicate",
-  "Node_Alpha",
-  "Node_Omega",
+  "Vinnie_DeLuca",
+  "Svetlana_Morozova",
+  "Diego_Vargas",
+  "The_Curator",
+  "Remy_Boudreaux",
+  "Papa_Kofi",
 ] as const;
 
 const CANONICAL_BY_NORMALIZED = new Map(

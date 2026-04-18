@@ -45,13 +45,12 @@ export const GuildCraftError =
 // are picked up without a full page reload).
 // ---------------------------------------------------------------------------
 function getRuntimeApiKey(): string | undefined {
-  const viteKey = (import.meta.env?.VITE_GC_API_KEY as string | undefined) ?? undefined;
-  if (viteKey) return viteKey;
   if (typeof window !== "undefined") {
     const windowKey = (window as any).__VITE_GC_API_KEY as string | null;
-    // Ignore localStorage overrides by default to avoid stale keys bricking the demo.
-    return windowKey ?? DEMO_FALLBACK_API_KEY;
+    if (windowKey) return windowKey;
   }
+  const viteKey = (import.meta.env?.VITE_GC_API_KEY as string | undefined) ?? undefined;
+  if (viteKey) return viteKey;
   return DEMO_FALLBACK_API_KEY;
 }
 

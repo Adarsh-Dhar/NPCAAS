@@ -8,6 +8,8 @@ import DashboardPage from "./DashboardPage";
 import { worldLoop } from "../lib/npcWorldLoop";
 import { getClient, isSdkReady, loadCharacters } from "../lib/sdk";
 import type { Character } from "../lib/sdk";
+import { ensureMidnightManifestSetup } from "@/lib/midnightSetup";
+import { isMidnightCharacter } from "@/lib/midnightManifest";
 
 interface ActiveNpc {
   id: string;
@@ -19,38 +21,60 @@ export default function GamePage() {
   const [pendingTrade, setPendingTrade] = useState<TradeIntent | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
 
   // Pre-warm the character cache as soon as the page mounts
   useEffect(() => {
-    if (isSdkReady()) {
-      void loadCharacters();
-    }
+    void ensureMidnightManifestSetup()
+      .then(() => {
+        if (isSdkReady()) {
+          return loadCharacters();
+        }
+        return null;
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Midnight setup failed";
+        setSetupError(message);
+      });
   }, []);
 
   useEffect(() => {
-    if (!isSdkReady()) return;
-
     let cancelled = false;
 
-    const client = getClient();
-    if (!client) return undefined;
-
-    void loadCharacters();
-
-    client
-      .getCharacters()
-      .then((allChars: Character[]) => {
+    const boot = async () => {
+      worldLoop.stop();
+      try {
+        await ensureMidnightManifestSetup();
+      } catch (error) {
         if (!cancelled) {
-          setCharacters(Array.isArray(allChars) ? allChars : []);
+          const message = error instanceof Error ? error.message : "Midnight setup failed";
+          setSetupError(message);
         }
-      })
-      .catch(() => {
+      }
+
+      if (!isSdkReady()) return;
+
+      const client = getClient();
+      if (!client) return;
+
+      void loadCharacters();
+      try {
+        const allChars = (await client.getCharacters()) as Character[];
+        if (cancelled) return;
+        const midnightChars = Array.isArray(allChars)
+          ? allChars.filter((character) => isMidnightCharacter(character.name))
+          : [];
+        setCharacters(midnightChars);
+      } catch {
         if (!cancelled) {
           setCharacters([]);
         }
-      });
+      }
 
-    worldLoop.start(8000);
+      worldLoop.start(8000);
+    };
+
+    void boot();
 
     return () => {
       cancelled = true;
@@ -119,6 +143,15 @@ export default function GamePage() {
           characters={characters.map((character) => ({ id: character.id, name: character.name }))}
           onClose={() => setShowDashboard(false)}
         />
+      )}
+
+      {setupError && (
+        <div
+          className="absolute top-4 left-1/2 z-30 -translate-x-1/2 rounded border border-red-500/40 bg-black/80 px-3 py-2 text-xs text-red-300"
+          style={{ fontFamily: "monospace" }}
+        >
+          MIDNIGHT SETUP ERROR: {setupError}
+        </div>
       )}
 
       {/* Layer 2: Chat window */}

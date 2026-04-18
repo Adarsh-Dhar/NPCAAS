@@ -16,7 +16,7 @@ import type { TradeIntent } from "@/components/ChatWindow";
 import { formatNpcDisplayName, PROTOCOL_BABEL_NODE_NAMES } from "@/lib/protocolBabel";
 import { usePlayerState } from "@/context/PlayerStateContext";
 import { PRIMARY_TOKEN_SYMBOL } from "@/lib/token-config";
-import { emitPlayerEvent } from "@/lib/playerState";
+import { emitPlayerEvent, getPlayerState, subscribePlayerState, type MissionSnapshot } from "@/lib/playerState";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -69,6 +69,9 @@ export interface HUDProps {
 const AEGIS_PRIME_CANONICAL_NAME = "AEGIS_PRIME";
 const AEGIS_GATE_TOLL_PRICE = 500;
 const AEGIS_GATE_TOLL_CURRENCY = "KITE_USD";
+const NODE_ALPHA_CANONICAL_NAME = "NODE_ALPHA";
+const NODE_ALPHA_ESCROW_PRICE = 5000;
+const NODE_ALPHA_ESCROW_CURRENCY = "KITE_USD";
 
 declare global {
   interface Window {
@@ -115,10 +118,12 @@ export function HUD({
   const [walletLoading, setWalletLoading] = useState(false);
   const [txStatus, setTxStatus] = useState<TxStatus>({ state: "idle" });
   const [sdkActive] = useState(isSdkReady);
-  const { credits, escrowFunded } = usePlayerState();
+  const { credits } = usePlayerState();
+  const [mission, setMission] = useState<MissionSnapshot>(() => getPlayerState().mission);
   // Resolved GuildCraft character id for the active NPC
   const [resolvedCharId, setResolvedCharId] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoPromptedEscrowRef = useRef<string | null>(null);
 
   // ── Resolve character id by name whenever activeNpcName changes ──────
   useEffect(() => {
@@ -174,6 +179,13 @@ export function HUD({
   useEffect(() => {
     setTxStatus({ state: "idle" });
   }, [pendingTrade]);
+
+  useEffect(() => {
+    const unsubscribe = subscribePlayerState((snapshot) => {
+      setMission(snapshot.mission);
+    });
+    return unsubscribe;
+  }, []);
 
   // ── Trade execution ───────────────────────────────────────────────────
   const executeTrade = useCallback(async () => {
@@ -270,9 +282,37 @@ export function HUD({
     }
   }, [resolvedCharId, pendingTrade, fetchBalances, onTradeExecuted, activeNpcName]);
 
+  // Node-Alpha escrow is a mandatory funding gate, so auto-open the wallet
+  // prompt when a matching trade intent is detected.
+  useEffect(() => {
+    if (!resolvedCharId || !pendingTrade) return;
+    if (txStatus.state !== "idle") return;
+
+    const normalizedNpc = activeNpcName ? normalizeNpcNameForMatch(activeNpcName) : "";
+    const isNodeAlphaEscrow =
+      normalizedNpc === NODE_ALPHA_CANONICAL_NAME &&
+      Number(pendingTrade.price) >= NODE_ALPHA_ESCROW_PRICE &&
+      String(pendingTrade.currency).toUpperCase() === NODE_ALPHA_ESCROW_CURRENCY;
+
+    if (!isNodeAlphaEscrow) return;
+
+    const intentKey = `${normalizedNpc}:${pendingTrade.item}:${pendingTrade.price}:${pendingTrade.currency}`;
+    if (autoPromptedEscrowRef.current === intentKey) return;
+
+    autoPromptedEscrowRef.current = intentKey;
+    void executeTrade();
+  }, [activeNpcName, executeTrade, pendingTrade, resolvedCharId, txStatus.state]);
+
   const npcColor = activeNpcName
     ? `#${Array.from(activeNpcName).reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(16).slice(-6).padStart(6, "0")}`
     : "#00ffff";
+
+  const phaseLabel =
+    mission.phase === 1
+      ? "Warehouse Floor"
+      : mission.phase === 2
+        ? "Trading Floor"
+        : "Loading Bay";
 
   return (
     <>
@@ -285,7 +325,7 @@ export function HUD({
           className="mb-2 flex items-center gap-2"
           style={{ color: "#00ffff", letterSpacing: 3 }}
         >
-          NEOCITY-7
+          MIDNIGHT MANIFEST
           {sdkActive && (
             <span
               className="flex items-center gap-1 px-1.5 py-0.5 rounded"
@@ -302,12 +342,27 @@ export function HUD({
             </span>
           )}
         </div>
-        <div style={{ color: "#334466" }}>OBJECTIVE: Acquire the Root Key</div>
+        <div style={{ color: "#8db8ff" }}>PHASE {mission.phase}: {phaseLabel}</div>
+        <div style={{ color: "#5f89b6" }}>Read the noise. Move the money.</div>
         <div className="mt-1" style={{ color: "#66d9ff" }}>
           BALANCE: {credits.toLocaleString()} {PRIMARY_TOKEN_SYMBOL}
         </div>
-        <div style={{ color: escrowFunded ? "#7dff9b" : "#ffd166" }}>
-          ESCROW: {escrowFunded ? "FUNDED" : "PENDING"}
+        <div style={{ color: mission.frenzyActive ? "#ff8e8e" : "#ffd166" }}>
+          FRENZY: {mission.frenzyActive ? "ACTIVE" : "STANDBY"}
+        </div>
+        <div className="mt-3 rounded border border-cyan-500/20 px-2 py-2" style={{ background: "rgba(3,16,24,0.65)" }}>
+          <div style={{ color: "#8df9ff", letterSpacing: 2 }}>INVENTORY LEDGER</div>
+          <div style={{ color: "#a9ced8" }}>chips delivered: {mission.chipsDelivered}/6</div>
+          <div style={{ color: "#a9ced8" }}>crates mislabeled: {mission.cratesMislabeled}/2</div>
+          <div style={{ color: mission.briefcaseLocated ? "#ffe08a" : "#6e7d8e" }}>
+            briefcase located: {mission.briefcaseLocated ? "YES" : "NO"}
+          </div>
+          <div style={{ color: mission.briefcaseTransferred ? "#7dff9b" : "#6e7d8e" }}>
+            briefcase transferred: {mission.briefcaseTransferred ? "YES" : "NO"}
+          </div>
+          <div style={{ color: mission.escapeRouteOpened ? "#7dff9b" : "#6e7d8e" }}>
+            tunnel route: {mission.escapeRouteOpened ? "OPEN" : "LOCKED"}
+          </div>
         </div>
         <div className="mt-3 space-y-1" style={{ color: "#223344" }}>
           <div>
@@ -338,10 +393,10 @@ export function HUD({
           }}
         >
           <div className="text-xs font-bold mb-2" style={{ color: "#00ffff", letterSpacing: 2 }}>
-            PROTOCOL BABEL
+            THE BAZAAR
           </div>
           <div style={{ color: "#445566" }}>
-            <div className="mb-1">NODES ACTIVE</div>
+            <div className="mb-1">ACTIVE CHANNELS</div>
             <div className="text-cyan-300">{PROTOCOL_BABEL_NODE_NAMES.map((name) => formatNpcDisplayName(name)).join(" · ")}</div>
             <div className="mt-2 text-white/60">TAB — macro dashboard</div>
           </div>

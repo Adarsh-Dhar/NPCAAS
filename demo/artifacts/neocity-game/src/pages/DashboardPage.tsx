@@ -44,6 +44,10 @@ interface DashboardPageProps {
 
 const ESCROW_THRESHOLD = 1
 
+function isHexAddress(value: unknown): value is string {
+  return typeof value === 'string' && /^0x[a-fA-F0-9]{40}$/.test(value)
+}
+
 function parseAmount(value: string) {
   const parsed = Number.parseFloat(value || '0')
   return Number.isFinite(parsed) ? parsed : 0
@@ -94,6 +98,11 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
       return
     }
 
+    if (!window.ethereum) {
+      setFundEscrowMessage('No wallet detected. Connect a wallet to fund escrow.')
+      return
+    }
+
     const client = getClient()
     if (!client) {
       setFundEscrowMessage('GuildCraft client unavailable.')
@@ -104,6 +113,42 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
     setFundEscrowMessage(null)
 
     try {
+      let recipient = balances['Node_Alpha']?.walletAddress
+      if (!isHexAddress(recipient)) {
+        const alphaBalance = (await client.getWalletBalances('Node_Alpha')) as WalletBalancePayload
+        recipient = alphaBalance?.walletAddress
+      }
+
+      if (!isHexAddress(recipient)) {
+        throw new Error('Node-Alpha wallet unavailable. Wait for balances to sync and retry.')
+      }
+
+      await window.ethereum.request({ method: 'eth_requestAccounts' })
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' })
+      const from = Array.isArray(accounts) ? accounts.find((entry) => isHexAddress(entry)) : undefined
+      if (!from) {
+        throw new Error('Wallet account unavailable. Unlock wallet and retry.')
+      }
+
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' })
+      if (typeof chainId === 'string' && chainId.toLowerCase() !== '0x940') {
+        throw new Error('Wallet is on the wrong network. Switch to KITE_USD Testnet (2368) and retry.')
+      }
+
+      const valueHex = `0x${(BigInt(escrowCost) * 10n ** 18n).toString(16)}`
+      const txHashResponse = await window.ethereum.request({
+        method: 'eth_sendTransaction',
+        params: [
+          {
+            from,
+            to: recipient,
+            value: valueHex,
+            data: '0x',
+          },
+        ],
+      })
+      const txHash = typeof txHashResponse === 'string' ? txHashResponse : undefined
+
       await client.triggerNpcEvent('Node_Alpha', {
         event: 'ESCROW_FUNDED',
         asset: 'Compute Escrow',
@@ -111,6 +156,9 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
           amount: escrowCost,
           currency: PRIMARY_TOKEN_SYMBOL,
           source: 'player_dashboard',
+          txHash,
+          payer: from,
+          recipient,
         },
       })
 
@@ -123,7 +171,11 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
       markEscrowFunded(true)
       setEscrowFundedEvent(true)
       dispatchFirewallCracked()
-      setFundEscrowMessage('Escrow funded. Node-Alpha trigger accepted.')
+      setFundEscrowMessage(
+        txHash
+          ? `Escrow funded on-chain. Tx: ${txHash}`
+          : 'Escrow funded on-chain. Node-Alpha trigger accepted.'
+      )
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Escrow funding failed.'
       setFundEscrowMessage(message)
@@ -133,6 +185,7 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
   }, [
     canFundEscrow,
     dispatchFirewallCracked,
+    balances,
     escrowCost,
     escrowFunded,
     fundEscrow,

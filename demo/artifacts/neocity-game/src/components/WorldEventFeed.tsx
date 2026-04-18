@@ -14,7 +14,13 @@ const ACTION_COLOR: Record<string, string> = {
   TRADE_PROPOSED:   '#ff9900',
   BROADCAST:        '#aaccdd',
   BANKRUPTCY:       '#ff4466',
-  FIREWALL_CRACKED: '#7df9ff',
+  MANIFEST_ACCEPTED: '#7df9ff',
+  INVENTORY_COMPROMISED: '#ffb703',
+  BRIEFCASE_LOCATED: '#ffd166',
+  BRIEFCASE_TRANSFERRED: '#7dff9b',
+  SECURITY_ALERTED: '#ff5d73',
+  ESCAPE_ROUTE_OPENED: '#80ed99',
+  ARTIFACT_INTERCEPTED: '#00f5d4',
   LOOP_TICK:        '#8888ff',
   ACTION_QUEUED:    '#ffaa00',
 }
@@ -51,11 +57,9 @@ export function WorldEventFeed() {
         ].slice(0, 30))
       }
     })
-    worldLoop.start(5000)
     return () => {
       unsub()
       unsubState()
-      worldLoop.stop()
     }
   }, [])
 
@@ -85,7 +89,7 @@ export function WorldEventFeed() {
         }}
       >
         <Zap size={9} />
-        WORLD EVENTS
+        TRANSACTION FEED
       </div>
 
       {events.map((event, i) => {
@@ -100,8 +104,20 @@ export function WorldEventFeed() {
             ? `→ ${payload.to}: transferred ${payload.item}`
             : event.actionType === 'BANKRUPTCY'
             ? 'Escrow depleted'
-            : event.actionType === 'FIREWALL_CRACKED'
-            ? 'Sector gate unlocked'
+            : event.actionType === 'MANIFEST_ACCEPTED'
+            ? 'Vinnie handed over the quartermaster cover'
+            : event.actionType === 'INVENTORY_COMPROMISED'
+            ? 'Warehouse routing has been sabotaged'
+            : event.actionType === 'BRIEFCASE_LOCATED'
+            ? 'Svetlana confirmed as briefcase holder'
+            : event.actionType === 'BRIEFCASE_TRANSFERRED'
+            ? 'Remy lost control of the package'
+            : event.actionType === 'SECURITY_ALERTED'
+            ? 'Curator security detail mobilized'
+            : event.actionType === 'ESCAPE_ROUTE_OPENED'
+            ? 'Maintenance tunnel now available'
+            : event.actionType === 'ARTIFACT_INTERCEPTED'
+            ? 'Quantum drive access codes secured'
             : event.actionType === 'LOOP_TICK'
             ? 'Backend loop ticked'
             : event.actionType === 'ACTION_QUEUED'

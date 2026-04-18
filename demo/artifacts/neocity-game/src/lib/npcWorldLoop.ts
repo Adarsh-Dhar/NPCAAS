@@ -54,11 +54,16 @@ class NpcWorldLoop {
       this.tickCount += 1
 
       for (const npcName of this.loopNpcNames) {
-        const loopResult = await client.startNpcLoop(npcName, {
-          schedule: '*/10 * * * * *',
-          events: ['TRADE', 'ESCROW_CHECK'],
-          tasks: ['monitor-wallets', 'negotiate-trade'],
-        })
+        let loopResult: { loop?: unknown } = {}
+        try {
+          loopResult = await client.startNpcLoop(npcName, {
+            schedule: '*/10 * * * * *',
+            events: ['TRADE', 'CHAT', 'PAYMENT_SENT'],
+            tasks: ['monitor-wallets', 'negotiate-trade', 'broadcast-auction-updates'],
+          })
+        } catch {
+          // Keep the local event stream alive even if loop scheduling fails.
+        }
 
         this.dispatch({
           sourceId: npcName,
@@ -73,8 +78,8 @@ class NpcWorldLoop {
           const target = this.loopNpcNames[(this.tickCount + this.loopNpcNames.indexOf(npcName) + 1) % this.loopNpcNames.length]
           await client.queueNpcAction(npcName, {
             type: 'TRADE',
-            description: `Trade directive: ${npcName} should negotiate with ${target}`,
-            payload: { type: 'TRADE', target, item: 'Raw Data' },
+            description: `Auction directive: ${npcName} should negotiate with ${target}`,
+            payload: { type: 'TRADE', target, item: 'Port consignment' },
           })
 
           this.dispatch({
@@ -82,6 +87,36 @@ class NpcWorldLoop {
             sourceName: npcName,
             actionType: 'ACTION_QUEUED',
             payload: { target, item: 'Raw Data' },
+            timestamp: new Date().toISOString(),
+          })
+        }
+
+        if (this.tickCount % 3 === 0) {
+          const counterparty = this.loopNpcNames[(this.loopNpcNames.indexOf(npcName) + 2) % this.loopNpcNames.length]
+          this.dispatch({
+            sourceId: npcName,
+            sourceName: npcName,
+            actionType: 'PAYMENT_SENT',
+            payload: {
+              to: counterparty,
+              amount: 2500 + this.tickCount * 10,
+              currency: 'KITE_USD',
+              item: 'Auction partial settlement',
+            },
+            timestamp: new Date().toISOString(),
+          })
+        }
+
+        if (this.tickCount % 4 === 0) {
+          const target = this.loopNpcNames[(this.loopNpcNames.indexOf(npcName) + 1) % this.loopNpcNames.length]
+          this.dispatch({
+            sourceId: npcName,
+            sourceName: npcName,
+            actionType: 'CHAT',
+            payload: {
+              to: target,
+              message: 'Confirm route window and crate escrow status.',
+            },
             timestamp: new Date().toISOString(),
           })
         }

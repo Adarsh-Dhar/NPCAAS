@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 
-const STARTING_CREDITS = 10_000
+const STARTING_CREDITS = 12_000
 const ESCROW_COST = 5_000
 
 type PlayerStateContextValue = {
@@ -9,6 +9,7 @@ type PlayerStateContextValue = {
   escrowCost: number
   canFundEscrow: boolean
   debitCredits: (amount: number) => boolean
+  addCredits: (amount: number) => void
   markEscrowFunded: (value: boolean) => void
   fundEscrow: () => boolean
 }
@@ -35,6 +36,11 @@ export function PlayerStateProvider({ children }: { children: ReactNode }) {
       setEscrowFunded(value)
     }
 
+    const addCredits = (amount: number) => {
+      if (!Number.isFinite(amount) || amount <= 0) return
+      setCredits((current) => current + amount)
+    }
+
     const fundEscrow = () => {
       if (escrowFunded) return true
       const didDebit = debitCredits(ESCROW_COST)
@@ -49,6 +55,7 @@ export function PlayerStateProvider({ children }: { children: ReactNode }) {
       escrowCost: ESCROW_COST,
       canFundEscrow: !escrowFunded && credits >= ESCROW_COST,
       debitCredits,
+      addCredits,
       markEscrowFunded,
       fundEscrow,
     }
