@@ -50,6 +50,16 @@ const CHARACTERS: SeedCharacter[] = [
       canCraft: false,
       teeExecution: "DISABLED",
       computeBudget: 500,
+      inventory: [
+        {
+          id: "encrypted_comms_token",
+          name: "Encrypted Comms Token",
+          description:
+            "Grants one-time secure channel with Protocol Babel nodes.",
+          quantity: 2,
+          price: 800,
+        },
+      ],
       economicLayer: {
         baseCapital: 100,
         pricingAlgorithm: "FIXED_MARGIN",
@@ -179,6 +189,24 @@ const CHARACTERS: SeedCharacter[] = [
       canCraft: false,
       teeExecution: "DISABLED",
       computeBudget: 1000,
+      inventory: [
+        {
+          id: "sector0_admin_password",
+          name: "Sector 0 Admin Password",
+          description:
+            "Full administrative access to District-7 core systems.",
+          quantity: 1,
+          price: 1500,
+        },
+        {
+          id: "raw_data_shard",
+          name: "Raw Data Shard",
+          description:
+            "Unprocessed data extracted from node logs. High resale value.",
+          quantity: 5,
+          price: 200,
+        },
+      ],
       economicLayer: {
         baseCapital: 1000,
         pricingAlgorithm: "DYNAMIC_MARKET",
@@ -222,6 +250,24 @@ const CHARACTERS: SeedCharacter[] = [
       canCraft: true,
       teeExecution: "DISABLED",
       computeBudget: 1500,
+      inventory: [
+        {
+          id: "level1_logic_virus",
+          name: "Level-1 Logic Virus",
+          description:
+            "A compact exploit payload. Breaches basic sector firewalls.",
+          quantity: 3,
+          price: 500,
+        },
+        {
+          id: "sector4_access_key",
+          name: "Sector 4 Access Key",
+          description:
+            "Unlocks the restricted data lanes in Sector 4.",
+          quantity: 1,
+          price: 1200,
+        },
+      ],
       economicLayer: {
         baseCapital: 3000,
         pricingAlgorithm: "FIXED_MARGIN",
@@ -265,6 +311,16 @@ const CHARACTERS: SeedCharacter[] = [
       canCraft: true,
       teeExecution: "ENABLED",
       computeBudget: 10000,
+      inventory: [
+        {
+          id: "escrow_release_code",
+          name: "Escrow Release Code",
+          description:
+            "Triggers escrow release for pending transactions.",
+          quantity: 1,
+          price: 3000,
+        },
+      ],
       economicLayer: {
         baseCapital: 0,
         pricingAlgorithm: "AUCTION_BASED",

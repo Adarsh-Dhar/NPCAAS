@@ -31,6 +31,13 @@ interface ParsedNpcAction {
   text: string
 }
 
+interface AegisGateUnlockedDetail {
+  npcName?: string
+  text?: string
+  action?: string
+  worldEvent?: string
+}
+
 const NPC_GREETINGS: Record<string, string> = {
   FORGE_9: 'Forge-9 online. State the request and the payment path.',
   THE_WEAVER: 'The Weaver is listening. Bring terms, not noise.',
@@ -186,6 +193,38 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
   useEffect(() => {
     setSdkActive(isSdkReady())
   }, [])
+
+  useEffect(() => {
+    const handleAegisGateUnlocked = (event: Event) => {
+      const detail = (event as CustomEvent<AegisGateUnlockedDetail>).detail
+      const incomingName = detail?.npcName ? normalizeNpcName(detail.npcName) : ''
+      const currentName = normalizeNpcName(npcName)
+
+      if (!incomingName || incomingName !== currentName) return
+
+      const text =
+        typeof detail?.text === 'string' && detail.text.trim()
+          ? detail.text
+          : 'Payment verified. Executing unlock_gate protocol. District-7 firewall disabled.'
+      const action =
+        typeof detail?.action === 'string' && detail.action.trim()
+          ? detail.action
+          : 'authorizes firewall release'
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'npc',
+          text,
+          action,
+          timestamp: new Date(),
+        },
+      ])
+    }
+
+    window.addEventListener('aegis-gate-unlocked', handleAegisGateUnlocked)
+    return () => window.removeEventListener('aegis-gate-unlocked', handleAegisGateUnlocked)
+  }, [npcName])
 
   const sendViaSdk = useCallback(
     async (userText: string): Promise<boolean> => {

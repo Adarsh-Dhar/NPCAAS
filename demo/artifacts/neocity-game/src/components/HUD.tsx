@@ -16,6 +16,7 @@ import type { TradeIntent } from "@/components/ChatWindow";
 import { formatNpcDisplayName, PROTOCOL_BABEL_NODE_NAMES } from "@/lib/protocolBabel";
 import { usePlayerState } from "@/context/PlayerStateContext";
 import { PRIMARY_TOKEN_SYMBOL } from "@/lib/token-config";
+import { emitPlayerEvent } from "@/lib/playerState";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,6 +34,18 @@ interface WalletState {
   fetchedAt: string;
 }
 
+interface UserPaidTxRequest {
+  to: string;
+  value: string;
+  data?: string;
+}
+
+interface ExecuteTransactionResult {
+  txHash?: string;
+  mode: string;
+  txRequest?: UserPaidTxRequest;
+}
+
 type TxStatus =
   | { state: "idle" }
   | { state: "pending" }
@@ -45,7 +58,50 @@ export interface HUDProps {
   /** Canonical NPC name used for GuildCraft character lookup */
   activeNpcName: string | null;
   pendingTrade: TradeIntent | null;
-  onTradeExecuted?: () => void;
+  onTradeExecuted?: (details: {
+    txHash?: string;
+    mode: string;
+    trade: TradeIntent;
+    npcName: string | null;
+  }) => void;
+}
+
+const AEGIS_PRIME_CANONICAL_NAME = "AEGIS_PRIME";
+const AEGIS_GATE_TOLL_PRICE = 500;
+const AEGIS_GATE_TOLL_CURRENCY = "KITE";
+
+declare global {
+  interface Window {
+    ethereum?: {
+      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+    };
+  }
+}
+
+function normalizeNpcNameForMatch(name: string): string {
+  return name.trim().toUpperCase().replace(/\s+/g, "_");
+}
+
+function isHexAddress(value: unknown): value is string {
+  return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value)
+}
+
+function normalizeWalletError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+
+  const payload = (error && typeof error === "object") ? (error as Record<string, unknown>) : null
+  const directMessage = payload && typeof payload.message === "string" ? payload.message : ""
+  if (directMessage.trim()) return directMessage
+
+  const nested = payload && payload.error && typeof payload.error === "object"
+    ? (payload.error as Record<string, unknown>)
+    : null
+  const nestedMessage = nested && typeof nested.message === "string" ? nested.message : ""
+  if (nestedMessage.trim()) return nestedMessage
+
+  return "Transaction failed"
 }
 
 // ---------------------------------------------------------------------------
@@ -130,16 +186,89 @@ export function HUD({
       const result = await client.executeTransaction(
         resolvedCharId,
         pendingTrade
-      );
-      setTxStatus({ state: "success", txHash: result.txHash, mode: result.mode });
+      ) as ExecuteTransactionResult;
+
+      let txHash = result.txHash;
+      let mode = result.mode;
+
+      if (result.mode === "user-paid") {
+        const txRequest = result.txRequest;
+        if (!txRequest?.to || !txRequest.value) {
+          throw new Error("Missing wallet transaction request from server.");
+        }
+        if (!window.ethereum) {
+          throw new Error("No wallet detected. Connect a wallet to pay the toll.");
+        }
+
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+        const accounts = await window.ethereum.request({ method: "eth_accounts" });
+        const from = Array.isArray(accounts) ? accounts.find((entry) => isHexAddress(entry)) : undefined;
+        if (!from) {
+          throw new Error("Wallet account unavailable. Unlock wallet and retry.");
+        }
+
+        if (!isHexAddress(txRequest.to)) {
+          throw new Error("Invalid recipient address in transaction request.");
+        }
+
+        const chainId = await window.ethereum.request({ method: "eth_chainId" });
+        if (typeof chainId === "string" && chainId.toLowerCase() !== "0x940") {
+          throw new Error("Wallet is on the wrong network. Switch to Kite chain (2368) and retry.");
+        }
+
+        const valueHex = `0x${BigInt(txRequest.value).toString(16)}`
+        const hash = await window.ethereum.request({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from,
+              to: txRequest.to,
+              value: valueHex,
+              data: txRequest.data ?? "0x",
+            },
+          ],
+        });
+
+        txHash = typeof hash === "string" ? hash : txHash;
+        mode = "user-paid";
+      }
+
+      setTxStatus({ state: "success", txHash, mode });
+
+      const isAegisTollPayment =
+        !!activeNpcName &&
+        normalizeNpcNameForMatch(activeNpcName) === AEGIS_PRIME_CANONICAL_NAME &&
+        Number(pendingTrade.price) >= AEGIS_GATE_TOLL_PRICE &&
+        String(pendingTrade.currency).toUpperCase() === AEGIS_GATE_TOLL_CURRENCY;
+
+      if (isAegisTollPayment) {
+        emitPlayerEvent("FIREWALL_CRACKED");
+        window.dispatchEvent(new CustomEvent("FIREWALL_CRACKED"));
+        window.dispatchEvent(
+          new CustomEvent("aegis-gate-unlocked", {
+            detail: {
+              npcName: activeNpcName,
+              text: "Payment verified. Executing unlock_gate protocol. District-7 firewall disabled.",
+              action: "authorizes firewall release",
+              worldEvent: "FIREWALL_CRACKED",
+            },
+          })
+        );
+      }
+
       // Refresh balances 2 s after the tx lands
       setTimeout(() => void fetchBalances(), 2000);
-      onTradeExecuted?.();
+      onTradeExecuted?.({
+        txHash,
+        mode,
+        trade: pendingTrade,
+        npcName: activeNpcName,
+      });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Transaction failed";
+      const msg = normalizeWalletError(err);
       setTxStatus({ state: "error", message: msg });
     }
-  }, [resolvedCharId, pendingTrade, fetchBalances, onTradeExecuted]);
+  }, [resolvedCharId, pendingTrade, fetchBalances, onTradeExecuted, activeNpcName]);
 
   const npcColor = activeNpcName
     ? `#${Array.from(activeNpcName).reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(16).slice(-6).padStart(6, "0")}`

@@ -64,6 +64,7 @@ interface FormConfigSnapshot {
   canTrade?: boolean
   canMove?: boolean
   canCraft?: boolean
+  interGameTransactionsEnabled?: boolean
   teeExecution?: string
   computeBudget?: string
 }
@@ -114,6 +115,7 @@ function normalizeInitialConfig(config?: Record<string, unknown> | null): FormCo
     canTrade: asBoolean(config.canTrade),
     canMove: asBoolean(config.canMove),
     canCraft: asBoolean(config.canCraft),
+    interGameTransactionsEnabled: asBoolean(config.interGameTransactionsEnabled),
     teeExecution: asString(config.teeExecution),
     computeBudget: asString(config.computeBudget),
   }

@@ -14,7 +14,7 @@ import { parseEther } from 'ethers' // <--- ADD THIS IMPORT
 import { EconomicEngine } from '@/lib/economic-engine'
 import { kiteAAProvider } from '@/lib/aa-sdk'
 import { ethers } from 'ethers'
-import { PRIMARY_TOKEN_ADDRESS, PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
+import { PRIMARY_TOKEN_ADDRESS, PRIMARY_TOKEN_DECIMALS, PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -51,6 +51,7 @@ interface CharacterConfig {
   baseCapital?: number
   pricingAlgorithm?: string
   marginPercentage?: number
+  interGameTransactionsEnabled?: boolean
 }
 
 interface ExecutionErrorShape {
@@ -137,6 +138,30 @@ function toDirectTx(v: unknown): DirectWriteTransaction | null {
     tokenAddress: typeof p.tokenAddress === 'string' ? p.tokenAddress : undefined,
     amount: typeof p.amount === 'string' ? p.amount : undefined,
   }
+}
+
+function getProjectIds(character: { projects?: Array<{ id: string }> }): string[] {
+  return Array.isArray(character.projects) ? character.projects.map((project) => project.id) : []
+}
+
+function hasSharedProject(left: string[], right: string[]): boolean {
+  return left.some((projectId) => right.includes(projectId))
+}
+
+function isCrossGameTransfer(
+  senderProjects: string[],
+  recipientProjects: string[]
+): boolean {
+  if (senderProjects.length === 0 || recipientProjects.length === 0) {
+    return false
+  }
+
+  return !hasSharedProject(senderProjects, recipientProjects)
+}
+
+function isInterGameTransferAllowed(config: unknown): boolean {
+  const payload = asRecord(config)
+  return payload.interGameTransactionsEnabled !== false
 }
 
 function asErrorDetails(error: unknown): string {
@@ -411,12 +436,30 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const txRequest = {
-        to: character.walletAddress, // Receiver is the NPC
-        // Converts decimal token amount to Wei string
-        value: parseEther(tradeIntent.price.toString()).toString(),
-        data: "0x",
-      }
+      // User-paid trades should default to token transfer when a primary token contract exists.
+      const wantsPrimaryToken = tradeIntent.currency.toUpperCase() === PRIMARY_TOKEN_SYMBOL
+      const hasPrimaryTokenAddress = typeof PRIMARY_TOKEN_ADDRESS === 'string' && ethers.isAddress(PRIMARY_TOKEN_ADDRESS)
+
+      const txRequest = wantsPrimaryToken && hasPrimaryTokenAddress
+        ? (() => {
+            const erc20 = new ethers.Interface([
+              'function transfer(address to, uint256 amount) returns (bool)',
+            ])
+            const amountUnits = ethers.parseUnits(
+              tradeIntent.price.toString(),
+              PRIMARY_TOKEN_DECIMALS
+            )
+            return {
+              to: PRIMARY_TOKEN_ADDRESS,
+              value: '0',
+              data: erc20.encodeFunctionData('transfer', [character.walletAddress, amountUnits]),
+            }
+          })()
+        : {
+            to: character.walletAddress,
+            value: parseEther(tradeIntent.price.toString()).toString(),
+            data: '0x',
+          }
 
       return NextResponse.json(
         {
@@ -517,6 +560,34 @@ export async function POST(request: NextRequest) {
           { error: 'Sender and recipient wallets cannot be the same character' },
           { status: 400, headers: cors }
         )
+      }
+
+      const recipientCharacter = await prisma.character.findFirst({
+        where: { walletAddress: directTx.to },
+        include: { projects: { select: { id: true } } },
+      })
+
+      if (recipientCharacter) {
+        const senderProjectIds = getProjectIds(character)
+        const recipientProjectIds = getProjectIds(recipientCharacter)
+
+        if (isCrossGameTransfer(senderProjectIds, recipientProjectIds)) {
+          const senderConfig = asRecord(character.config)
+          const recipientConfig = asRecord(recipientCharacter.config)
+
+          if (!isInterGameTransferAllowed(senderConfig) || !isInterGameTransferAllowed(recipientConfig)) {
+            return NextResponse.json(
+              {
+                error: 'Inter-game x402 transfers are disabled for one or both NPCs',
+                details:
+                  `Sender allowed=${isInterGameTransferAllowed(senderConfig)}; ` +
+                  `recipient allowed=${isInterGameTransferAllowed(recipientConfig)}.`,
+                hint: 'Enable interGameTransactionsEnabled on both NPCs to allow cross-game x402 transfers.',
+              },
+              { status: 403, headers: cors }
+            )
+          }
+        }
       }
 
       const provider = new ethers.JsonRpcProvider(KITE_RPC)

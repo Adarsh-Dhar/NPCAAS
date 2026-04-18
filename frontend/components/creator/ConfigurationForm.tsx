@@ -43,6 +43,7 @@ interface ConfigurationFormProps {
     canTrade: boolean
     canMove: boolean
     canCraft: boolean
+    interGameTransactionsEnabled: boolean
     teeExecution: string
     computeBudget: string
     allowDbFetch: boolean
@@ -99,6 +100,7 @@ export default function ConfigurationForm({
     canTrade: true,
     canMove: true,
     canCraft: true,
+    interGameTransactionsEnabled: true,
     teeExecution: 'ENABLED',
     computeBudget: '5000',
     allowDbFetch: false,
@@ -128,6 +130,8 @@ export default function ConfigurationForm({
         canTrade: initialConfig.canTrade ?? prev.canTrade,
         canMove: initialConfig.canMove ?? prev.canMove,
         canCraft: initialConfig.canCraft ?? prev.canCraft,
+        interGameTransactionsEnabled:
+          initialConfig.interGameTransactionsEnabled ?? prev.interGameTransactionsEnabled,
         teeExecution: initialConfig.teeExecution ?? prev.teeExecution,
         computeBudget: initialConfig.computeBudget ?? prev.computeBudget,
         allowDbFetch: initialConfig.allowDbFetch ?? prev.allowDbFetch,
@@ -485,6 +489,7 @@ export default function ConfigurationForm({
             { id: 'canTrade', label: 'Allow Trade Negotiations' },
             { id: 'canMove', label: 'Allow Movement' },
             { id: 'canCraft', label: 'Allow Crafting' },
+            { id: 'interGameTransactionsEnabled', label: 'Allow Inter-Game X402 Transfers' },
           ] as const).map(({ id, label }) => (
             <div key={id} className="flex items-center gap-3">
               <input

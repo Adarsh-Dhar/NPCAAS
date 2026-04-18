@@ -32,6 +32,10 @@ const ALLOWED_ORIGINS = [
 ]
 
 const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
+const AEGIS_PRIME_CANONICAL_NAME = 'AEGIS_PRIME'
+const AEGIS_GATE_TOLL_PRICE = 500
+const AEGIS_GATE_TOLL_CURRENCY = 'KITE'
+const AEGIS_GATE_TOLL_ITEM = 'District-7 Gate Toll'
 
 function getCorsHeaders(origin: string | null) {
   const allowedOrigin =
@@ -289,6 +293,30 @@ function isLikelyPolicyTriggerMessage(message: string): boolean {
   )
 }
 
+function normalizeNpcNameForMatch(name: string): string {
+  return name.trim().toUpperCase().replace(/\s+/g, '_')
+}
+
+function isAegisPrime(characterName: string): boolean {
+  return normalizeNpcNameForMatch(characterName) === AEGIS_PRIME_CANONICAL_NAME
+}
+
+function isGateAccessRequest(message: string): boolean {
+  const text = message.toLowerCase()
+  return (
+    /\b(open|unlock|access|enter|pass)\b/.test(text) && /\b(gate|firewall|barrier)\b/.test(text)
+  ) || /let me through the gate/.test(text)
+}
+
+function isGatePaymentRequest(message: string): boolean {
+  const text = message.toLowerCase()
+  return (
+    /\b(pay|paid|transfer|send)\b/.test(text) &&
+    /\b500\b/.test(text) &&
+    /\bkite\b/.test(text)
+  )
+}
+
 async function findCharacterByName(
   npcName: string,
   projectId: string
@@ -415,6 +443,52 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.warn('[chat] Failed to fetch project globalContext:', error)
       }
+    }
+
+    if (isAegisPrime(character.name) && isGateAccessRequest(message)) {
+      return NextResponse.json(
+        {
+          success: true,
+          response:
+            `The gate remains sealed. Toll required: ${AEGIS_GATE_TOLL_PRICE} ${AEGIS_GATE_TOLL_CURRENCY}. ` +
+            'Submit payment to proceed through District-7 firewall control.',
+          action: 'stands at attention',
+          characterId: character.id,
+          npcName: character.name,
+          tradeIntent: {
+            item: AEGIS_GATE_TOLL_ITEM,
+            price: AEGIS_GATE_TOLL_PRICE,
+            currency: AEGIS_GATE_TOLL_CURRENCY,
+          },
+          worldEvent: null,
+          specializationActive: adaptation.specializationActive,
+          pendingSpecialization: Boolean(adaptation.pendingSection2),
+          timestamp: new Date().toISOString(),
+          projectId: activeProjectId,
+        },
+        { status: 200, headers: corsHeaders }
+      )
+    }
+
+    if (isAegisPrime(character.name) && isGatePaymentRequest(message)) {
+      return NextResponse.json(
+        {
+          success: true,
+          response:
+            `Payment signal acknowledged for ${AEGIS_GATE_TOLL_PRICE} ${AEGIS_GATE_TOLL_CURRENCY}. ` +
+            'Verification complete. Executing unlock_gate protocol now.',
+          action: 'authorizes firewall release',
+          characterId: character.id,
+          npcName: character.name,
+          tradeIntent: null,
+          worldEvent: 'FIREWALL_CRACKED',
+          specializationActive: adaptation.specializationActive,
+          pendingSpecialization: Boolean(adaptation.pendingSection2),
+          timestamp: new Date().toISOString(),
+          projectId: activeProjectId,
+        },
+        { status: 200, headers: corsHeaders }
+      )
     }
 
     if (isLikelyPolicyTriggerMessage(message)) {

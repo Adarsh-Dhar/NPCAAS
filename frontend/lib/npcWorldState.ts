@@ -7,9 +7,19 @@ export interface NpcPublicProfile {
   name: string
   walletAddress: string
   projectId?: string
+  projectIds?: string[]
   factionAffiliations?: string
   role?: string          // "scavenger", "crafter", etc.
   canTrade: boolean
+  interGameTransactionsEnabled?: boolean
+  smartAccountStatus?: string
+  isDeployedOnChain?: boolean
+  computeUsageTokens?: string | number
+  computeLimitTokens?: string | number
+  teeAttestationProof?: string | null
+  config?: Record<string, unknown>
+  adaptation?: Record<string, unknown>
+  adaptationSummary?: string
   lastAction?: string
   lastActionAt?: string
 }
@@ -18,7 +28,13 @@ class NpcWorldState {
   private registry = new Map<string, NpcPublicProfile>()
 
   register(profile: NpcPublicProfile) {
-    this.registry.set(profile.id, profile)
+    const existing = this.registry.get(profile.id)
+    this.registry.set(profile.id, {
+      ...existing,
+      ...profile,
+      lastAction: profile.lastAction ?? existing?.lastAction,
+      lastActionAt: profile.lastActionAt ?? existing?.lastActionAt,
+    })
   }
 
   unregister(id: string) {
@@ -36,7 +52,10 @@ class NpcWorldState {
   getOthersInProject(excludeId: string, projectId?: string): NpcPublicProfile[] {
     const others = this.getOthers(excludeId)
     if (!projectId) return others
-    return others.filter((profile) => profile.projectId === projectId)
+    return others.filter((profile) => {
+      const projectIds = profile.projectIds ?? (profile.projectId ? [profile.projectId] : [])
+      return projectIds.includes(projectId)
+    })
   }
 
   updateLastAction(id: string, action: string) {
@@ -47,22 +66,60 @@ class NpcWorldState {
     }
   }
 
-  buildWorldContextPrompt(forNpcId: string, projectId?: string): string {
-    const others = this.getOthersInProject(forNpcId, projectId)
+  private hydrateLiveState(profile: NpcPublicProfile): NpcPublicProfile {
+    const live = this.registry.get(profile.id)
+    if (!live) {
+      return profile
+    }
+
+    return {
+      ...profile,
+      lastAction: profile.lastAction ?? live.lastAction,
+      lastActionAt: profile.lastActionAt ?? live.lastActionAt,
+    }
+  }
+
+  private formatProfile(profile: NpcPublicProfile): string {
+    const projectIds = profile.projectIds ?? (profile.projectId ? [profile.projectId] : [])
+    const configSummary = profile.config ? JSON.stringify(profile.config) : '{}'
+    const adaptationSummary = profile.adaptation ? JSON.stringify(profile.adaptation) : '{}'
+    const computeUsageTokens = profile.computeUsageTokens ?? 'unknown'
+    const computeLimitTokens = profile.computeLimitTokens ?? 'unknown'
+
+    const metadata = [
+      `projects=${projectIds.length > 0 ? projectIds.join(',') : 'none'}`, 
+      `wallet=${profile.walletAddress}`,
+      `faction=${profile.factionAffiliations ?? 'None'}`,
+      `role=${profile.role ?? 'unknown'}`,
+      `canTrade=${profile.canTrade}`,
+      `interGameTransactionsEnabled=${profile.interGameTransactionsEnabled !== false}`,
+      `smartAccountStatus=${profile.smartAccountStatus ?? 'unknown'}`,
+      `isDeployedOnChain=${profile.isDeployedOnChain ?? true}`,
+      `computeUsageTokens=${computeUsageTokens}`,
+      `computeLimitTokens=${computeLimitTokens}`,
+      `teeAttestationProof=${profile.teeAttestationProof ? 'present' : 'missing'}`,
+      `lastAction=${profile.lastAction ?? 'none'}`,
+      `lastActionAt=${profile.lastActionAt ?? 'unknown'}`,
+      `config=${configSummary}`,
+      `adaptation=${adaptationSummary}`,
+    ]
+
+    return `- ${profile.name} (${profile.id}): ${metadata.join('; ')}`
+  }
+
+  buildWorldContextPrompt(forNpcId: string, projectId?: string, roster?: NpcPublicProfile[]): string {
+    const baseOthers = roster ?? this.getOthersInProject(forNpcId, projectId)
+    const others = baseOthers.map((profile) => this.hydrateLiveState(profile))
     if (others.length === 0) return ''
 
-    const lines = others.map(npc =>
-      `- ${npc.name} [Faction: ${npc.factionAffiliations ?? 'None'}] ` +
-      `(role: ${npc.role ?? 'unknown'}, wallet: ${npc.walletAddress.slice(0, 8)}..., ` +
-      `canTrade: ${npc.canTrade}${npc.lastAction ? `, last action: ${npc.lastAction}` : ''})`
-    )
+    const lines = others.map((npc) => this.formatProfile(npc))
 
     return (
       `\n\n--- SHARED ENVIRONMENT ---\n` +
-      `Other agents present in this world:\n` +
+      `Other NPCs currently inside this game:\n` +
       lines.join('\n') +
-      `\n\nYou may use the tools "speak_to_agent" or "initiate_trade" to interact with them.\n` +
-      `When you want to trade with another NPC, reference them by name exactly as listed above.`
+      `\n\nUse the in-world NPC roster as live context for decisions, diplomacy, coordination, and trade. ` +
+      `When you want to address another NPC, reference them by name exactly as listed above.`
     )
   }
 }

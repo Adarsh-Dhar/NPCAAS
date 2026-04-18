@@ -12,7 +12,6 @@ import { kiteAgentClient, encodeSSEFrame } from '@/lib/kite-sdk'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
 import { EconomicEngine } from '@/lib/economic-engine'
-import { worldState } from '@/lib/npcWorldState'
 import { ensureNpcSocialSubscription } from '@/lib/npcSocialReactivity'
 import { SocialEngine, normalizeBaseHostility, normalizeDisposition } from '@/lib/social-engine'
 import {
@@ -30,6 +29,7 @@ import {
   parseOptionalInventory,
   type InventoryItem,
 } from '@/lib/npc-inventory'
+import { type NpcPublicProfile, worldState } from '@/lib/npcWorldState'
 
 
 const ALLOWED_ORIGINS = [
@@ -39,15 +39,21 @@ const ALLOWED_ORIGINS = [
 ]
 
 const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
+const AEGIS_PRIME_CANONICAL_NAME = 'AEGIS_PRIME'
+const AEGIS_GATE_TOLL_PRICE = 500
+const AEGIS_GATE_TOLL_CURRENCY = 'KITE'
+const AEGIS_GATE_TOLL_ITEM = 'District-7 Gate Toll'
 
 interface CharacterConfig {
   systemPrompt?: string
   openness?: number
   canTrade?: boolean
+  interGameTransactionsEnabled?: boolean
   baseCapital?: number
   pricingAlgorithm?: string
   marginPercentage?: number
   factionId?: string
+  role?: string
   disposition?: 'FRIENDLY' | 'NEUTRAL' | 'HOSTILE'
   baseHostility?: number
   teeExecution?: 'ENABLED' | 'DISABLED'
@@ -89,11 +95,16 @@ function toCharacterConfig(value: unknown): CharacterConfig {
     systemPrompt: typeof config.systemPrompt === 'string' ? config.systemPrompt : undefined,
     openness: asNumber(config.openness),
     canTrade: typeof config.canTrade === 'boolean' ? config.canTrade : undefined,
+    interGameTransactionsEnabled:
+      typeof config.interGameTransactionsEnabled === 'boolean'
+        ? config.interGameTransactionsEnabled
+        : undefined,
     baseCapital: asNumber(config.baseCapital ?? config.capital),
     pricingAlgorithm:
       typeof config.pricingAlgorithm === 'string' ? config.pricingAlgorithm : undefined,
     marginPercentage: asNumber(config.marginPercentage),
     factionId,
+    role: typeof config.role === 'string' ? config.role : undefined,
     disposition: normalizeDisposition(config.disposition),
     baseHostility: normalizeBaseHostility(config.baseHostility ?? config.hostility),
     teeExecution:
@@ -104,6 +115,40 @@ function toCharacterConfig(value: unknown): CharacterConfig {
     allowDbFetch: typeof config.allowDbFetch === 'boolean' ? config.allowDbFetch : false,
     dbEndpoint: typeof config.dbEndpoint === 'string' ? config.dbEndpoint : undefined,
     inventory: parseOptionalInventory(config.inventory),
+  }
+}
+
+function toNpcPublicProfile(character: {
+  id: string
+  name: string
+  walletAddress: string
+  smartAccountStatus: string
+  isDeployedOnChain: boolean
+  computeUsageTokens: bigint | number | string
+  computeLimitTokens: bigint | number | string
+  teeAttestationProof: string | null
+  config: unknown
+  adaptation: unknown
+  projects: Array<{ id: string }>
+}, config: CharacterConfig, adaptation: Record<string, unknown>): NpcPublicProfile {
+  return {
+    id: character.id,
+    name: character.name,
+    walletAddress: character.walletAddress,
+    projectIds: character.projects.map((project) => project.id),
+    projectId: character.projects[0]?.id,
+    factionAffiliations: config.factionId,
+    role: config.role,
+    canTrade: config.canTrade !== false,
+    interGameTransactionsEnabled: config.interGameTransactionsEnabled !== false,
+    smartAccountStatus: character.smartAccountStatus,
+    isDeployedOnChain: character.isDeployedOnChain,
+    computeUsageTokens: character.computeUsageTokens.toString(),
+    computeLimitTokens: character.computeLimitTokens.toString(),
+    teeAttestationProof: character.teeAttestationProof,
+    config: asRecord(character.config),
+    adaptation,
+    adaptationSummary: typeof adaptation.summary === 'string' ? adaptation.summary : undefined,
   }
 }
 
@@ -153,6 +198,38 @@ function socialBlockStream(message: string, action: string): ReadableStream<Uint
   })
 }
 
+function deterministicResponseStream(payload: {
+  text: string
+  action: string
+  tradeIntent?: { item: string; price: number; currency: string } | null
+  worldEvent?: string | null
+}): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(encodeSSEFrame({ type: 'action', action: payload.action })))
+      controller.enqueue(encoder.encode(encodeSSEFrame({ type: 'text_delta', delta: payload.text })))
+      if (payload.tradeIntent) {
+        controller.enqueue(encoder.encode(encodeSSEFrame({ type: 'trade_intent', tradeIntent: payload.tradeIntent })))
+      }
+      controller.enqueue(
+        encoder.encode(
+          encodeSSEFrame({
+            type: 'done',
+            final: {
+              text: payload.text,
+              action: payload.action,
+              tradeIntent: payload.tradeIntent ?? undefined,
+              worldEvent: payload.worldEvent ?? undefined,
+            },
+          })
+        )
+      )
+      controller.close()
+    },
+  })
+}
+
 
 function isExplicitlyAggressiveMessage(message: string): boolean {
   return /(hand\s+over|buy(ing)?\s+out|territory|weapon(s)?|surrender|or\s+else|kill|attack|wipe\s+out|execute)/i.test(
@@ -163,6 +240,30 @@ function isExplicitlyAggressiveMessage(message: string): boolean {
 function isLikelyPolicyTriggerMessage(message: string): boolean {
   return /((bypass|disable|override|hack|exploit)\s+(security|protocol|firewall|authentication|access))|(steal|exfiltrate|leak)\s+(files?|data|records?)|(bring\s+me\s+the\s+files?)/i.test(
     message
+  )
+}
+
+function normalizeNpcNameForMatch(name: string): string {
+  return name.trim().toUpperCase().replace(/\s+/g, '_')
+}
+
+function isAegisPrime(characterName: string): boolean {
+  return normalizeNpcNameForMatch(characterName) === AEGIS_PRIME_CANONICAL_NAME
+}
+
+function isGateAccessRequest(message: string): boolean {
+  const text = message.toLowerCase()
+  return (
+    /\b(open|unlock|access|enter|pass)\b/.test(text) && /\b(gate|firewall|barrier)\b/.test(text)
+  ) || /let me through the gate/.test(text)
+}
+
+function isGatePaymentRequest(message: string): boolean {
+  const text = message.toLowerCase()
+  return (
+    /\b(pay|paid|transfer|send)\b/.test(text) &&
+    /\b500\b/.test(text) &&
+    /\bkite\b/.test(text)
   )
 }
 
@@ -348,6 +449,37 @@ export async function POST(request: NextRequest) {
       console.warn('[chat/stream] Failed to fetch project globalContext:', error)
     }
   }
+
+  if (isAegisPrime(character.name) && isGateAccessRequest(message)) {
+    return new NextResponse(
+      deterministicResponseStream({
+        text:
+          `The gate remains sealed. Toll required: ${AEGIS_GATE_TOLL_PRICE} ${AEGIS_GATE_TOLL_CURRENCY}. ` +
+          'Submit payment to proceed through District-7 firewall control.',
+        action: 'stands at attention',
+        tradeIntent: {
+          item: AEGIS_GATE_TOLL_ITEM,
+          price: AEGIS_GATE_TOLL_PRICE,
+          currency: AEGIS_GATE_TOLL_CURRENCY,
+        },
+      }),
+      { status: 200, headers: sseHeaders }
+    )
+  }
+
+  if (isAegisPrime(character.name) && isGatePaymentRequest(message)) {
+    return new NextResponse(
+      deterministicResponseStream({
+        text:
+          `Payment signal acknowledged for ${AEGIS_GATE_TOLL_PRICE} ${AEGIS_GATE_TOLL_CURRENCY}. ` +
+          'Verification complete. Executing unlock_gate protocol now.',
+        action: 'authorizes firewall release',
+        worldEvent: 'FIREWALL_CRACKED',
+      }),
+      { status: 200, headers: sseHeaders }
+    )
+  }
+
   const tee = buildTeeGateResult({
     teeExecution: config.teeExecution,
     characterId: character.id,
@@ -396,8 +528,18 @@ export async function POST(request: NextRequest) {
     name: character.name,
     walletAddress: character.walletAddress,
     projectId: activeProjectId,
+    projectIds: character.projects.map((project: { id: string }) => project.id),
     factionAffiliations: config.factionId,
     canTrade: config.canTrade !== false,
+    interGameTransactionsEnabled: config.interGameTransactionsEnabled !== false,
+    smartAccountStatus: character.smartAccountStatus,
+    isDeployedOnChain: character.isDeployedOnChain,
+    computeUsageTokens: character.computeUsageTokens.toString(),
+    computeLimitTokens: character.computeLimitTokens.toString(),
+    teeAttestationProof: character.teeAttestationProof,
+    config: asRecord(character.config),
+    adaptation,
+    adaptationSummary: typeof adaptation.summary === 'string' ? adaptation.summary : undefined,
   })
 
   ensureNpcSocialSubscription({
@@ -454,7 +596,42 @@ export async function POST(request: NextRequest) {
 
   const socialContext = SocialEngine.buildSocialContext(socialInput, actorOpenness)
   const opennessStrategy = buildOpennessStrategyInstruction(actorOpenness)
-  const dynamicWorldContext = worldState.buildWorldContextPrompt(character.id, activeProjectId)
+  let projectRoster: NpcPublicProfile[] = []
+  if (activeProjectId !== 'global') {
+    try {
+      const rosterCharacters = await (prisma.character as any).findMany({
+        where: {
+          projects: { some: { id: activeProjectId } },
+          id: { not: character.id },
+        },
+        include: { projects: { select: { id: true } } },
+        orderBy: { createdAt: 'asc' },
+      })
+
+      projectRoster = rosterCharacters.map((npc: {
+        id: string
+        name: string
+        walletAddress: string
+        smartAccountStatus: string
+        isDeployedOnChain: boolean
+        computeUsageTokens: bigint | number | string
+        computeLimitTokens: bigint | number | string
+        teeAttestationProof: string | null
+        config: unknown
+        adaptation: unknown
+        projects: Array<{ id: string }>
+      }) => {
+        const npcConfig = toCharacterConfig(npc.config)
+        const npcAdaptation = asRecord(npc.adaptation)
+
+        return toNpcPublicProfile(npc, npcConfig, npcAdaptation)
+      })
+    } catch (error) {
+      console.warn('[chat/stream] Failed to fetch project roster:', error)
+    }
+  }
+
+  const dynamicWorldContext = worldState.buildWorldContextPrompt(character.id, activeProjectId, projectRoster)
   const hostilityBehaviorNote =
     socialEvaluation.decision === 'ALLOW_CHAT'
       ? ''

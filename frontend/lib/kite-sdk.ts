@@ -120,6 +120,7 @@ export interface ChatResponse {
   text: string
   action?: string
   tradeIntent?: TradeIntent
+  worldEvent?: string
   usage?: TokenUsage
 }
 

@@ -1,5 +1,5 @@
-// demo/lib/db/src/seed-inventory.ts
-// Run with: npx tsx src/seed-inventory.ts
+// demo/lib/db/src/seed_inventory.ts
+// Run with: pnpm exec tsx src/seed_inventory.ts
 import { db, pool } from './index';
 import { inventory } from './schema';
 

@@ -29,12 +29,22 @@ export function WorldEventFeed() {
     })
     const unsubState = subscribePlayerState((snapshot) => {
       if (snapshot.lastEventType) {
+        const actionType =
+          typeof snapshot.lastEventType === 'string' && snapshot.lastEventType.trim()
+            ? snapshot.lastEventType
+            : 'PLAYER_EVENT'
+
         setEvents((prev) => [
           {
             sourceId: 'local-player',
             sourceName: 'PLAYER_STATE',
-            actionType: snapshot.lastEventType,
-            payload: snapshot,
+            actionType,
+            payload: {
+              inventory: snapshot.inventory,
+              escrowFunded: snapshot.escrowFunded,
+              lastEventType: snapshot.lastEventType,
+              lastEventAt: snapshot.lastEventAt,
+            } as Record<string, unknown>,
             timestamp: snapshot.lastEventAt ?? new Date().toISOString(),
           },
           ...prev,
