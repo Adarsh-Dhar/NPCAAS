@@ -184,7 +184,7 @@ async function initSdk() {
   // attempt to read the neighbouring neocity-game .env file so the demo
   // developer can place their key there once and both processes pick it up.
   let apiKey = process.env["GC_API_KEY"];
-  let baseUrl = process.env["GC_BASE_URL"] ?? "http://localhost:3000/api";
+  let baseUrl = process.env["GC_BASE_URL"] ?? "https://your-deployed-guildcraft-app.com/api";
 
   if (!apiKey) {
     try {

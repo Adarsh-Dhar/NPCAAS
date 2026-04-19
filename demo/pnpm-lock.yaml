@@ -84,8 +84,8 @@ importers:
   artifacts/api-server:
     dependencies:
       '@adarsh23/guildcraft-sdk':
-        specifier: link:/Users/adarsh/Documents/kite-ai/frontend/sdk
-        version: link:../../../frontend/sdk
+        specifier: 2.0.0
+        version: 2.0.0
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
@@ -322,8 +322,8 @@ importers:
   artifacts/neocity-game:
     dependencies:
       '@adarsh23/guildcraft-sdk':
-        specifier: ^1.0.0
-        version: 1.0.2
+        specifier: 2.0.0
+        version: 2.0.0
       phaser:
         specifier: ^3.90.0
         version: 3.90.0
@@ -575,9 +575,9 @@ importers:
 
 packages:
 
-  '@adarsh23/guildcraft-sdk@1.0.2':
-    resolution: {integrity: sha512-x955D8VVaNPDbSSGLX9Lsa52q89wksfplAgmVtMXSZfei3SFnofox8iHG/m8bmQzKKCRhpea0ddRKQHYzIq2KQ==}
-    engines: {node: '>=14.0.0'}
+  '@adarsh23/guildcraft-sdk@2.0.0':
+    resolution: {integrity: sha512-YovVSErEOusLn7kvdCT/pjtPi6oom0QrTHzVC69/D3ZIb5Qrv8z0bkdNF04oor6btjocjpTIrfgBR6NEYzIDmA==}
+    engines: {node: '>=18'}
 
   '@babel/code-frame@7.29.0':
     resolution: {integrity: sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw==}
@@ -3816,7 +3816,7 @@ packages:
 
 snapshots:
 
-  '@adarsh23/guildcraft-sdk@1.0.2': {}
+  '@adarsh23/guildcraft-sdk@2.0.0': {}
 
   '@babel/code-frame@7.29.0':
     dependencies:

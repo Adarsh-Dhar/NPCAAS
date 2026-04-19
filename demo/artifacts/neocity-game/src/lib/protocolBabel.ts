@@ -4,6 +4,7 @@ export const PROTOCOL_BABEL_NODE_NAMES = [
   "Diego_Vargas",
   "The_Curator",
   "Remy_Boudreaux",
+  "Silas_Dupre",
   "Papa_Kofi",
 ] as const;
 

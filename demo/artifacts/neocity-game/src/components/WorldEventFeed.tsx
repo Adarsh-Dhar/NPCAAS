@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { worldLoop, type WorldEvent } from '@/lib/npcWorldLoop'
 import { subscribePlayerState } from '@/lib/playerState'
+import { WORLD_EVENT_COLOR_BY_TYPE } from '@/lib/sdk'
 import { formatNpcDisplayName } from '@/lib/protocolBabel'
 import { Zap } from 'lucide-react'
 
@@ -15,20 +16,6 @@ const WORLD_EVENTS_BASE_URL =
 const WORLD_EVENTS_ENDPOINT = `${WORLD_EVENTS_BASE_URL}/api/world-events`
 const MAX_FEED_EVENTS = 50
 
-const ACTION_COLOR: Record<string, string> = {
-  PAYMENT_SENT: '#67e8f9',
-  ITEM_TRANSFERRED: '#22d3ee',
-  TRADE_ACCEPTED: '#38bdf8',
-  TRADE_PROPOSED: '#a78bfa',
-  MANIFEST_ACCEPTED: '#7dd3fc',
-  INVENTORY_COMPROMISED: '#c4b5fd',
-  BRIEFCASE_LOCATED: '#93c5fd',
-  BRIEFCASE_TRANSFERRED: '#22d3ee',
-  SECURITY_ALERTED: '#f472b6',
-  ESCAPE_ROUTE_OPENED: '#8b5cf6',
-  ARTIFACT_INTERCEPTED: '#67e8f9',
-}
-
 function hashColor(value: string) {
   let hash = 0
   for (let index = 0; index < value.length; index += 1) {
@@ -39,7 +26,7 @@ function hashColor(value: string) {
 }
 
 function getEventColor(actionType: string) {
-  return ACTION_COLOR[actionType] ?? hashColor(actionType)
+  return WORLD_EVENT_COLOR_BY_TYPE[actionType] ?? hashColor(actionType)
 }
 
 function formatFallbackSummary(event: WorldEvent) {
@@ -331,8 +318,10 @@ export function WorldEventFeed() {
             ? 'Warehouse routing has been sabotaged'
             : event.actionType === 'BRIEFCASE_LOCATED'
             ? 'Svetlana confirmed as briefcase holder'
+            : event.actionType === 'BROKER_SETTLEMENT_CONFIRMED'
+            ? 'Silas cleared the broker settlement'
             : event.actionType === 'BRIEFCASE_TRANSFERRED'
-            ? 'Remy lost control of the package'
+            ? 'Silas released the package after settlement'
             : event.actionType === 'SECURITY_ALERTED'
             ? 'Curator security detail mobilized'
             : event.actionType === 'ESCAPE_ROUTE_OPENED'

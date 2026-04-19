@@ -44,12 +44,17 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const currentYear = new Date().getFullYear()
+
   return (
     <html lang="en" className={`${pressStart2P.variable} ${vt323.variable}`}>
       <body className="font-press-start-2p bg-black text-white antialiased">
         <WalletProvider>
           {children}
         </WalletProvider>
+        <footer className="border-t border-zinc-800 bg-black px-4 py-3 text-center font-vt323 text-sm text-zinc-400">
+          {`Copyright (c) ${currentYear} Adarsh. Licensed under MIT.`}
+        </footer>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

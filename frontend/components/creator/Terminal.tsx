@@ -37,7 +37,7 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'agent',
-      text: 'Hi, I am your NPC assistant. Chat with me naturally, and share your Section 2 cognitive layer when you want deeper specialization.',
+      text: 'Secure channel online. Send a message to begin broker dialogue.',
       action: 'waves hand in greeting',
       id: '1',
     },

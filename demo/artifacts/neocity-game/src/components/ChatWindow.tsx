@@ -48,13 +48,14 @@ const NPC_GREETINGS: Record<string, string> = {
   DIEGO_VARGAS: 'Diego raises a glass and laughs. Impress him or move along.',
   THE_CURATOR: 'The Curator watches with polite suspicion.',
   REMY_BOUDREAUX: 'Remy checks his watch. Transit window is closing.',
+  SILAS_DUPRE: 'Silas opens a secure ledger tab. Clearance first, then movement.',
   PAPA_KOFI: 'Papa Kofi nods slowly. He has seen this port burn before.',
 }
 
-const REMY_CANONICAL_NAME = 'REMY_BOUDREAUX'
-const REMY_BRIEFCASE_PRICE = 15000
-const REMY_BRIEFCASE_CURRENCY = 'PYUSD'
-const REMY_BRIEFCASE_ITEM = 'Briefcase (In Transit)'
+const BROKER_CANONICAL_NAME = 'SILAS_DUPRE'
+const BROKER_BRIEFCASE_PRICE = 18000
+const BROKER_BRIEFCASE_CURRENCY = 'PYUSD'
+const BROKER_BRIEFCASE_ITEM = 'Brokered Briefcase Settlement'
 const MIDNIGHT_GAME_ID = 'THE_MIDNIGHT_MANIFEST'
 const MIDNIGHT_PLAYER_ID_KEY = 'midnight.manifest.player.id'
 const MIDNIGHT_SESSION_KEY_PREFIX = 'midnight.manifest.session'
@@ -179,36 +180,36 @@ function parseAgentResponse(rawText: string): ParsedNpcAction[] {
   return [{ action: 'speaks', text: fallback || rawText }]
 }
 
-function inferRemyBriefcaseTradeIntent(input: {
+function inferBrokerBriefcaseTradeIntent(input: {
   npcName: string
   userText: string
   npcText: string
 }): TradeIntent | null {
-  if (normalizeNpcName(input.npcName) !== REMY_CANONICAL_NAME) return null
+  if (normalizeNpcName(input.npcName) !== BROKER_CANONICAL_NAME) return null
 
   const user = input.userText.toLowerCase()
   const npc = input.npcText.toLowerCase()
 
   const wantsTransfer = /\b(briefcase|transfer|handoff|handover|buy|deal|price|route|pay|payment|send|wire|offer)\b/.test(user)
   const userCommitsToPrice =
-    (/\b15,?000\b/.test(user) && /\b(pyusd|kite\s*usd|usd)\b/.test(user)) ||
+    (/\b18,?000\b/.test(user) && /\b(pyusd|kite\s*usd|usd)\b/.test(user)) ||
     (/\bpay\b/.test(user) && /\bnow\b/.test(user))
 
-  const mentionsRemyOffer =
-    (/\b15000\b/.test(npc) || /\b15,000\b/.test(npc)) &&
+  const mentionsBrokerOffer =
+    (/\b18000\b/.test(npc) || /\b18,000\b/.test(npc)) &&
       (/\bpyusd\b/.test(npc) || /\bcredits\b/.test(npc) || /\bfee\b/.test(npc))
 
   const asksForSettlementProof =
     (/wallet\s+address/.test(npc) || /transaction\s+hash/.test(npc)) &&
     (/sent\s+the\s+payment/.test(npc) || /finalize\s+the\s+transaction/.test(npc) || /once\s+you\'ve\s+sent/.test(npc))
 
-  if (!(mentionsRemyOffer || asksForSettlementProof)) return null
+  if (!(mentionsBrokerOffer || asksForSettlementProof)) return null
   if (!(wantsTransfer || userCommitsToPrice)) return null
 
   return {
-    item: REMY_BRIEFCASE_ITEM,
-    price: REMY_BRIEFCASE_PRICE,
-    currency: REMY_BRIEFCASE_CURRENCY,
+    item: BROKER_BRIEFCASE_ITEM,
+    price: BROKER_BRIEFCASE_PRICE,
+    currency: BROKER_BRIEFCASE_CURRENCY,
   }
 }
 
@@ -339,7 +340,7 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
           text: eventExtraction.clean || clean || rawText,
         }
 
-        const inferredTradeIntent = inferRemyBriefcaseTradeIntent({
+        const inferredTradeIntent = inferBrokerBriefcaseTradeIntent({
           npcName,
           userText,
           npcText: primary.text,

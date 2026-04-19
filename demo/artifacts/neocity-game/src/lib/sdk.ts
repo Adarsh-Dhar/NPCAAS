@@ -4,19 +4,19 @@
 // On first use the client calls getCharacters() and builds a name→character
 // cache. All callers use getCharacterByName(npcName) to resolve.
 
-import type { Character } from "../../../../../frontend/sdk";
-export type { Character } from "../../../../../frontend/sdk";
+import type { Character } from "@adarsh23/guildcraft-sdk";
+export type { Character } from "@adarsh23/guildcraft-sdk";
 import { normalizeNpcName } from '@/lib/protocolBabel'
 
 const DEMO_FALLBACK_API_KEY = "gc_live_c814f7a2fac63fce275b4298b5949e6d";
-const DEMO_FALLBACK_BASE_URL = "/api";
+const DEMO_FALLBACK_BASE_URL = "https://your-deployed-guildcraft-app.com/api";
 
 // ---------------------------------------------------------------------------
 // CJS interop — use ESM `import` and normalise CommonJS default exports
 // Vite will pre-bundle the CJS package via `optimizeDeps.include` when needed.
 // ---------------------------------------------------------------------------
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-import * as _sdkModule from "../../../../../frontend/sdk/index.js";
+import * as _sdkModule from "@adarsh23/guildcraft-sdk";
 
 // Normalize CommonJS / ESM shapes from the SDK entrypoint. Vite may return
 // a namespace with a `.default` property for CJS modules — handle both.
@@ -25,6 +25,11 @@ const _normalizedSdk: any =
   _rawSdk && (_rawSdk.GuildCraftClient || _rawSdk.GuildCraftError)
     ? _rawSdk
     : (_rawSdk && _rawSdk.default) ? _rawSdk.default : _rawSdk;
+
+export const WORLD_EVENT_COLOR_BY_TYPE: Record<string, string> =
+  _normalizedSdk?.WORLD_EVENT_COLOR_BY_TYPE ?? {}
+export const WORLD_EVENT_TYPES: readonly string[] =
+  _normalizedSdk?.WORLD_EVENT_TYPES ?? Object.keys(WORLD_EVENT_COLOR_BY_TYPE)
 
 // Export GuildCraftError if present; otherwise provide a lightweight fallback
 // class so downstream code can `instanceof` it and consume `status`/`body`.
@@ -56,16 +61,18 @@ function getRuntimeApiKey(): string | undefined {
 }
 
 function getRuntimeBaseUrl(): string {
-  const viteBase = (import.meta.env?.VITE_GC_BASE_URL as string | undefined) ?? undefined;
-  if (viteBase?.startsWith('/')) return viteBase;
   if (typeof window !== "undefined") {
     const windowBase = (window as any).__VITE_GC_BASE_URL as string | null;
-    if (typeof windowBase === 'string' && windowBase.startsWith('/')) {
-      return windowBase;
+    if (typeof windowBase === 'string' && /^https?:\/\//i.test(windowBase)) {
+      return windowBase.replace(/\/$/, '');
     }
-    // Ignore localStorage URL overrides by default to avoid CORS and stale-host issues.
-    return DEMO_FALLBACK_BASE_URL;
   }
+
+  const viteBase = (import.meta.env?.VITE_GC_BASE_URL as string | undefined) ?? undefined;
+  if (typeof viteBase === 'string' && /^https?:\/\//i.test(viteBase)) {
+    return viteBase.replace(/\/$/, '');
+  }
+
   return DEMO_FALLBACK_BASE_URL;
 }
 
@@ -89,9 +96,8 @@ let _clientKey: string | null = null;
 class HttpGuildCraftClient {
   apiKey: string
   baseUrl: string
-  private _didFallbackToProxy = false
   private static readonly CHAT_STREAM_TIMEOUT_MS = 30_000
-  constructor(apiKey: string, baseUrl = '/api') {
+  constructor(apiKey: string, baseUrl = DEMO_FALLBACK_BASE_URL) {
     this.apiKey = apiKey
     this.baseUrl = baseUrl.replace(/\/$/, '')
   }
@@ -110,27 +116,7 @@ class HttpGuildCraftClient {
       return fetch(url, { ...options, headers })
     }
 
-    let res: Response
-    try {
-      res = await fetchOnce(this.baseUrl)
-    } catch (err) {
-      const canFallbackToProxy =
-        typeof window !== 'undefined' &&
-        this.baseUrl !== '/api' &&
-        !this._didFallbackToProxy
-
-      if (canFallbackToProxy) {
-        this._didFallbackToProxy = true
-        this.baseUrl = '/api'
-        console.warn(
-          `[GuildCraft] Network error against configured base URL. Falling back to ${this.baseUrl}.`,
-          err
-        )
-        res = await fetchOnce(this.baseUrl)
-      } else {
-        throw err
-      }
-    }
+    let res = await fetchOnce(this.baseUrl)
 
     console.log(`[GuildCraft] Response status:`, res.status)
     let body = await res.json().catch(() => ({}))
@@ -344,10 +330,10 @@ export function getClient(): any | null {
   const base = getRuntimeBaseUrl();
   if (!_client || _clientKey !== key) {
     clearCharacterCache();
-    // The demo targets local Next.js API routes and relies on methods not
-    // guaranteed across packaged SDK builds, so use the local HTTP client
-    // consistently for deterministic behavior.
-    _client = new HttpGuildCraftClient(key, base);
+    const SdkGuildCraftClient = _normalizedSdk?.GuildCraftClient
+    _client = SdkGuildCraftClient
+      ? new SdkGuildCraftClient(key, base)
+      : new HttpGuildCraftClient(key, base)
     _clientKey = key;
   }
   return _client;

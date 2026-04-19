@@ -2,9 +2,12 @@
 
 import { useEffect, useState, useRef } from 'react'
 import styles from './DemoAgent.module.css'
+import { PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 
 interface DemoAgentProps {
   currentAction?: string
+  characterName?: string
+  baseCapital?: string | number
 }
 
 type AnimState = 'idle' | 'wave' | 'happy' | 'think' | 'greet' | 'rub_hands' | 'shrug' | 'excited'
@@ -21,7 +24,7 @@ function mapActionToState(action: string): AnimState {
   return 'idle'
 }
 
-export default function DemoAgent({ currentAction }: DemoAgentProps) {
+export default function DemoAgent({ currentAction, characterName, baseCapital }: DemoAgentProps) {
   const [animState, setAnimState] = useState<AnimState>('idle')
   const [isBlinking, setIsBlinking] = useState(false)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -84,11 +87,23 @@ export default function DemoAgent({ currentAction }: DemoAgentProps) {
     excited: 'text-purple-300 bg-purple-500',
   }[animState]
 
+  const displayName =
+    typeof characterName === 'string' && characterName.trim()
+      ? characterName.trim()
+      : 'MY_NPC'
+
+  const displayCapital =
+    typeof baseCapital === 'number'
+      ? String(baseCapital)
+      : typeof baseCapital === 'string' && baseCapital.trim()
+        ? baseCapital.trim()
+        : '0'
+
   return (
     <div className="retro-card-blue p-4">
       {/* Header */}
       <div className="text-center mb-3">
-        <h3 className="text-sm font-bold uppercase text-white mb-1">KERMIT_NPC_01</h3>
+        <h3 className="text-sm font-bold uppercase text-white mb-1">{displayName}</h3>
         <div className="text-[10px] text-blue-400 font-mono">AUTONOMOUS AGENT</div>
       </div>
 
@@ -240,7 +255,7 @@ export default function DemoAgent({ currentAction }: DemoAgentProps) {
       <div className="space-y-2 text-xs text-gray-300">
         <div className="flex justify-between">
           <span>CAPITAL:</span>
-          <span className="text-blue-400 font-bold">1000 PYUSD</span>
+          <span className="text-blue-400 font-bold">{displayCapital} {PRIMARY_TOKEN_SYMBOL}</span>
         </div>
         <div className="flex justify-between">
           <span>HEALTH:</span>

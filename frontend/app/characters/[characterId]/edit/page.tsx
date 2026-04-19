@@ -233,6 +233,9 @@ export default function EditCharacterPage() {
   const normalizedContractSymbol = erc20Symbol.trim().toUpperCase()
   const showContractAlias =
     Boolean(normalizedContractSymbol) && normalizedContractSymbol !== normalizedPrimarySymbol
+  const previewBaseCapital = isRecord(character?.config)
+    ? asString(character.config.baseCapital ?? character.config.capital)
+    : undefined
 
   useEffect(() => {
     let cancelled = false
@@ -462,7 +465,11 @@ export default function EditCharacterPage() {
 
       <div className="flex flex-1 overflow-hidden mt-4">
         <div className="w-1/3 min-h-screen">
-          <LeftPanel characterId={characterId} />
+          <LeftPanel
+            characterId={characterId}
+            characterName={character?.name}
+            baseCapital={previewBaseCapital}
+          />
         </div>
 
         <div className="w-2/3 overflow-y-auto">

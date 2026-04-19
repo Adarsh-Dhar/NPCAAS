@@ -1,57 +1,116 @@
-# @adarsh23/guildcraft-sdk
+# GuildCraft SDK
 
-JavaScript SDK for connecting game clients to the GuildCraft API.
+GuildCraft is a lightweight JavaScript SDK for integrating autonomous, LLM-powered NPCs into games with Web3-native transaction flows.
 
-## Install
+This package exposes a single client class that handles:
+
+- NPC chat and decision loops
+- Streaming responses for real-time UX
+- Character and game/project management
+- Kite-backed transaction execution for NPC trade actions
+
+## Installation
 
 ```bash
 npm install @adarsh23/guildcraft-sdk
 ```
 
-## Usage
+## Quickstart
+
+### CommonJS
 
 ```js
 const { GuildCraftClient } = require('@adarsh23/guildcraft-sdk')
 
 const client = new GuildCraftClient(
-  'gc_live_your_key_here',
-  'https://your-deployed-guildcraft-app.com/api'
+  process.env.GUILDCRAFT_API_KEY,
+  process.env.GUILDCRAFT_API_BASE_URL || 'http://localhost:3000/api'
 )
 
-async function onPlayerTalkToNpc(input) {
-  const reply = await client.chat('char_kermit_123', input)
+async function run() {
+  const reply = await client.chat('char_merchant_bob', 'Do you have healing potions?')
   console.log(reply.response)
 
   if (reply.tradeIntent) {
-    console.log('Trade intent:', reply.tradeIntent)
-    const tx = await client.executeTransaction('char_kermit_123', reply.tradeIntent)
-    console.log('Gas mode:', tx.mode, 'txHash:', tx.txHash)
+    const tx = await client.executeTransaction('char_merchant_bob', reply.tradeIntent)
+    console.log('Trade settled:', tx.mode, tx.txHash)
   }
+}
+
+run().catch(console.error)
+```
+
+### ESM
+
+```js
+import { GuildCraftClient } from '@adarsh23/guildcraft-sdk'
+
+const client = new GuildCraftClient(
+  process.env.GUILDCRAFT_API_KEY,
+  process.env.GUILDCRAFT_API_BASE_URL || 'http://localhost:3000/api'
+)
+```
+
+## Streaming Chat
+
+```js
+for await (const event of client.chatStream('char_merchant_bob', 'What is the market mood today?')) {
+  if (event.type === 'text_delta') process.stdout.write(event.delta)
+  if (event.type === 'done') console.log('\nAction:', event.final?.action)
 }
 ```
 
-## API
+## Core API
 
 ### new GuildCraftClient(apiKey, baseUrl?)
 
-- `apiKey`: Required, must start with `gc_live_`
-- `baseUrl`: Optional, defaults to `http://localhost:3000/api`
+- apiKey: Required. Must start with gc_live_.
+- baseUrl: Optional. Defaults to http://localhost:3000/api.
 
-### chat(characterId, message)
+### Character APIs
 
-Sends a chat request and returns:
+- getCharacters()
+- getCharacter(characterId)
+- deployCharacter({ name, config, gameIds? })
+- updateCharacter({ characterId, name?, config })
 
-- `success`
-- `response`
-- `characterId`
-- `tradeIntent` (optional)
-- `timestamp`
-- `projectId` (optional)
+### Game APIs
 
-### executeTransaction(characterId, tradeIntent)
+- createGame(name)
+- getGames()
+- getGameCharacters(gameId)
+- assignCharactersToGame(gameId, characterIds)
 
-Executes a write transaction for the NPC interaction.
+### Chat and Actions
 
-- Attempts gas sponsorship first using Kite AA.
-- Returns `mode: sponsored` when gasless succeeds.
-- Returns `mode: fallback` when sponsorship fails and fallback is enabled.
+- chat(characterId, message, opts?)
+- chatStream(characterId, message, opts?)
+- executeTransaction(characterId, tradeIntent)
+- npcInteract(initiatorId, targetName, message, tradeIntent?)
+
+## Error Handling
+
+All SDK errors throw GuildCraftError with:
+
+- name
+- status
+- body
+
+Example:
+
+```js
+try {
+  await client.getCharacter('missing-id')
+} catch (err) {
+  console.error(err.name, err.status, err.body)
+}
+```
+
+## Requirements
+
+- Node.js 18+
+- A valid GuildCraft API key
+
+## License
+
+MIT

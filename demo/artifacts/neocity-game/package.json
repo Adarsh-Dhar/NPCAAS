@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@adarsh23/guildcraft-sdk": "^1.0.0",
+    "@adarsh23/guildcraft-sdk": "2.0.0",
     "phaser": "^3.90.0"
   },
   "devDependencies": {

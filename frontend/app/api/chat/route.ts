@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { kiteAgentClient } from '@/lib/kite-sdk'
+import { kiteAAProvider } from '@/lib/aa-sdk'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@/lib/generated/prisma/client'
+import { executeWriteTransaction } from '@/lib/tx-orchestrator'
 import { eventBus } from '@/lib/npcEventBus'
 import { worldState } from '@/lib/npcWorldState'
 import { EconomicEngine } from '@/lib/economic-engine'
@@ -30,8 +32,11 @@ const ALLOWED_ORIGINS = [
 
 const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
 const REMY_CANONICAL_NAME = 'REMY_BOUDREAUX'
-const REMY_BRIEFCASE_PRICE = 15000
-const REMY_BRIEFCASE_CURRENCY = 'PYUSD'
+const BROKER_CANONICAL_NAME = 'SILAS_DUPRE'
+const BROKER_GROSS_PRICE = 18000
+const BROKER_REMY_SHARE = 15000
+const BROKER_COMMISSION = 3000
+const BROKER_SETTLEMENT_CURRENCY = 'PYUSD'
 const PAYMENT_PROOF_WINDOW_MS = 20 * 60 * 1000
 
 interface GameEventDefinition {
@@ -83,6 +88,9 @@ interface StoredCharacter {
   id: string
   name: string
   walletAddress: string
+  aaChainId?: number | null
+  smartAccountId?: string | null
+  createdAt?: Date
   config: unknown
   gameEvents?: unknown
   adaptation: unknown
@@ -108,6 +116,7 @@ const CHAT_CHARACTER_SELECT = {
   id: true,
   name: true,
   walletAddress: true,
+  createdAt: true,
   aaChainId: true,
   aaProvider: true,
   smartAccountId: true,
@@ -190,29 +199,29 @@ function parsePaymentProofs(value: unknown): PaymentProof[] {
   return proofs
 }
 
-function isLikelyRemyHandoffMessage(message: string): boolean {
+function isLikelyBrokerSettlementMessage(message: string): boolean {
   return /\b(briefcase|handoff|hand\s*over|transfer|route|already\s+paid|payment\s+sent|done\s+paying|paid\s+you)\b/i.test(
     message
   )
 }
 
-function findMatchingRemyPaymentProof(input: {
+function findMatchingBrokerPaymentProof(input: {
   message: string
   npcName: string
   npcWalletAddress: string
   proofs: PaymentProof[]
   nowMs: number
 }): PaymentProof | null {
-  if (normalizeWord(input.npcName) !== REMY_CANONICAL_NAME) return null
-  if (!isLikelyRemyHandoffMessage(input.message)) return null
+  if (normalizeWord(input.npcName) !== BROKER_CANONICAL_NAME) return null
+  if (!isLikelyBrokerSettlementMessage(input.message)) return null
 
   const expectedWallet = input.npcWalletAddress.trim().toLowerCase()
   for (const proof of input.proofs) {
     const walletMatches = !!proof.recipientWallet && proof.recipientWallet === expectedWallet
-    const recipientNameMatches = normalizeWord(proof.recipientName) === REMY_CANONICAL_NAME
+    const recipientNameMatches = normalizeWord(proof.recipientName) === BROKER_CANONICAL_NAME
     if (!walletMatches && !recipientNameMatches) continue
-    if (proof.currency !== REMY_BRIEFCASE_CURRENCY) continue
-    if (Math.abs(proof.amount - REMY_BRIEFCASE_PRICE) > 0.000001) continue
+    if (proof.currency !== BROKER_SETTLEMENT_CURRENCY) continue
+    if (Math.abs(proof.amount - BROKER_GROSS_PRICE) > 0.000001) continue
 
     const confirmedAtMs = new Date(proof.confirmedAt).getTime()
     if (!Number.isFinite(confirmedAtMs)) continue
@@ -239,7 +248,7 @@ function parseOfferAmount(message: string): number | null {
 }
 
 function detectOfferCurrency(message: string): string | null {
-  if (/\b(pyusd|kite_usd|kite\s*usd)\b/i.test(message)) return REMY_BRIEFCASE_CURRENCY
+  if (/\b(pyusd|kite_usd|kite\s*usd)\b/i.test(message)) return BROKER_SETTLEMENT_CURRENCY
   if (/\bcredits?\b/i.test(message)) return 'CREDITS'
   return null
 }
@@ -250,6 +259,75 @@ function isRemyNegotiationMessage(message: string): boolean {
 
 function hasDeliveryCondition(message: string): boolean {
   return /\b(handoff|hand\s*over|transfer|deliver|delivery|package|briefcase)\b/i.test(message)
+}
+
+function isLegacyPlaceholderWallet(walletAddress: string, aaChainId?: number | null): boolean {
+  const isZeroPattern = /^0x0{36}[0-9a-fA-F]{4}$/.test(walletAddress)
+  const wrongChain = typeof aaChainId === 'number' && aaChainId !== 2368
+  return isZeroPattern || wrongChain
+}
+
+function isInterGameTransferAllowed(config: unknown): boolean {
+  const payload = asRecord(config)
+  return payload.interGameTransactionsEnabled !== false
+}
+
+async function resolveMatchingOwnerId(character: StoredCharacter): Promise<string> {
+  const tried = new Set<string>()
+  const candidates: string[] = []
+  const configOwnerId = asRecord(character.config).ownerId
+
+  if (typeof configOwnerId === 'string' && configOwnerId.trim()) {
+    candidates.push(configOwnerId.trim())
+  }
+
+  if (typeof character.smartAccountId === 'string' && character.smartAccountId.trim()) {
+    candidates.push(character.smartAccountId)
+  }
+
+  const createdAtValue = character.createdAt instanceof Date ? character.createdAt : null
+  if (createdAtValue) {
+    const createdTs = createdAtValue.getTime()
+    if (Number.isFinite(createdTs)) {
+      candidates.push(`character:${character.name}:${createdTs}`)
+    }
+  }
+
+  candidates.push(`character:${character.id}`)
+  candidates.push(`character:${character.name}`)
+
+  const offsets = [0, -2000, -1000, -500, 500, 1000, 2000]
+
+  for (const base of candidates) {
+    for (const offset of offsets) {
+      let ownerCandidate = base
+
+      if (/^character:[^:]+:\d+$/.test(base)) {
+        const parts = base.split(':')
+        const ts = Number(parts[2])
+        if (Number.isFinite(ts)) {
+          ownerCandidate = `character:${parts[1]}:${ts + offset}`
+        }
+      }
+
+      if (!ownerCandidate || tried.has(ownerCandidate)) continue
+      tried.add(ownerCandidate)
+
+      try {
+        const account = await kiteAAProvider.createSmartAccount({ ownerId: ownerCandidate })
+        if (account.address.toLowerCase() === character.walletAddress.toLowerCase()) {
+          return ownerCandidate
+        }
+      } catch {
+        // Try next owner candidate.
+      }
+    }
+  }
+
+  throw new Error(
+    `No ownerId matched wallet ${character.walletAddress}. ` +
+      'The signer secret may differ from wallet creation context.'
+  )
 }
 
 function parseGameEvents(value: unknown): GameEventDefinition[] {
@@ -712,7 +790,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const matchedRemyPayment = findMatchingRemyPaymentProof({
+    const matchedBrokerPayment = findMatchingBrokerPaymentProof({
       message,
       npcName: character.name,
       npcWalletAddress: character.walletAddress,
@@ -720,28 +798,185 @@ export async function POST(request: NextRequest) {
       nowMs: Date.now(),
     })
 
-    if (matchedRemyPayment) {
-      const proofToken = formatProofToken(matchedRemyPayment)
+    if (matchedBrokerPayment) {
+      const sameProjectCharacters =
+        activeProjectId === 'global'
+          ? []
+          : ((await prisma.character.findMany({
+              where: {
+                projects: {
+                  some: { id: activeProjectId },
+                },
+              },
+              select: CHAT_CHARACTER_SELECT,
+            })) as StoredCharacter[])
+
+      const remyCharacter = sameProjectCharacters.find(
+        (candidate) => normalizeWord(candidate.name) === REMY_CANONICAL_NAME
+      )
+
+      if (!remyCharacter) {
+        return NextResponse.json(
+          {
+            success: false,
+            response:
+              'Settlement received, but Remy route lookup failed. Hold your position while I re-sync counterpart records.',
+            action: 'halts settlement execution and audits counterpart registry',
+            characterId: character.id,
+            npcName: character.name,
+            tradeIntent: null,
+            specializationActive: adaptation.specializationActive,
+            pendingSpecialization: Boolean(adaptation.pendingSection2),
+            timestamp: new Date().toISOString(),
+            projectId: activeProjectId,
+            tee,
+          },
+          { status: 409, headers: corsHeaders }
+        )
+      }
+
+      if (
+        !isInterGameTransferAllowed(character.config) ||
+        !isInterGameTransferAllowed(remyCharacter.config)
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            response:
+              'Settlement cannot clear because inter-game x402 transfer policy is disabled for one side.',
+            action: 'marks settlement as blocked by policy controls',
+            characterId: character.id,
+            npcName: character.name,
+            tradeIntent: null,
+            specializationActive: adaptation.specializationActive,
+            pendingSpecialization: Boolean(adaptation.pendingSection2),
+            timestamp: new Date().toISOString(),
+            projectId: activeProjectId,
+            tee,
+          },
+          { status: 403, headers: corsHeaders }
+        )
+      }
+
+      if (isLegacyPlaceholderWallet(character.walletAddress, character.aaChainId)) {
+        return NextResponse.json(
+          {
+            success: false,
+            response:
+              'Settlement wallet is still on a legacy placeholder account. Reprovision Silas wallet before clearing transfers.',
+            action: 'rejects settlement due to invalid signer wallet',
+            characterId: character.id,
+            npcName: character.name,
+            tradeIntent: null,
+            specializationActive: adaptation.specializationActive,
+            pendingSpecialization: Boolean(adaptation.pendingSection2),
+            timestamp: new Date().toISOString(),
+            projectId: activeProjectId,
+            tee,
+          },
+          { status: 409, headers: corsHeaders }
+        )
+      }
+
+      let brokerOwnerId: string
+      try {
+        brokerOwnerId = await resolveMatchingOwnerId(character)
+      } catch (ownerError) {
+        const detail = ownerError instanceof Error ? ownerError.message : 'unknown owner resolution error'
+        return NextResponse.json(
+          {
+            success: false,
+            response: `Settlement proof verified, but signer resolution failed: ${detail}`,
+            action: 'halts transfer and requests signer reconciliation',
+            characterId: character.id,
+            npcName: character.name,
+            tradeIntent: null,
+            specializationActive: adaptation.specializationActive,
+            pendingSpecialization: Boolean(adaptation.pendingSection2),
+            timestamp: new Date().toISOString(),
+            projectId: activeProjectId,
+            tee,
+          },
+          { status: 409, headers: corsHeaders }
+        )
+      }
+
+      let remySettlement
+      try {
+        remySettlement = await executeWriteTransaction({
+          to: remyCharacter.walletAddress,
+          value: String(BROKER_REMY_SHARE),
+          ownerId: brokerOwnerId,
+          currency: BROKER_SETTLEMENT_CURRENCY,
+          characterConfig: asRecord(character.config),
+          teeExecution: toCharacterConfig(character.config).teeExecution,
+          projectId: activeProjectId === 'global' ? undefined : activeProjectId,
+        })
+      } catch (settlementError) {
+        const details = settlementError instanceof Error ? settlementError.message : 'unknown settlement error'
+        await (prisma as any).npcLog.create({
+          data: {
+            characterId: character.id,
+            eventType: 'BROKER_SETTLEMENT_FAILED',
+            details: {
+              message,
+              paymentProof: matchedBrokerPayment,
+              remyCharacterId: remyCharacter.id,
+              remyWalletAddress: remyCharacter.walletAddress,
+              amountAttempted: BROKER_REMY_SHARE,
+              currency: BROKER_SETTLEMENT_CURRENCY,
+              error: details,
+            },
+          },
+          select: { id: true },
+        })
+
+        return NextResponse.json(
+          {
+            success: false,
+            response:
+              'Payment proof validated, but downstream broker transfer to Remy failed. No handoff has been approved yet.',
+            action: 'flags settlement failure and keeps package release locked',
+            characterId: character.id,
+            npcName: character.name,
+            tradeIntent: null,
+            specializationActive: adaptation.specializationActive,
+            pendingSpecialization: Boolean(adaptation.pendingSection2),
+            timestamp: new Date().toISOString(),
+            projectId: activeProjectId,
+            tee,
+          },
+          { status: 502, headers: corsHeaders }
+        )
+      }
+
+      const proofToken = formatProofToken(matchedBrokerPayment)
       const responseText =
         `Ledger check complete. I see your payment proof (${proofToken}). ` +
-        `The briefcase handoff is confirmed. Stay on the tunnel route and keep your channel dark. [[EVENT:BRIEFCASE_TRANSFERRED]]`
+        `Cleared ${BROKER_GROSS_PRICE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY}: forwarded ${BROKER_REMY_SHARE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY} to Remy, retained ${BROKER_COMMISSION.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY} commission. ` +
+        `Release chain is confirmed. [[EVENT:BRIEFCASE_TRANSFERRED]]`
 
       await (prisma as any).npcLog.create({
         data: {
           characterId: character.id,
-          eventType: 'PAYMENT_VERIFIED',
+          eventType: 'BROKER_SETTLEMENT_CONFIRMED',
           details: {
             message,
             response: responseText,
-            paymentProof: matchedRemyPayment,
-            amount: REMY_BRIEFCASE_PRICE,
-            currency: REMY_BRIEFCASE_CURRENCY,
+            paymentProof: matchedBrokerPayment,
+            grossAmount: BROKER_GROSS_PRICE,
+            remyShare: BROKER_REMY_SHARE,
+            brokerCommission: BROKER_COMMISSION,
+            currency: BROKER_SETTLEMENT_CURRENCY,
+            remyRecipientWallet: remyCharacter.walletAddress,
+            settlementTxHash: remySettlement.txHash,
+            settlementUserOpHash: remySettlement.userOpHash,
           },
         },
         select: { id: true },
       })
 
-      worldState.updateLastAction(character.id, 'payment_verified_handoff')
+      worldState.updateLastAction(character.id, 'broker_settlement_confirmed')
 
       eventBus.broadcast({
         sourceId: character.id,
@@ -750,12 +985,32 @@ export async function POST(request: NextRequest) {
         payload: {
           projectId: activeProjectId,
           verified: true,
-          amount: REMY_BRIEFCASE_PRICE,
-          currency: REMY_BRIEFCASE_CURRENCY,
-          txHash: matchedRemyPayment.txHash,
-          signature: matchedRemyPayment.signature,
-          userOpHash: matchedRemyPayment.userOpHash,
-          recipientWallet: matchedRemyPayment.recipientWallet,
+          grossAmount: BROKER_GROSS_PRICE,
+          remyShare: BROKER_REMY_SHARE,
+          brokerCommission: BROKER_COMMISSION,
+          currency: BROKER_SETTLEMENT_CURRENCY,
+          playerProofTxHash: matchedBrokerPayment.txHash,
+          playerProofSignature: matchedBrokerPayment.signature,
+          playerProofUserOpHash: matchedBrokerPayment.userOpHash,
+          brokerWallet: character.walletAddress,
+          recipientWallet: remyCharacter.walletAddress,
+          settlementTxHash: remySettlement.txHash,
+          settlementUserOpHash: remySettlement.userOpHash,
+        },
+        timestamp: new Date().toISOString(),
+      })
+
+      eventBus.broadcast({
+        sourceId: remyCharacter.id,
+        sourceName: remyCharacter.name,
+        actionType: 'ITEM_TRANSFERRED',
+        payload: {
+          projectId: activeProjectId,
+          item: 'Briefcase (In Transit)',
+          settledBy: character.name,
+          settlementTxHash: remySettlement.txHash,
+          settlementUserOpHash: remySettlement.userOpHash,
+          worldEvent: 'BRIEFCASE_TRANSFERRED',
         },
         timestamp: new Date().toISOString(),
       })
@@ -764,7 +1019,7 @@ export async function POST(request: NextRequest) {
         {
           success: true,
           response: responseText,
-          action: 'passes over a sealed briefcase',
+          action: 'confirms broker settlement and signals release to Remy',
           worldEvent: 'BRIEFCASE_TRANSFERRED',
           characterId: character.id,
           npcName: character.name,
@@ -780,27 +1035,48 @@ export async function POST(request: NextRequest) {
     }
 
     const isRemy = normalizeWord(character.name) === REMY_CANONICAL_NAME
+    const isBroker = normalizeWord(character.name) === BROKER_CANONICAL_NAME
     if (isRemy && isRemyNegotiationMessage(message)) {
+      return NextResponse.json(
+        {
+          success: true,
+          response:
+            'No direct route. I only release through Silas Dupre. Settle 18,000 PYUSD with Silas and wait for broker confirmation.',
+          action: 'keeps his hand on the briefcase and scans for surveillance',
+          characterId: character.id,
+          npcName: character.name,
+          tradeIntent: null,
+          specializationActive: adaptation.specializationActive,
+          pendingSpecialization: Boolean(adaptation.pendingSection2),
+          timestamp: new Date().toISOString(),
+          projectId: activeProjectId,
+          tee,
+        },
+        { status: 200, headers: corsHeaders }
+      )
+    }
+
+    if (isBroker && isRemyNegotiationMessage(message)) {
       const offeredAmount = parseOfferAmount(message)
       const offeredCurrency = detectOfferCurrency(message)
       const hasCondition = hasDeliveryCondition(message)
 
-      if (offeredAmount === REMY_BRIEFCASE_PRICE && offeredCurrency === REMY_BRIEFCASE_CURRENCY && hasCondition) {
+      if (offeredAmount === BROKER_GROSS_PRICE && offeredCurrency === BROKER_SETTLEMENT_CURRENCY && hasCondition) {
         const responseText =
-          `Deal is acceptable. Send ${REMY_BRIEFCASE_PRICE.toLocaleString()} ${REMY_BRIEFCASE_CURRENCY} now and share the transaction proof hash/signature. ` +
-          `Once payment verifies, I transfer the briefcase immediately.`
+          `Settlement accepted. Send ${BROKER_GROSS_PRICE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY} now and share proof hash/signature. ` +
+          `I will forward ${BROKER_REMY_SHARE.toLocaleString()} to Remy, retain ${BROKER_COMMISSION.toLocaleString()} commission, and confirm release once transfer clears.`
 
         return NextResponse.json(
           {
             success: true,
             response: responseText,
-            action: 'checks the route scanner, then nods',
+            action: 'opens a settlement channel and waits for proof',
             characterId: character.id,
             npcName: character.name,
             tradeIntent: {
-              item: 'Briefcase (In Transit)',
-              price: REMY_BRIEFCASE_PRICE,
-              currency: REMY_BRIEFCASE_CURRENCY,
+              item: 'Brokered Briefcase Settlement',
+              price: BROKER_GROSS_PRICE,
+              currency: BROKER_SETTLEMENT_CURRENCY,
             },
             specializationActive: adaptation.specializationActive,
             pendingSpecialization: Boolean(adaptation.pendingSection2),
@@ -812,14 +1088,14 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      if (offeredAmount === REMY_BRIEFCASE_PRICE && offeredCurrency !== REMY_BRIEFCASE_CURRENCY) {
+      if (offeredAmount === BROKER_GROSS_PRICE && offeredCurrency !== BROKER_SETTLEMENT_CURRENCY) {
         return NextResponse.json(
           {
             success: true,
             response:
-              `I can only settle this handoff in ${REMY_BRIEFCASE_CURRENCY}. ` +
-              `Confirm ${REMY_BRIEFCASE_PRICE.toLocaleString()} ${REMY_BRIEFCASE_CURRENCY} and specify immediate briefcase transfer on verification.`,
-            action: 'keeps voice low and measured',
+              `I only clear this route in ${BROKER_SETTLEMENT_CURRENCY}. ` +
+              `Confirm ${BROKER_GROSS_PRICE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY}, then I route ${BROKER_REMY_SHARE.toLocaleString()} to Remy and release on verification.`,
+            action: 'rejects currency mismatch and keeps ledger closed',
             characterId: character.id,
             npcName: character.name,
             tradeIntent: null,
@@ -832,6 +1108,30 @@ export async function POST(request: NextRequest) {
           { status: 200, headers: corsHeaders }
         )
       }
+
+      return NextResponse.json(
+        {
+          success: true,
+          response:
+            `Terms are fixed: ${BROKER_GROSS_PRICE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY}. ` +
+            `${BROKER_REMY_SHARE.toLocaleString()} goes to Remy, ${BROKER_COMMISSION.toLocaleString()} is my commission. ` +
+            'Send payment and share proof to clear release.',
+          action: 'slides a digital invoice across the channel',
+          characterId: character.id,
+          npcName: character.name,
+          tradeIntent: {
+            item: 'Brokered Briefcase Settlement',
+            price: BROKER_GROSS_PRICE,
+            currency: BROKER_SETTLEMENT_CURRENCY,
+          },
+          specializationActive: adaptation.specializationActive,
+          pendingSpecialization: Boolean(adaptation.pendingSection2),
+          timestamp: new Date().toISOString(),
+          projectId: activeProjectId,
+          tee,
+        },
+        { status: 200, headers: corsHeaders }
+      )
     }
 
     // Normal chat — build allowed tools list

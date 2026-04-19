@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@adarsh23/guildcraft-sdk": "link:/Users/adarsh/Documents/kite-ai/frontend/sdk",
+    "@adarsh23/guildcraft-sdk": "2.0.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "cookie-parser": "^1.4.7",

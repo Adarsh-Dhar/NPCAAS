@@ -160,6 +160,10 @@ export declare class GuildCraftError extends Error {
   constructor(message: string, status: number, body: unknown)
 }
 
+export type WorldEventType = string
+export declare const WORLD_EVENT_COLOR_BY_TYPE: Record<string, string>
+export declare const WORLD_EVENT_TYPES: readonly string[]
+
 // ---------------------------------------------------------------------------
 // GuildCraftClient
 // ---------------------------------------------------------------------------

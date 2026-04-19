@@ -320,6 +320,7 @@ export class MainScene extends Phaser.Scene {
       { id: charsByName.get("DIEGO_VARGAS")?.id ?? "diego", name: "Diego_Vargas", x: 505, y: 350, label: "Narco Buyer", color: 0x3b82f6, kind: "character" },
       { id: charsByName.get("THE_CURATOR")?.id ?? "curator", name: "The_Curator", x: 760, y: 140, label: "Acquirer", color: 0xa78bfa, kind: "character" },
       { id: charsByName.get("REMY_BOUDREAUX")?.id ?? "remy", name: "Remy_Boudreaux", x: 640, y: 360, label: "Courier", color: 0x60a5fa, kind: "character" },
+      { id: charsByName.get("SILAS_DUPRE")?.id ?? "silas", name: "Silas_Dupre", x: 585, y: 282, label: "Settlement Broker", color: 0x22d3ee, kind: "character" },
       { id: charsByName.get("PAPA_KOFI")?.id ?? "kofi", name: "Papa_Kofi", x: 700, y: 515, label: "Port Authority", color: 0x8b5cf6, kind: "character" },
       { id: "terminal", name: "Manifest_Terminal", x: 230, y: 500, label: "Warehouse Terminal", color: 0x3b82f6, kind: "terminal" },
       { id: "bodyguard", name: "Svetlana_Bodyguard", x: 455, y: 200, label: "Bodyguard", color: 0x94a3b8, kind: "bodyguard" },
@@ -415,11 +416,11 @@ export class MainScene extends Phaser.Scene {
       this.tryCompleteMission();
     }
 
-    if (this.phase === 3 && normalized === "REMY_BOUDREAUX" && !this.briefcaseTransferred) {
+    if (this.phase === 3 && normalized === "SILAS_DUPRE" && !this.briefcaseTransferred) {
       this.briefcaseTransferred = true;
       patchMissionState({ briefcaseTransferred: true }, "BRIEFCASE_TRANSFERRED");
       emitPlayerEvent("BRIEFCASE_TRANSFERRED");
-      this.showBroadcast("REMY", "Transfer window closed. Package ownership changed.");
+      this.showBroadcast("SILAS", "Settlement cleared. Remy released the package.");
       this.tryCompleteMission();
     }
 
@@ -489,7 +490,7 @@ export class MainScene extends Phaser.Scene {
       this.remyInTransit = true;
       patchMissionState({ phase: 3, frenzyActive: true }, "PHASE_3_STARTED");
       this.unlockBarrier(this.zoneBarrierB);
-      this.showBroadcast("PHASE 3", "Frenzy started. Intercept Remy before Curator handoff.");
+      this.showBroadcast("PHASE 3", "Frenzy started. Intercept Silas before broker release.");
     }
   }
 
@@ -727,15 +728,15 @@ export class MainScene extends Phaser.Scene {
     }
 
     if (this.remyInTransit && this.phase === 3 && !this.artifactIntercepted) {
-      const remy = this.npcs.find((npc) => normalizeNpcName(npc.data.name) === "REMY_BOUDREAUX");
-      if (remy) {
+      const broker = this.npcs.find((npc) => normalizeNpcName(npc.data.name) === "SILAS_DUPRE");
+      if (broker) {
         const t = this.time.now / 1000;
-        remy.container.x = 620 + Math.cos(t * 1.3) * 105;
-        remy.container.y = 360 + Math.sin(t * 1.1) * 70;
-        remy.data.x = remy.container.x;
-        remy.data.y = remy.container.y;
-        remy.labelText.setPosition(remy.data.x, remy.data.y + 20);
-        remy.promptText.setPosition(remy.data.x, remy.data.y - 26);
+        broker.container.x = 620 + Math.cos(t * 1.3) * 105;
+        broker.container.y = 360 + Math.sin(t * 1.1) * 70;
+        broker.data.x = broker.container.x;
+        broker.data.y = broker.container.y;
+        broker.labelText.setPosition(broker.data.x, broker.data.y + 20);
+        broker.promptText.setPosition(broker.data.x, broker.data.y - 26);
       }
     }
 

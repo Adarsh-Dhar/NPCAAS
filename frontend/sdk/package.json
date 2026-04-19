@@ -1,8 +1,9 @@
 {
   "name": "@adarsh23/guildcraft-sdk",
-  "version": "1.0.0",
-  "description": "GuildCraft JavaScript SDK for NPC chat and trade interactions",
+  "version": "2.0.0",
+  "description": "GuildCraft JavaScript SDK for autonomous NPC chat, streaming, and Web3 trade interactions",
   "main": "index.js",
+  "module": "index.mjs",
   "types": "index.d.ts",
   "license": "MIT",
   "keywords": [
@@ -18,10 +19,18 @@
   },
   "files": [
     "index.js",
+    "index.mjs",
     "index.d.ts",
     "README.md",
     "LICENSE"
   ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs",
+      "require": "./index.js"
+    }
+  },
   "publishConfig": {
     "access": "public"
   },

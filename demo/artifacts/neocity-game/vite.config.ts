@@ -18,8 +18,6 @@ if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT: "${rawPort}"
 
 const basePath = process.env.BASE_PATH;
 if (!basePath) throw new Error("BASE_PATH environment variable is required.");
-
-const proxyTarget = process.env.GC_PROXY_TARGET || "http://localhost:3000";
 // The Replit runtime overlay can throw AudioContext resume errors in local dev,
 // so only enable it when running inside Replit.
 const isReplitDev =
@@ -74,13 +72,6 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
     fs: { strict: true, deny: ["**/.*"] },
-    // Proxy /api calls to the local API server during development
-    proxy: {
-      "/api": {
-        target: proxyTarget,
-        changeOrigin: true,
-      },
-    },
   },
   preview: { port, host: "0.0.0.0", allowedHosts: true },
 });

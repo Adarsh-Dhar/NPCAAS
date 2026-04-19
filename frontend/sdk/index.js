@@ -24,6 +24,27 @@ class GuildCraftError extends Error {
   }
 }
 
+// Shared event registry used by game clients to color and classify world events.
+const WORLD_EVENT_COLOR_BY_TYPE = {
+  CHAT: '#60a5fa',
+  PAYMENT_SENT: '#67e8f9',
+  TRADE_PROPOSED: '#a78bfa',
+  TRADE_ACCEPTED: '#38bdf8',
+  ITEM_TRANSFERRED: '#22d3ee',
+  BROADCAST: '#f59e0b',
+  HOSTILITY_TRIGGERED: '#ef4444',
+  MANIFEST_ACCEPTED: '#7dd3fc',
+  INVENTORY_COMPROMISED: '#c4b5fd',
+  BRIEFCASE_LOCATED: '#93c5fd',
+  BRIEFCASE_TRANSFERRED: '#22d3ee',
+  SECURITY_ALERTED: '#f472b6',
+  ESCAPE_ROUTE_OPENED: '#8b5cf6',
+  ARTIFACT_INTERCEPTED: '#67e8f9',
+  PLAYER_EVENT: '#94a3b8',
+}
+
+const WORLD_EVENT_TYPES = Object.freeze(Object.keys(WORLD_EVENT_COLOR_BY_TYPE))
+
 // ---------------------------------------------------------------------------
 // GuildCraftClient
 // ---------------------------------------------------------------------------
@@ -504,5 +525,10 @@ class GuildCraftClient {
 // Support CommonJS `require()` in Node environments while avoiding
 // a ReferenceError in browser ESM modules (where `module` is undefined).
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { GuildCraftClient, GuildCraftError }
+  module.exports = {
+    GuildCraftClient,
+    GuildCraftError,
+    WORLD_EVENT_COLOR_BY_TYPE,
+    WORLD_EVENT_TYPES,
+  }
 }

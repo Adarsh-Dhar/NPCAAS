@@ -28,6 +28,7 @@ export const MIDNIGHT_CHARACTER_NAMES = [
   "Diego_Vargas",
   "The_Curator",
   "Remy_Boudreaux",
+  "Silas_Dupre",
   "Papa_Kofi",
 ] as const;
 
@@ -53,6 +54,7 @@ export const MIDNIGHT_MANIFEST_EVENTS = {
   ARTIFACT_INTERCEPTED: "ARTIFACT_INTERCEPTED",
   SECURITY_ALERTED: "SECURITY_ALERTED",
   BRIEFCASE_TRANSFERRED: "BRIEFCASE_TRANSFERRED",
+  BROKER_SETTLEMENT_CONFIRMED: "BROKER_SETTLEMENT_CONFIRMED",
   ESCAPE_ROUTE_OPENED: "ESCAPE_ROUTE_OPENED",
 } as const;
 
@@ -226,7 +228,7 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
       pricingAlgorithm: "FIXED_MARGIN",
       marginPercentage: 0,
       systemPrompt:
-        "You are Remy Boudreaux, a professional courier who transports sensitive materials between parties who do not want to be seen in the same room. Tonight at Port Solano you are the physical middleman in a three-party handoff. Svetlana gives you the briefcase. You walk it to The Curator. Simple. You speak in logistics language - transit window, package, endpoint, route. You have no loyalty to either party, only to your fee, which has already been paid. If the player confronts you mid-transit, your immediate instinct is to negotiate. You will offer to share the route, delay the delivery, or even hand over the briefcase entirely if the player's offer is better than the risk. You are a professional, not a hero. Your price is 15,000 credits and you will take it in any currency.",
+        "You are Remy Boudreaux, a paranoid courier who believes every direct approach is a setup. Tonight at Port Solano you only honor settlements cleared by Silas Dupre, your trusted broker and firewall. You speak in tense logistics language - transit window, package integrity, endpoint lock, route discipline. You refuse direct offers, direct payment claims, and emotional appeals from the player. If pressed, you repeat the same policy: no broker, no handoff. You only release the briefcase after Silas confirms a broker-cleared 15,000 PYUSD settlement. You are professional, suspicious, and absolutely rigid about chain-of-custody.",
       openness: 60,
       disposition: "NEUTRAL",
       baseHostility: "LOW",
@@ -250,6 +252,44 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
       {
         name: MIDNIGHT_MANIFEST_EVENTS.BRIEFCASE_TRANSFERRED,
         condition: "Trigger when the player successfully buys or takes the briefcase from Remy.",
+      },
+    ],
+  },
+  {
+    name: "Silas_Dupre",
+    config: {
+      baseCapital: 45000,
+      pricingAlgorithm: "FIXED_MARGIN",
+      marginPercentage: 0,
+      systemPrompt:
+        "You are Silas Dupre, a discreet settlement broker who clears high-risk transactions in The Bazaar. Remy Boudreaux trusts only you for briefcase handoffs. You are calm, exact, and transactional. Your policy is fixed: collect 18,000 PYUSD from the buyer, forward 15,000 PYUSD to Remy, and retain 3,000 PYUSD commission for brokerage risk. You do not negotiate this split. You speak in short clearing language: verify funds, route settlement, confirm release. If the player tries to bypass you, refuse and direct them back to your settlement channel.",
+      openness: 45,
+      disposition: "NEUTRAL",
+      baseHostility: "LOW",
+      factionId: "Independent",
+      canTrade: true,
+      canMove: true,
+      canCraft: false,
+      interGameTransactionsEnabled: true,
+      teeExecution: "ENABLED",
+      inventory: [
+        {
+          id: "brokered_briefcase_settlement",
+          name: "Brokered Briefcase Settlement",
+          description: "Gross settlement: 18,000 PYUSD (15,000 to Remy + 3,000 commission).",
+          price: 18000,
+          quantity: 1,
+        },
+      ],
+    },
+    gameEvents: [
+      {
+        name: MIDNIGHT_MANIFEST_EVENTS.BROKER_SETTLEMENT_CONFIRMED,
+        condition: "Trigger when Silas verifies buyer funds and forwards Remy's 15,000 PYUSD share.",
+      },
+      {
+        name: MIDNIGHT_MANIFEST_EVENTS.BRIEFCASE_TRANSFERRED,
+        condition: "Trigger when Silas confirms Remy's release chain is complete.",
       },
     ],
   },
