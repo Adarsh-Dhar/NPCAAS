@@ -27,8 +27,17 @@ const _normalizedSdk: any =
 
 export const WORLD_EVENT_COLOR_BY_TYPE: Record<string, string> =
   _normalizedSdk?.WORLD_EVENT_COLOR_BY_TYPE ?? {}
-export const WORLD_EVENT_TYPES: readonly string[] =
-  _normalizedSdk?.WORLD_EVENT_TYPES ?? Object.keys(WORLD_EVENT_COLOR_BY_TYPE)
+
+const MIDNIGHT_EVENT_TYPES = [
+  'BROKER_SETTLEMENT_CONFIRMED',
+  'COMBAT_INITIATED',
+  'LORE_REVEALED',
+] as const
+
+const sdkEventTypes = (_normalizedSdk?.WORLD_EVENT_TYPES ?? Object.keys(WORLD_EVENT_COLOR_BY_TYPE)) as string[]
+const mergedWorldEventTypes = new Set<string>([...sdkEventTypes, ...MIDNIGHT_EVENT_TYPES])
+
+export const WORLD_EVENT_TYPES: readonly string[] = [...mergedWorldEventTypes]
 
 // Export GuildCraftError if present; otherwise provide a lightweight fallback
 // class so downstream code can `instanceof` it and consume `status`/`body`.
@@ -97,9 +106,30 @@ class HttpGuildCraftClient {
   baseUrl: string
   private didFallbackToProxy = false
   private static readonly CHAT_STREAM_TIMEOUT_MS = 30_000
+  private static readonly FALLBACK_BASE_URLS = [
+    '/api',
+    'http://localhost:3000/api',
+  ]
   constructor(apiKey: string, baseUrl = DEMO_FALLBACK_BASE_URL) {
     this.apiKey = apiKey
     this.baseUrl = baseUrl.replace(/\/$/, '')
+  }
+
+  private getBaseCandidates(initialBase: string) {
+    const normalizedInitial = initialBase.replace(/\/$/, '')
+    const candidates = [normalizedInitial, ...HttpGuildCraftClient.FALLBACK_BASE_URLS]
+    return [...new Set(candidates.map((value) => value.replace(/\/$/, '')))]
+  }
+
+  private shouldRetryWithFallback(status: number, body: unknown) {
+    if (status === 404 || status === 405 || status === 502 || status === 503 || status === 504) {
+      return true
+    }
+
+    if (!body || typeof body !== 'object') return false
+    const payload = body as Record<string, unknown>
+    const message = typeof payload.error === 'string' ? payload.error : ''
+    return /Cannot\s+(GET|POST)\s+\/api/i.test(message)
   }
 
   _authHeaders() {
@@ -116,32 +146,102 @@ class HttpGuildCraftClient {
       return fetch(url, { ...options, headers })
     }
 
-    let res: Response
-    try {
-      res = await fetchOnce(this.baseUrl)
-    } catch (error) {
-      if (typeof window !== 'undefined' && this.baseUrl !== '/api' && !this.didFallbackToProxy) {
-        this.didFallbackToProxy = true
-        this.baseUrl = '/api'
-        console.warn(`[GuildCraft] Network error against configured base URL. Falling back to ${this.baseUrl}.`, error)
-        res = await fetchOnce(this.baseUrl)
-      } else {
-        throw error
+    const baseCandidates = this.getBaseCandidates(this.baseUrl)
+    let lastError: unknown = null
+
+    for (const candidateBase of baseCandidates) {
+      let res: Response
+      try {
+        res = await fetchOnce(candidateBase)
+      } catch (error) {
+        lastError = error
+        console.warn(`[GuildCraft] Request failed for ${candidateBase}; trying next fallback if available.`, error)
+        continue
       }
-    }
 
-    console.log(`[GuildCraft] Response status:`, res.status)
-    let body = await res.json().catch(() => ({}))
+      console.log(`[GuildCraft] Response status:`, res.status)
+      const body = await res.json().catch(() => ({}))
 
-    if (!res.ok) {
+      if (res.ok) {
+        if (candidateBase !== this.baseUrl) {
+          this.baseUrl = candidateBase
+          this.didFallbackToProxy = true
+          console.warn(`[GuildCraft] Switched API base URL to ${candidateBase}`)
+        }
+        return body
+      }
+
+      if (this.shouldRetryWithFallback(res.status, body) && candidateBase !== baseCandidates[baseCandidates.length - 1]) {
+        console.warn(`[GuildCraft] Received ${res.status} from ${candidateBase}; trying next fallback base URL.`)
+        continue
+      }
+
       console.error(`[GuildCraft] ❌ API Error:`, body)
-      throw new GuildCraftError(body?.error ?? `HTTP ${res.status}`, res.status, body)
+      throw new GuildCraftError((body as any)?.error ?? `HTTP ${res.status}`, res.status, body)
     }
-    return body
+
+    throw new GuildCraftError(
+      lastError instanceof Error ? lastError.message : 'Failed to fetch from configured API endpoints',
+      503,
+      { attemptedBases: baseCandidates }
+    )
   }
 
   async getCharacters() {
     return this._request('/characters')
+  }
+
+  async deployCharacter(params: {
+    name: string
+    config: Record<string, unknown>
+    gameIds?: string[]
+  }) {
+    const { name, config, gameIds } = params ?? {}
+    if (!name) throw new GuildCraftError('name is required', 400, null)
+    if (!config) throw new GuildCraftError('config is required', 400, null)
+    return this._request('/characters', {
+      method: 'POST',
+      body: JSON.stringify({ name, config, gameIds }),
+    })
+  }
+
+  async updateCharacter(params: {
+    characterId: string
+    name?: string
+    config: Record<string, unknown>
+  }) {
+    const { characterId, name, config } = params ?? {}
+    if (!characterId) throw new GuildCraftError('characterId is required', 400, null)
+    return this._request('/characters', {
+      method: 'PATCH',
+      body: JSON.stringify({ characterId, name, config: config ?? {} }),
+    })
+  }
+
+  async createGame(name: string) {
+    if (!name) throw new GuildCraftError('name is required', 400, null)
+    return this._request('/games', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+  }
+
+  async getGames() {
+    return this._request('/games')
+  }
+
+  async getGameCharacters(gameId: string) {
+    if (!gameId) throw new GuildCraftError('gameId is required', 400, null)
+    return this._request(`/games/${encodeURIComponent(gameId)}/characters`)
+  }
+
+  async assignCharactersToGame(gameId: string, characterIds: string | string[]) {
+    if (!gameId) throw new GuildCraftError('gameId is required', 400, null)
+    const ids = Array.isArray(characterIds) ? characterIds : [characterIds]
+    return this._request(`/games/${encodeURIComponent(gameId)}/characters`, {
+      method: 'POST',
+      body: JSON.stringify({ characterIds: ids }),
+    })
   }
 
   async getCharacter(characterId: string) {
@@ -341,7 +441,8 @@ export function getClient(): any | null {
   if (!_client || _clientKey !== key) {
     clearCharacterCache();
     const SdkGuildCraftClient = _normalizedSdk?.GuildCraftClient
-    _client = SdkGuildCraftClient
+    const preferHttpClient = typeof window !== 'undefined'
+    _client = !preferHttpClient && SdkGuildCraftClient
       ? new SdkGuildCraftClient(key, base)
       : new HttpGuildCraftClient(key, base)
     _clientKey = key;

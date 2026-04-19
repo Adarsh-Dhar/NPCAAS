@@ -17,10 +17,17 @@ function hasGameEvent(gameEvents, eventName) {
 
 function shouldForceBriefcaseLocatedEvent(input) {
   if (!input || normalizeNpcName(input.characterName) !== SVETLANA_CANONICAL_NAME) return false
-  if (!hasGameEvent(input.gameEvents, BRIEFCASE_EVENT_NAME)) return false
 
   const combinedText = `${input.userMessage ?? ''} ${input.responseText ?? ''}`.toLowerCase()
-  return /\bbriefcase\b/.test(combinedText) || /gold briefcase|quantum drive|access codes/.test(combinedText)
+  const mentionsBriefcase = /\bbriefcase\b/.test(combinedText)
+  const mentionsSensitiveContents = /gold briefcase|quantum drive|access codes/.test(combinedText)
+
+  if (!(mentionsBriefcase || mentionsSensitiveContents)) return false
+
+  // Prefer manifest-defined events when present, but do not hard-fail when
+  // character metadata is stale/missing in local dev.
+  if (!Array.isArray(input.gameEvents) || input.gameEvents.length === 0) return true
+  return hasGameEvent(input.gameEvents, BRIEFCASE_EVENT_NAME)
 }
 
 function appendNpcEventTag(text, input) {

@@ -48,12 +48,12 @@ const NPC_GREETINGS: Record<string, string> = {
   DIEGO_VARGAS: 'Diego raises a glass and laughs. Impress him or move along.',
   THE_CURATOR: 'The Curator watches with polite suspicion.',
   REMY_BOUDREAUX: 'Remy checks his watch. Transit window is closing.',
-  SILAS_DUPRE: 'Silas opens a secure ledger tab. Clearance first, then movement.',
+  DON_CARLO: 'Don Carlo opens a secure ledger tab. Full amount first, then movement.',
   PAPA_KOFI: 'Papa Kofi nods slowly. He has seen this port burn before.',
 }
 
-const BROKER_CANONICAL_NAME = 'SILAS_DUPRE'
-const BROKER_BRIEFCASE_PRICE = 18000
+const BROKER_CANONICAL_NAME = 'DON_CARLO'
+const BROKER_BRIEFCASE_PRICE = 16500
 const BROKER_BRIEFCASE_CURRENCY = 'PYUSD'
 const BROKER_BRIEFCASE_ITEM = 'Brokered Briefcase Settlement'
 const MIDNIGHT_GAME_ID = 'THE_MIDNIGHT_MANIFEST'
@@ -192,12 +192,12 @@ function inferBrokerBriefcaseTradeIntent(input: {
 
   const wantsTransfer = /\b(briefcase|transfer|handoff|handover|buy|deal|price|route|pay|payment|send|wire|offer)\b/.test(user)
   const userCommitsToPrice =
-    (/\b18,?000\b/.test(user) && /\b(pyusd|kite\s*usd|usd)\b/.test(user)) ||
+    ((/\b16,?500\b/.test(user) || /\b1[7-9],?\d{3}\b/.test(user) || /\b[2-9]\d{4,}\b/.test(user)) && /\b(pyusd|kite\s*usd|usd)\b/.test(user)) ||
     (/\bpay\b/.test(user) && /\bnow\b/.test(user))
 
   const mentionsBrokerOffer =
-    (/\b18000\b/.test(npc) || /\b18,000\b/.test(npc)) &&
-      (/\bpyusd\b/.test(npc) || /\bcredits\b/.test(npc) || /\bfee\b/.test(npc))
+    ((/\b16500\b/.test(npc) || /\b16,500\b/.test(npc) || /\bat\s+least\b/.test(npc)) &&
+      (/\bpyusd\b/.test(npc) || /\bcredits\b/.test(npc) || /\bfee\b/.test(npc) || /\bcommission\b/.test(npc)))
 
   const asksForSettlementProof =
     (/wallet\s+address/.test(npc) || /transaction\s+hash/.test(npc)) &&
@@ -211,6 +211,20 @@ function inferBrokerBriefcaseTradeIntent(input: {
     price: BROKER_BRIEFCASE_PRICE,
     currency: BROKER_BRIEFCASE_CURRENCY,
   }
+}
+
+function inferSvetlanaBriefcaseEvent(input: {
+  npcName: string
+  userText: string
+  npcText: string
+}): string | null {
+  if (normalizeNpcName(input.npcName) !== 'SVETLANA_MOROZOVA') return null
+
+  const combined = `${input.userText} ${input.npcText}`.toLowerCase()
+  const mentionsBriefcase = /\bbriefcase\b/.test(combined)
+  const mentionsSensitiveContents = /gold briefcase|quantum drive|access codes/.test(combined)
+
+  return mentionsBriefcase || mentionsSensitiveContents ? 'BRIEFCASE_LOCATED' : null
 }
 
 export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindowProps) {
@@ -366,7 +380,26 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
         )
 
         const dispatchedEvents = new Set<string>()
-        if (eventExtraction.eventName) {
+        const inferredBriefcaseEvent = inferSvetlanaBriefcaseEvent({
+          npcName,
+          userText,
+          npcText: primary.text,
+        })
+
+        if (response.worldEvent) {
+          window.dispatchEvent(
+            new CustomEvent('NPC_SYSTEM_EVENT', {
+              detail: {
+                eventName: response.worldEvent,
+                npcName,
+              },
+            })
+          )
+          dispatchedEvents.add(response.worldEvent)
+        }
+
+        // Keep parsing [[EVENT:...]] as a compatibility fallback for older payloads.
+        if (eventExtraction.eventName && !dispatchedEvents.has(eventExtraction.eventName)) {
           window.dispatchEvent(
             new CustomEvent('NPC_SYSTEM_EVENT', {
               detail: {
@@ -378,16 +411,16 @@ export function ChatWindow({ npcId, npcName, onClose, onTradeIntent }: ChatWindo
           dispatchedEvents.add(eventExtraction.eventName)
         }
 
-        if (response.worldEvent && !dispatchedEvents.has(response.worldEvent)) {
+        if (inferredBriefcaseEvent && !dispatchedEvents.has(inferredBriefcaseEvent)) {
           window.dispatchEvent(
             new CustomEvent('NPC_SYSTEM_EVENT', {
               detail: {
-                eventName: response.worldEvent,
+                eventName: inferredBriefcaseEvent,
                 npcName,
               },
             })
           )
-          dispatchedEvents.add(response.worldEvent)
+          dispatchedEvents.add(inferredBriefcaseEvent)
         }
 
         return true

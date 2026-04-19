@@ -15,7 +15,7 @@ import { EconomicEngine } from '@/lib/economic-engine'
 import { ensureNpcSocialSubscription } from '@/lib/npcSocialReactivity'
 import { SocialEngine, normalizeBaseHostility, normalizeDisposition } from '@/lib/social-engine'
 import { buildTeeGateResult } from '@/lib/tee-gate'
-import { appendNpcEventTag, shouldForceBriefcaseLocatedEvent } from '@/lib/npc-event-tags'
+import { shouldForceBriefcaseLocatedEvent } from '@/lib/npc-event-tags'
 import {
   formatInventoryForPrompt,
   parseOptionalInventory,
@@ -119,26 +119,8 @@ function getBriefcaseEventTag(input: {
   userMessage: string
   responseText: string
   gameEvents: GameEventDefinition[]
-}): string {
-  return shouldForceBriefcaseLocatedEvent(input) ? ' [[EVENT:BRIEFCASE_LOCATED]]' : ''
-}
-
-function resolveSvetlanaBriefcaseResponse(input: {
-  characterName: string
-  userMessage: string
-}): string | null {
-  if (String(input.characterName ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_') !== 'SVETLANA_MOROZOVA') {
-    return null
-  }
-
-  const message = input.userMessage.toLowerCase()
-  // Match any question or statement about the briefcase (with question mark, interrogative words, or casual phrasing)
-  const asksAboutBriefcase = /\bbriefcase\b/.test(message) &&
-    (/\?|\bwhat\b|\bwhy\b|\bwho\b|\bwhere\b|\bwhen\b|\bcontent\b|\binside\b|\bstory\b|\btell\b|about|\bexplain|\bsecret\b|\bcarry\b|\bhold\b|\bcontains?\b/i.test(message))
-
-  if (!asksAboutBriefcase) return null
-
-  return 'The briefcase contains access codes for a quantum drive. The Curator wants them, and my job is to hand them off after the auction. Diego is only the munitions contact. That is the whole story.'
+}): boolean {
+  return shouldForceBriefcaseLocatedEvent(input)
 }
 
 function toCharacterConfig(value: unknown): CharacterConfig {
@@ -700,30 +682,14 @@ export async function POST(request: NextRequest) {
           }
 
           if (parsed.type === 'done' && parsed.final?.text) {
-            const svetlanaBriefcaseResponse = resolveSvetlanaBriefcaseResponse({
-              characterName: character.name,
-              userMessage: message,
-            })
-
-            if (svetlanaBriefcaseResponse) {
-              parsed.final.text = svetlanaBriefcaseResponse
-              parsed.final.tradeIntent = undefined
-            }
-
-            const briefcaseEventTag = getBriefcaseEventTag({
+            const shouldEmitBriefcaseEvent = getBriefcaseEventTag({
               characterName: character.name,
               userMessage: message,
               responseText: String(parsed.final.text),
               gameEvents,
             })
 
-            if (briefcaseEventTag) {
-              parsed.final.text = appendNpcEventTag(String(parsed.final.text), {
-                characterName: character.name,
-                userMessage: message,
-                responseText: String(parsed.final.text),
-                gameEvents,
-              })
+            if (shouldEmitBriefcaseEvent) {
               parsed.final.worldEvent = 'BRIEFCASE_LOCATED'
             }
           }

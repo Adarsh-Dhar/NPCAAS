@@ -17,7 +17,7 @@ import {
   type InventoryItem,
 } from '@/lib/npc-inventory'
 import { buildTeeGateResult } from '@/lib/tee-gate'
-import { appendNpcEventTag, shouldForceBriefcaseLocatedEvent } from '@/lib/npc-event-tags'
+import { shouldForceBriefcaseLocatedEvent } from '@/lib/npc-event-tags'
 import {
   normalizeAdaptationState,
   normalizeCharacterConfig,
@@ -32,10 +32,11 @@ const ALLOWED_ORIGINS = [
 
 const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
 const REMY_CANONICAL_NAME = 'REMY_BOUDREAUX'
-const BROKER_CANONICAL_NAME = 'SILAS_DUPRE'
-const BROKER_GROSS_PRICE = 18000
+const BROKER_CANONICAL_NAME = 'DON_CARLO'
 const BROKER_REMY_SHARE = 15000
-const BROKER_COMMISSION = 3000
+const BROKER_MIN_COMMISSION_PCT = 10
+const BROKER_MIN_COMMISSION = Math.ceil((BROKER_REMY_SHARE * BROKER_MIN_COMMISSION_PCT) / 100)
+const BROKER_MIN_GROSS_PRICE = BROKER_REMY_SHARE + BROKER_MIN_COMMISSION
 const BROKER_SETTLEMENT_CURRENCY = 'PYUSD'
 const PAYMENT_PROOF_WINDOW_MS = 20 * 60 * 1000
 
@@ -221,7 +222,7 @@ function findMatchingBrokerPaymentProof(input: {
     const recipientNameMatches = normalizeWord(proof.recipientName) === BROKER_CANONICAL_NAME
     if (!walletMatches && !recipientNameMatches) continue
     if (proof.currency !== BROKER_SETTLEMENT_CURRENCY) continue
-    if (Math.abs(proof.amount - BROKER_GROSS_PRICE) > 0.000001) continue
+    if (proof.amount + 0.000001 < BROKER_MIN_GROSS_PRICE) continue
 
     const confirmedAtMs = new Date(proof.confirmedAt).getTime()
     if (!Number.isFinite(confirmedAtMs)) continue
@@ -362,24 +363,8 @@ function getBriefcaseEventTag(input: {
   userMessage: string
   responseText: string
   gameEvents: GameEventDefinition[]
-}): string {
-  return shouldForceBriefcaseLocatedEvent(input) ? ' [[EVENT:BRIEFCASE_LOCATED]]' : ''
-}
-
-function resolveSvetlanaBriefcaseResponse(input: {
-  characterName: string
-  userMessage: string
-}): string | null {
-  if (normalizeNpcName(input.characterName) !== 'SVETLANA_MOROZOVA') return null
-
-  const message = input.userMessage.toLowerCase()
-  // Match any question or statement about the briefcase (with question mark, interrogative words, or casual phrasing)
-  const asksAboutBriefcase = /\bbriefcase\b/.test(message) &&
-    (/\?|\bwhat\b|\bwhy\b|\bwho\b|\bwhere\b|\bwhen\b|\bcontent\b|\binside\b|\bstory\b|\btell\b|about|\bexplain|\bsecret\b|\bcarry\b|\bhold\b|\bcontains?\b/i.test(message))
-
-  if (!asksAboutBriefcase) return null
-
-  return 'The briefcase contains access codes for a quantum drive. The Curator wants them, and my job is to hand them off after the auction. Diego is only the munitions contact. That is the whole story.'
+}): boolean {
+  return shouldForceBriefcaseLocatedEvent(input)
 }
 
 async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefined> {
@@ -883,7 +868,7 @@ export async function POST(request: NextRequest) {
           {
             success: false,
             response:
-              'Settlement wallet is still on a legacy placeholder account. Reprovision Silas wallet before clearing transfers.',
+              'Settlement wallet is still on a legacy placeholder account. Reprovision Don wallet before clearing transfers.',
             action: 'rejects settlement due to invalid signer wallet',
             characterId: character.id,
             npcName: character.name,
@@ -971,9 +956,11 @@ export async function POST(request: NextRequest) {
       }
 
       const proofToken = formatProofToken(matchedBrokerPayment)
+      const grossAmount = matchedBrokerPayment.amount
+      const brokerCommission = Math.max(0, grossAmount - BROKER_REMY_SHARE)
       const responseText =
         `Ledger check complete. I see your payment proof (${proofToken}). ` +
-        `Cleared ${BROKER_GROSS_PRICE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY}: forwarded ${BROKER_REMY_SHARE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY} to Remy, retained ${BROKER_COMMISSION.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY} commission. ` +
+        `Cleared ${grossAmount.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY}: forwarded ${BROKER_REMY_SHARE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY} to Remy, retained ${brokerCommission.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY} commission. ` +
         `Release chain is confirmed. [[EVENT:BRIEFCASE_TRANSFERRED]]`
 
       await (prisma as any).npcLog.create({
@@ -984,9 +971,9 @@ export async function POST(request: NextRequest) {
             message,
             response: responseText,
             paymentProof: matchedBrokerPayment,
-            grossAmount: BROKER_GROSS_PRICE,
+            grossAmount,
             remyShare: BROKER_REMY_SHARE,
-            brokerCommission: BROKER_COMMISSION,
+            brokerCommission,
             currency: BROKER_SETTLEMENT_CURRENCY,
             remyRecipientWallet: remyCharacter.walletAddress,
             settlementTxHash: remySettlement.txHash,
@@ -1005,9 +992,9 @@ export async function POST(request: NextRequest) {
         payload: {
           projectId: activeProjectId,
           verified: true,
-          grossAmount: BROKER_GROSS_PRICE,
+          grossAmount,
           remyShare: BROKER_REMY_SHARE,
-          brokerCommission: BROKER_COMMISSION,
+          brokerCommission,
           currency: BROKER_SETTLEMENT_CURRENCY,
           playerProofTxHash: matchedBrokerPayment.txHash,
           playerProofSignature: matchedBrokerPayment.signature,
@@ -1061,7 +1048,7 @@ export async function POST(request: NextRequest) {
         {
           success: true,
           response:
-            'No direct route. I only release through Silas Dupre. Settle 18,000 PYUSD with Silas and wait for broker confirmation.',
+            `No direct route. I only release through Don Carlo. Settle at least ${BROKER_MIN_GROSS_PRICE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY} with Don and wait for broker confirmation.`,
           action: 'keeps his hand on the briefcase and scans for surveillance',
           characterId: character.id,
           npcName: character.name,
@@ -1081,10 +1068,16 @@ export async function POST(request: NextRequest) {
       const offeredCurrency = detectOfferCurrency(message)
       const hasCondition = hasDeliveryCondition(message)
 
-      if (offeredAmount === BROKER_GROSS_PRICE && offeredCurrency === BROKER_SETTLEMENT_CURRENCY && hasCondition) {
+      if (
+        offeredAmount !== null &&
+        offeredAmount >= BROKER_MIN_GROSS_PRICE &&
+        offeredCurrency === BROKER_SETTLEMENT_CURRENCY &&
+        hasCondition
+      ) {
+        const commission = Math.max(0, offeredAmount - BROKER_REMY_SHARE)
         const responseText =
-          `Settlement accepted. Send ${BROKER_GROSS_PRICE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY} now and share proof hash/signature. ` +
-          `I will forward ${BROKER_REMY_SHARE.toLocaleString()} to Remy, retain ${BROKER_COMMISSION.toLocaleString()} commission, and confirm release once transfer clears.`
+          `Settlement accepted. Send ${offeredAmount.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY} now and share proof hash/signature. ` +
+          `I will forward ${BROKER_REMY_SHARE.toLocaleString()} to Remy, retain ${commission.toLocaleString()} commission, and confirm release once transfer clears.`
 
         return NextResponse.json(
           {
@@ -1095,7 +1088,7 @@ export async function POST(request: NextRequest) {
             npcName: character.name,
             tradeIntent: {
               item: 'Brokered Briefcase Settlement',
-              price: BROKER_GROSS_PRICE,
+              price: offeredAmount,
               currency: BROKER_SETTLEMENT_CURRENCY,
             },
             specializationActive: adaptation.specializationActive,
@@ -1108,13 +1101,17 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      if (offeredAmount === BROKER_GROSS_PRICE && offeredCurrency !== BROKER_SETTLEMENT_CURRENCY) {
+      if (
+        offeredAmount !== null &&
+        offeredAmount >= BROKER_MIN_GROSS_PRICE &&
+        offeredCurrency !== BROKER_SETTLEMENT_CURRENCY
+      ) {
         return NextResponse.json(
           {
             success: true,
             response:
               `I only clear this route in ${BROKER_SETTLEMENT_CURRENCY}. ` +
-              `Confirm ${BROKER_GROSS_PRICE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY}, then I route ${BROKER_REMY_SHARE.toLocaleString()} to Remy and release on verification.`,
+              `Confirm at least ${BROKER_MIN_GROSS_PRICE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY}, then I route ${BROKER_REMY_SHARE.toLocaleString()} to Remy and release on verification.`,
             action: 'rejects currency mismatch and keeps ledger closed',
             characterId: character.id,
             npcName: character.name,
@@ -1133,15 +1130,15 @@ export async function POST(request: NextRequest) {
         {
           success: true,
           response:
-            `Terms are fixed: ${BROKER_GROSS_PRICE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY}. ` +
-            `${BROKER_REMY_SHARE.toLocaleString()} goes to Remy, ${BROKER_COMMISSION.toLocaleString()} is my commission. ` +
+            `Terms are minimum ${BROKER_MIN_GROSS_PRICE.toLocaleString()} ${BROKER_SETTLEMENT_CURRENCY}. ` +
+            `${BROKER_REMY_SHARE.toLocaleString()} goes to Remy and commission is at least ${BROKER_MIN_COMMISSION.toLocaleString()} (${BROKER_MIN_COMMISSION_PCT}%). ` +
             'Send payment and share proof to clear release.',
           action: 'slides a digital invoice across the channel',
           characterId: character.id,
           npcName: character.name,
           tradeIntent: {
             item: 'Brokered Briefcase Settlement',
-            price: BROKER_GROSS_PRICE,
+            price: BROKER_MIN_GROSS_PRICE,
             currency: BROKER_SETTLEMENT_CURRENCY,
           },
           specializationActive: adaptation.specializationActive,
@@ -1430,31 +1427,12 @@ export async function POST(request: NextRequest) {
 
     let finalTradeIntent = agentResponse.tradeIntent
     let finalResponseText = agentResponse.text
-    const svetlanaBriefcaseResponse = resolveSvetlanaBriefcaseResponse({
-      characterName: character.name,
-      userMessage: message,
-    })
-
-    if (svetlanaBriefcaseResponse) {
-      finalResponseText = svetlanaBriefcaseResponse
-      finalTradeIntent = undefined
-    }
-
-    const briefcaseEventTag = getBriefcaseEventTag({
+    const shouldEmitBriefcaseEvent = getBriefcaseEventTag({
       characterName: character.name,
       userMessage: message,
       responseText: finalResponseText,
       gameEvents,
     })
-
-    if (briefcaseEventTag) {
-      finalResponseText = appendNpcEventTag(finalResponseText, {
-        characterName: character.name,
-        userMessage: message,
-        responseText: finalResponseText,
-        gameEvents,
-      })
-    }
 
     if (agentResponse.tradeIntent) {
       const validation = EconomicEngine.validateTradeDetailed({
@@ -1516,7 +1494,7 @@ export async function POST(request: NextRequest) {
         success: true,
         response: finalResponseText,
         action: agentResponse.action ?? null,
-        worldEvent: briefcaseEventTag ? 'BRIEFCASE_LOCATED' : null,
+        worldEvent: shouldEmitBriefcaseEvent ? 'BRIEFCASE_LOCATED' : null,
         characterId: character.id,
         npcName: character.name,
         tradeIntent: finalTradeIntent ?? null,

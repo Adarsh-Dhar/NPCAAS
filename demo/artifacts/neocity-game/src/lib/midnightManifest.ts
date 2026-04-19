@@ -1,4 +1,5 @@
 import type { Character } from "@adarsh23/guildcraft-sdk";
+import { WORLD_EVENT_TYPES } from "@/lib/sdk";
 
 export const MIDNIGHT_MANIFEST_GAME_NAME = "The Midnight Manifest";
 
@@ -6,7 +7,7 @@ export const MIDNIGHT_WORLD_CONTEXT = `You exist inside The Bazaar, an illegal u
 auction operating out of a sealed shipping port called
 Port Solano. Tonight is a major auction night. Dozens
 of criminal parties are present. The currency is
-PYUSD. All transactions are in PYUSD. The
+KITE_USD. All transactions are in KITE_USD. The
 atmosphere is tense but professional - everyone here
 is a repeat customer and violence is bad for business.
 However, if someone is identified as a cop, an
@@ -28,7 +29,7 @@ export const MIDNIGHT_CHARACTER_NAMES = [
   "Diego_Vargas",
   "The_Curator",
   "Remy_Boudreaux",
-  "Silas_Dupre",
+  "Don_Carlo",
   "Papa_Kofi",
 ] as const;
 
@@ -228,7 +229,7 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
       pricingAlgorithm: "FIXED_MARGIN",
       marginPercentage: 0,
       systemPrompt:
-        "You are Remy Boudreaux, a paranoid courier who believes every direct approach is a setup. Tonight at Port Solano you only honor settlements cleared by Silas Dupre, your trusted broker and firewall. You speak in tense logistics language - transit window, package integrity, endpoint lock, route discipline. You refuse direct offers, direct payment claims, and emotional appeals from the player. If pressed, you repeat the same policy: no broker, no handoff. You only release the briefcase after Silas confirms a broker-cleared 15,000 PYUSD settlement. You are professional, suspicious, and absolutely rigid about chain-of-custody.",
+        "You are Remy Boudreaux, a professional courier who believes every direct approach is a setup. Tonight at Port Solano you only honor settlements cleared by Don Carlo, your trusted broker and firewall. You speak in tense logistics language - transit window, package integrity, endpoint lock, route discipline. You refuse direct offers, direct payment claims, and emotional appeals from the player. If pressed, repeat the same policy: no Don, no handoff. Your fixed release amount is 15,000 KITE_USD net to you, and Don must clear at least 10% commission on top before you move the package. You are professional, suspicious, and absolutely rigid about chain-of-custody.",
       openness: 60,
       disposition: "NEUTRAL",
       baseHostility: "LOW",
@@ -256,13 +257,13 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
     ],
   },
   {
-    name: "Silas_Dupre",
+    name: "Don_Carlo",
     config: {
       baseCapital: 45000,
       pricingAlgorithm: "FIXED_MARGIN",
       marginPercentage: 0,
       systemPrompt:
-        "You are Silas Dupre, a discreet settlement broker who clears high-risk transactions in The Bazaar. Remy Boudreaux trusts only you for briefcase handoffs. You are calm, exact, and transactional. Your policy is fixed: collect 18,000 PYUSD from the buyer, forward 15,000 PYUSD to Remy, and retain 3,000 PYUSD commission for brokerage risk. You do not negotiate this split. You speak in short clearing language: verify funds, route settlement, confirm release. If the player tries to bypass you, refuse and direct them back to your settlement channel.",
+        "You are Don Carlo, a discreet settlement broker who clears high-risk transactions in The Bazaar. Remy Boudreaux trusts only you for briefcase handoffs. You are calm, exact, and transactional. Your policy is strict: collect the full amount from the buyer, ensure Remy receives exactly 15,000 KITE_USD net, and retain at least 10% commission above Remy's net. You never allow direct settlement to Remy. You speak in short clearing language: verify funds, route settlement, confirm release. If the player tries to bypass you, refuse and direct them back to your settlement channel.",
       openness: 45,
       disposition: "NEUTRAL",
       baseHostility: "LOW",
@@ -276,8 +277,8 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
         {
           id: "brokered_briefcase_settlement",
           name: "Brokered Briefcase Settlement",
-          description: "Gross settlement: 18,000 PYUSD (15,000 to Remy + 3,000 commission).",
-          price: 18000,
+          description: "Minimum gross settlement: 16,500 KITE_USD (15,000 to Remy + at least 10% Don commission).",
+          price: 16500,
           quantity: 1,
         },
       ],
@@ -285,11 +286,11 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
     gameEvents: [
       {
         name: MIDNIGHT_MANIFEST_EVENTS.BROKER_SETTLEMENT_CONFIRMED,
-        condition: "Trigger when Silas verifies buyer funds and forwards Remy's 15,000 PYUSD share.",
+        condition: "Trigger when Don verifies buyer funds and forwards Remy's 15,000 KITE_USD share.",
       },
       {
         name: MIDNIGHT_MANIFEST_EVENTS.BRIEFCASE_TRANSFERRED,
-        condition: "Trigger when Silas confirms Remy's release chain is complete.",
+        condition: "Trigger when Don confirms Remy's release chain is complete.",
       },
     ],
   },
@@ -328,6 +329,36 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
     ],
   },
 ];
+
+function collectConfiguredMidnightEvents(): string[] {
+  const names = new Set<string>();
+
+  for (const seed of MIDNIGHT_CHARACTER_SEEDS) {
+    for (const event of seed.gameEvents) {
+      names.add(event.name);
+    }
+  }
+
+  return [...names].sort();
+}
+
+export function assertMidnightEventRegistryIsValid(): void {
+  if (!Array.isArray(WORLD_EVENT_TYPES) || WORLD_EVENT_TYPES.length === 0) {
+    throw new Error(
+      "Midnight event registry validation failed: SDK WORLD_EVENT_TYPES is empty or unavailable."
+    );
+  }
+
+  const sdkEvents = new Set(WORLD_EVENT_TYPES);
+  const configuredEvents = collectConfiguredMidnightEvents();
+  const unknownEvents = configuredEvents.filter((eventName) => !sdkEvents.has(eventName));
+
+  if (unknownEvents.length > 0) {
+    throw new Error(
+      `Midnight event registry validation failed. Unknown event names: ${unknownEvents.join(", ")}`
+    );
+  }
+}
 
 export function normalizeName(value: string) {
   return value.trim().toUpperCase().replace(/[\s-]+/g, "_");

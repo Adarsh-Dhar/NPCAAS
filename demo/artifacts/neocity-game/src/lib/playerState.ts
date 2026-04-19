@@ -201,7 +201,28 @@ function notify() {
   }
 }
 
+function isSameInventory(
+  left: PlayerInventoryItem[],
+  right: PlayerInventoryItem[]
+) {
+  if (left.length !== right.length) return false
+
+  for (let index = 0; index < left.length; index += 1) {
+    const leftItem = left[index]
+    const rightItem = right[index]
+    if (leftItem.name !== rightItem.name || leftItem.quantity !== rightItem.quantity) {
+      return false
+    }
+  }
+
+  return true
+}
+
 export function setPlayerInventory(inventory: PlayerInventoryItem[]) {
+  if (isSameInventory(state.inventory, inventory)) {
+    return
+  }
+
   state = {
     ...state,
     inventory: inventory.map((item) => ({ ...item })),

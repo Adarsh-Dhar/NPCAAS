@@ -70,6 +70,20 @@ function shouldDisplayEvent(_event: WorldEvent) {
 }
 
 function getEventSignature(event: WorldEvent) {
+  if (event.sourceName === 'PLAYER_STATE' && event.actionType === 'MANIFEST_ACCEPTED') {
+    return 'PLAYER_STATE|MANIFEST_ACCEPTED'
+  }
+
+  if (event.sourceName === 'PLAYER_STATE' && event.actionType === 'INVENTORY_UPDATE') {
+    const payload = event.payload as Record<string, unknown>
+    return [
+      'PLAYER_STATE',
+      'INVENTORY_UPDATE',
+      JSON.stringify(payload.inventory ?? []),
+      String(payload.escrowFunded ?? false),
+    ].join('|')
+  }
+
   return [
     event.sourceId,
     event.sourceName,
@@ -319,9 +333,9 @@ export function WorldEventFeed() {
             : event.actionType === 'BRIEFCASE_LOCATED'
             ? 'Svetlana confirmed as briefcase holder'
             : event.actionType === 'BROKER_SETTLEMENT_CONFIRMED'
-            ? 'Silas cleared the broker settlement'
+            ? 'Don cleared the broker settlement'
             : event.actionType === 'BRIEFCASE_TRANSFERRED'
-            ? 'Silas released the package after settlement'
+            ? 'Don released the package after settlement'
             : event.actionType === 'SECURITY_ALERTED'
             ? 'Curator security detail mobilized'
             : event.actionType === 'ESCAPE_ROUTE_OPENED'

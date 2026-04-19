@@ -72,6 +72,16 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
     fs: { strict: true, deny: ["**/.*"] },
+    proxy: {
+      "/api/world-events": {
+        target: "http://localhost:3002",
+        changeOrigin: true,
+      },
+      "/api": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+    },
   },
   preview: { port, host: "0.0.0.0", allowedHosts: true },
 });

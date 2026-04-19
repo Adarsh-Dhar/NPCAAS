@@ -316,11 +316,11 @@ export class MainScene extends Phaser.Scene {
 
     const seeds: SceneNpc[] = [
       { id: charsByName.get("VINNIE_DELUCA")?.id ?? "vinnie", name: "Vinnie_DeLuca", x: 110, y: 150, label: "Dock Boss", color: 0x60a5fa, kind: "character" },
-      { id: charsByName.get("SVETLANA_MOROZOVA")?.id ?? "svetlana", name: "Svetlana_Morozova", x: 420, y: 155, label: "Arms Broker", color: 0x8b5cf6, kind: "character" },
-      { id: charsByName.get("DIEGO_VARGAS")?.id ?? "diego", name: "Diego_Vargas", x: 505, y: 350, label: "Narco Buyer", color: 0x3b82f6, kind: "character" },
+      { id: charsByName.get("SVETLANA_MOROZOVA")?.id ?? "svetlana", name: "Svetlana_Morozova", x: 250, y: 155, label: "Arms Broker", color: 0x8b5cf6, kind: "character" },
+      { id: charsByName.get("DIEGO_VARGAS")?.id ?? "diego", name: "Diego_Vargas", x: 285, y: 350, label: "Narco Buyer", color: 0x3b82f6, kind: "character" },
       { id: charsByName.get("THE_CURATOR")?.id ?? "curator", name: "The_Curator", x: 760, y: 140, label: "Acquirer", color: 0xa78bfa, kind: "character" },
       { id: charsByName.get("REMY_BOUDREAUX")?.id ?? "remy", name: "Remy_Boudreaux", x: 640, y: 360, label: "Courier", color: 0x60a5fa, kind: "character" },
-      { id: charsByName.get("SILAS_DUPRE")?.id ?? "silas", name: "Silas_Dupre", x: 585, y: 282, label: "Settlement Broker", color: 0x22d3ee, kind: "character" },
+      { id: charsByName.get("DON_CARLO")?.id ?? "don", name: "Don_Carlo", x: 585, y: 282, label: "Settlement Broker", color: 0x22d3ee, kind: "character" },
       { id: charsByName.get("PAPA_KOFI")?.id ?? "kofi", name: "Papa_Kofi", x: 700, y: 515, label: "Port Authority", color: 0x8b5cf6, kind: "character" },
       { id: "terminal", name: "Manifest_Terminal", x: 230, y: 500, label: "Warehouse Terminal", color: 0x3b82f6, kind: "terminal" },
       { id: "bodyguard", name: "Svetlana_Bodyguard", x: 455, y: 200, label: "Bodyguard", color: 0x94a3b8, kind: "bodyguard" },
@@ -416,11 +416,11 @@ export class MainScene extends Phaser.Scene {
       this.tryCompleteMission();
     }
 
-    if (this.phase === 3 && normalized === "SILAS_DUPRE" && !this.briefcaseTransferred) {
+    if (this.phase === 3 && normalized === "DON_CARLO" && !this.briefcaseTransferred) {
       this.briefcaseTransferred = true;
       patchMissionState({ briefcaseTransferred: true }, "BRIEFCASE_TRANSFERRED");
       emitPlayerEvent("BRIEFCASE_TRANSFERRED");
-      this.showBroadcast("SILAS", "Settlement cleared. Remy released the package.");
+      this.showBroadcast("DON", "Settlement cleared. Remy released the package.");
       this.tryCompleteMission();
     }
 
@@ -490,7 +490,7 @@ export class MainScene extends Phaser.Scene {
       this.remyInTransit = true;
       patchMissionState({ phase: 3, frenzyActive: true }, "PHASE_3_STARTED");
       this.unlockBarrier(this.zoneBarrierB);
-      this.showBroadcast("PHASE 3", "Frenzy started. Intercept Silas before broker release.");
+      this.showBroadcast("PHASE 3", "Frenzy started. Intercept Don before broker release.");
     }
   }
 
@@ -728,7 +728,7 @@ export class MainScene extends Phaser.Scene {
     }
 
     if (this.remyInTransit && this.phase === 3 && !this.artifactIntercepted) {
-      const broker = this.npcs.find((npc) => normalizeNpcName(npc.data.name) === "SILAS_DUPRE");
+      const broker = this.npcs.find((npc) => normalizeNpcName(npc.data.name) === "DON_CARLO");
       if (broker) {
         const t = this.time.now / 1000;
         broker.container.x = 620 + Math.cos(t * 1.3) * 105;

@@ -31,7 +31,7 @@
 const { test, describe, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const { GuildCraftClient, GuildCraftError } = require('../sdk/index.js')
-const { appendNpcEventTag } = require('../lib/npc-event-tags.js')
+const { shouldForceBriefcaseLocatedEvent } = require('../lib/npc-event-tags.js')
 
 // ---------------------------------------------------------------------------
 // Config
@@ -412,20 +412,27 @@ describe('5 · Chat API', () => {
     assert.ok('action' in body, 'action field should be in response')
   })
 
-  test('BRIEFCASE_LOCATED helper forces Svetlana acknowledgement tags', () => {
-    const tagged = appendNpcEventTag('It is not your concern. The briefcase is mine.', {
+  test('BRIEFCASE_LOCATED guardrail stays strict for helper logic', () => {
+    const shouldEmitWithEvent = shouldForceBriefcaseLocatedEvent({
       characterName: 'Svetlana_Morozova',
-      userMessage: 'I noticed you are carrying a gold briefcase. Is that part of the munitions deal with Diego, or something else?',
-      responseText: 'It is not your concern. The briefcase is mine.',
+      userMessage: 'What is inside the briefcase?',
+      responseText: 'The briefcase is part of an active transfer.',
       gameEvents: [
         {
           name: 'BRIEFCASE_LOCATED',
-          condition: 'Trigger when the player asks about the gold briefcase and Svetlana mentions it.',
+          condition: 'Trigger when Svetlana confirms the briefcase context.',
         },
       ],
     })
+    assert.equal(shouldEmitWithEvent, true)
 
-    assert.match(tagged, /\[\[EVENT:BRIEFCASE_LOCATED\]\]/)
+    const shouldEmitWithoutEvent = shouldForceBriefcaseLocatedEvent({
+      characterName: 'Svetlana_Morozova',
+      userMessage: 'What is inside the briefcase?',
+      responseText: 'The briefcase is part of an active transfer.',
+      gameEvents: [],
+    })
+    assert.equal(shouldEmitWithoutEvent, false)
   })
 
   test('POST /api/chat — low openness increases hostility response rigidity', async () => {

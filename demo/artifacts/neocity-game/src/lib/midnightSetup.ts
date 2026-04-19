@@ -1,5 +1,6 @@
 import { clearCharacterCache, getClient, isSdkReady } from "@/lib/sdk";
 import {
+  assertMidnightEventRegistryIsValid,
   MIDNIGHT_CHARACTER_SEEDS,
   MIDNIGHT_MANIFEST_GAME_NAME,
   MIDNIGHT_WORLD_CONTEXT,
@@ -97,6 +98,8 @@ export async function ensureMidnightManifestSetup() {
   if (setupPromise) return setupPromise;
 
   setupPromise = (async () => {
+    assertMidnightEventRegistryIsValid();
+
     const bootstrapClient = requireSetupClient();
     const game = await findOrCreateGame(bootstrapClient);
 

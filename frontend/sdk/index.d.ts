@@ -63,6 +63,7 @@ export interface StreamEvent {
     text: string
     action?: string
     tradeIntent?: TradeIntent
+    worldEvent?: string | null
   }
 }
 

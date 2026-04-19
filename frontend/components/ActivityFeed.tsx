@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useState } from 'react'
 
 interface Activity {
   id: string
@@ -10,85 +10,55 @@ interface Activity {
   action: string
 }
 
-const mockActivities: Activity[] = [
-  {
-    id: '1',
-    timestamp: '08:14:02',
-    agent: 'Thorin',
-    role: 'Blacksmith',
-    action: 'executed Swap: 10 PYUSD for 5 Iron Ore',
-  },
-  {
-    id: '2',
-    timestamp: '08:16:45',
-    agent: 'Elara',
-    role: 'Merchant',
-    action: 'called function: craftPotion(). Gas Sponsored',
-  },
-  {
-    id: '3',
-    timestamp: '08:22:11',
-    agent: 'Guard_01',
-    role: 'Sentinel',
-    action: 'updated pricing algorithm based on low inventory',
-  },
-  {
-    id: '4',
-    timestamp: '08:25:33',
-    agent: 'Mage_Crystal',
-    role: 'Enchanter',
-    action: 'executed Trade: 100 Mana Crystals for 250 Gold',
-  },
-  {
-    id: '5',
-    timestamp: '08:31:17',
-    agent: 'Zephyr',
-    role: 'Scout',
-    action: 'discovered new market: Rare Herb Vendor at coords [42, 156]',
-  },
-  {
-    id: '6',
-    timestamp: '08:38:22',
-    agent: 'Thorin',
-    role: 'Blacksmith',
-    action: 'approved PayMaster sponsorship for batch transaction (gas: 0.45 PYUSD)',
-  },
-  {
-    id: '7',
-    timestamp: '08:45:09',
-    agent: 'Elara',
-    role: 'Merchant',
-    action: 'negotiated bulk deal: 500 units @ 8.5 PYUSD each',
-  },
-  {
-    id: '8',
-    timestamp: '08:52:44',
-    agent: 'Guard_01',
-    role: 'Sentinel',
-    action: 'detected suspicious activity: initiated fraud detection protocol',
-  },
-  {
-    id: '9',
-    timestamp: '09:01:15',
-    agent: 'Mage_Crystal',
-    role: 'Enchanter',
-    action: 'created NFT enchantment: "Blade of the Lost King" for 0xA2f8...',
-  },
-  {
-    id: '10',
-    timestamp: '09:08:33',
-    agent: 'Zephyr',
-    role: 'Scout',
-    action: 'completed mission: gathered intel on competitor pricing strategies',
-  },
-]
+interface NpcSystemEventDetail {
+  eventName?: string
+  npcName?: string
+}
+
+const MAX_EVENTS = 50
+
+function toTimestamp(date: Date): string {
+  return date.toTimeString().slice(0, 8)
+}
+
+function describeEvent(eventName: string): string {
+  if (eventName === 'BRIEFCASE_LOCATED') {
+    return 'briefcase location confirmed'
+  }
+  if (eventName === 'BRIEFCASE_TRANSFERRED') {
+    return 'briefcase transfer confirmed'
+  }
+  return eventName.replace(/_/g, ' ').toLowerCase()
+}
 
 export default function ActivityFeed() {
-  // Reverse to show newest first
-  const sortedActivities = useMemo(
-    () => [...mockActivities].reverse(),
-    []
-  )
+  const [activities, setActivities] = useState<Activity[]>([])
+
+  useEffect(() => {
+    const handleNpcSystemEvent = (event: Event) => {
+      const detail = (event as CustomEvent<NpcSystemEventDetail>).detail
+      if (!detail?.eventName) return
+
+      const now = new Date()
+      const agentName = typeof detail.npcName === 'string' && detail.npcName.trim()
+        ? detail.npcName
+        : 'SYSTEM'
+
+      setActivities((prev) => [
+        {
+          id: `${now.getTime()}-${detail.eventName}`,
+          timestamp: toTimestamp(now),
+          agent: agentName,
+          role: 'World Event',
+          action: describeEvent(detail.eventName),
+        },
+        ...prev,
+      ].slice(0, MAX_EVENTS))
+    }
+
+    window.addEventListener('NPC_SYSTEM_EVENT', handleNpcSystemEvent)
+    return () => window.removeEventListener('NPC_SYSTEM_EVENT', handleNpcSystemEvent)
+  }, [])
 
   return (
     <div className="border-4 border-blue-400 bg-black rounded-none max-h-96 overflow-y-auto">
@@ -104,7 +74,7 @@ export default function ActivityFeed() {
 
       {/* Activity Rows */}
       <div className="space-y-0">
-        {sortedActivities.map((activity, idx) => (
+        {activities.map((activity, idx) => (
           <div
             key={activity.id}
             className={`px-4 py-3 border-b border-gray-700 ${
@@ -133,7 +103,7 @@ export default function ActivityFeed() {
       {/* Footer */}
       <div className="sticky bottom-0 bg-black border-t-4 border-blue-400 px-4 py-2">
         <p className="text-xs text-blue-400 font-mono">
-          {sortedActivities.length} recent events • live monitoring enabled
+          {activities.length} recent events • live monitoring enabled
         </p>
       </div>
     </div>

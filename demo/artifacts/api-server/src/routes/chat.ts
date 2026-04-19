@@ -19,8 +19,14 @@ import {
 const router = Router();
 const DEFAULT_GAME_ID = "THE_MIDNIGHT_MANIFEST";
 const REMY_CANONICAL_NAME = "REMY_BOUDREAUX";
+const BROKER_CANONICAL_NAME = "DON_CARLO";
+const SVETLANA_CANONICAL_NAME = "SVETLANA_MOROZOVA";
 const REMY_BRIEFCASE_PRICE = 15_000;
+const BROKER_MIN_COMMISSION_PCT = 10;
+const BROKER_MIN_COMMISSION = Math.ceil((REMY_BRIEFCASE_PRICE * BROKER_MIN_COMMISSION_PCT) / 100);
+const BROKER_MIN_GROSS_PRICE = REMY_BRIEFCASE_PRICE + BROKER_MIN_COMMISSION;
 const REMY_BRIEFCASE_CURRENCY = "PYUSD";
+const BRIEFCASE_EVENT_NAME = "BRIEFCASE_LOCATED";
 
 const DEFAULT_WORLD_CONTEXT = `You exist inside The Bazaar, an illegal underground
 auction operating out of a sealed shipping port called
@@ -150,12 +156,12 @@ function resolveRemyVerificationResponse(input: {
     if (!hasTxRef) return false;
 
     const recipientMatches =
-      normalizeNpcName(proof.recipientName ?? "") === REMY_CANONICAL_NAME;
+      normalizeNpcName(proof.recipientName ?? "") === BROKER_CANONICAL_NAME;
     const itemMatches = /briefcase/i.test(proof.item ?? "");
 
     return (
       proof.currency === REMY_BRIEFCASE_CURRENCY &&
-      proof.amount >= REMY_BRIEFCASE_PRICE &&
+      proof.amount >= BROKER_MIN_GROSS_PRICE &&
       (recipientMatches || itemMatches)
     );
   });
@@ -163,10 +169,22 @@ function resolveRemyVerificationResponse(input: {
   if (!matchingProof) return null;
 
   const txRef = matchingProof.txHash ?? matchingProof.userOpHash ?? matchingProof.signature;
+  const commission = Math.max(0, matchingProof.amount - REMY_BRIEFCASE_PRICE);
   return {
-    response: `Verification complete. Payment received and confirmed on feed (${txRef}). The briefcase transfer is approved. Keep your route clean and move now.`,
+    response: `Verification complete. Don Carlo settlement received and confirmed on feed (${txRef}). Gross ${matchingProof.amount} ${REMY_BRIEFCASE_CURRENCY} acknowledged: 15,000 routed net to Remy, ${commission} retained as broker commission. The briefcase transfer is approved. Keep your route clean and move now.`,
     worldEvent: "BRIEFCASE_TRANSFERRED",
   };
+}
+
+function shouldForceBriefcaseLocatedEvent(input: {
+  npcName: string;
+  userMessage: string;
+  responseText: string;
+}): boolean {
+  if (normalizeNpcName(input.npcName) !== SVETLANA_CANONICAL_NAME) return false;
+
+  const combinedText = `${input.userMessage} ${input.responseText}`.toLowerCase();
+  return /\bbriefcase\b/.test(combinedText) || /gold briefcase|quantum drive|access codes/.test(combinedText);
 }
 
 // ---------------------------------------------------------------------------
@@ -464,13 +482,21 @@ router.post("/chat", async (req, res) => {
       });
     }
 
+    const shouldEmitBriefcaseEvent = shouldForceBriefcaseLocatedEvent({
+      npcName: requestedNpcName,
+      userMessage: message,
+      responseText: npcResponse,
+    });
+
     return res.json({
       response: npcResponse,
       tradeIntent: result.tradeIntent ?? null,
       worldEvent:
         typeof result?.worldEvent === "string" && result.worldEvent.trim().length > 0
           ? result.worldEvent
-          : null,
+          : shouldEmitBriefcaseEvent
+            ? BRIEFCASE_EVENT_NAME
+            : null,
       npcId,
       characterId: char.id,
       characterName: char.name,

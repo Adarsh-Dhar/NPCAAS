@@ -108,6 +108,18 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
           },
         ])
 
+        if (data.worldEvent) {
+          window.dispatchEvent(
+            new CustomEvent('NPC_SYSTEM_EVENT', {
+              detail: {
+                eventName: data.worldEvent,
+                npcName: data.npcName,
+                characterId: data.characterId ?? characterId,
+              },
+            })
+          )
+        }
+
         if (data.tradeIntent) {
           setTransactionState((prev) => ({
             ...prev,
