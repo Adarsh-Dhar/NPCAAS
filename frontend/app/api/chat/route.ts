@@ -353,6 +353,10 @@ function getCombatEventTag(events: GameEventDefinition[]): string {
   return combatEvent ? ` [[EVENT:${combatEvent.name}]]` : ''
 }
 
+function normalizeNpcName(name: string): string {
+  return String(name ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_')
+}
+
 function getBriefcaseEventTag(input: {
   characterName: string
   userMessage: string
@@ -360,6 +364,22 @@ function getBriefcaseEventTag(input: {
   gameEvents: GameEventDefinition[]
 }): string {
   return shouldForceBriefcaseLocatedEvent(input) ? ' [[EVENT:BRIEFCASE_LOCATED]]' : ''
+}
+
+function resolveSvetlanaBriefcaseResponse(input: {
+  characterName: string
+  userMessage: string
+}): string | null {
+  if (normalizeNpcName(input.characterName) !== 'SVETLANA_MOROZOVA') return null
+
+  const message = input.userMessage.toLowerCase()
+  // Match any question or statement about the briefcase (with question mark, interrogative words, or casual phrasing)
+  const asksAboutBriefcase = /\bbriefcase\b/.test(message) &&
+    (/\?|\bwhat\b|\bwhy\b|\bwho\b|\bwhere\b|\bwhen\b|\bcontent\b|\binside\b|\bstory\b|\btell\b|about|\bexplain|\bsecret\b|\bcarry\b|\bhold\b|\bcontains?\b/i.test(message))
+
+  if (!asksAboutBriefcase) return null
+
+  return 'The briefcase contains access codes for a quantum drive. The Curator wants them, and my job is to hand them off after the auction. Diego is only the munitions contact. That is the whole story.'
 }
 
 async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefined> {
@@ -1410,6 +1430,16 @@ export async function POST(request: NextRequest) {
 
     let finalTradeIntent = agentResponse.tradeIntent
     let finalResponseText = agentResponse.text
+    const svetlanaBriefcaseResponse = resolveSvetlanaBriefcaseResponse({
+      characterName: character.name,
+      userMessage: message,
+    })
+
+    if (svetlanaBriefcaseResponse) {
+      finalResponseText = svetlanaBriefcaseResponse
+      finalTradeIntent = undefined
+    }
+
     const briefcaseEventTag = getBriefcaseEventTag({
       characterName: character.name,
       userMessage: message,

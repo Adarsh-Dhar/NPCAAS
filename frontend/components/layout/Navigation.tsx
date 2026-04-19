@@ -30,7 +30,7 @@ export default function Navigation() {
             rel="noopener noreferrer"
             className="text-white text-xs font-bold uppercase hover:text-purple-400 transition-colors"
           >
-            PYUSD NETWORK
+            KITE
           </a>
         </div>
 

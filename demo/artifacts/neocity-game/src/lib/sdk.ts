@@ -8,8 +8,7 @@ import type { Character } from "@adarsh23/guildcraft-sdk";
 export type { Character } from "@adarsh23/guildcraft-sdk";
 import { normalizeNpcName } from '@/lib/protocolBabel'
 
-const DEMO_FALLBACK_API_KEY = "gc_live_c814f7a2fac63fce275b4298b5949e6d";
-const DEMO_FALLBACK_BASE_URL = "https://your-deployed-guildcraft-app.com/api";
+const DEMO_FALLBACK_BASE_URL = "/api";
 
 // ---------------------------------------------------------------------------
 // CJS interop — use ESM `import` and normalise CommonJS default exports
@@ -57,19 +56,19 @@ function getRuntimeApiKey(): string | undefined {
   }
   const viteKey = (import.meta.env?.VITE_GC_API_KEY as string | undefined) ?? undefined;
   if (viteKey) return viteKey;
-  return DEMO_FALLBACK_API_KEY;
+  return undefined;
 }
 
 function getRuntimeBaseUrl(): string {
   if (typeof window !== "undefined") {
     const windowBase = (window as any).__VITE_GC_BASE_URL as string | null;
-    if (typeof windowBase === 'string' && /^https?:\/\//i.test(windowBase)) {
+    if (typeof windowBase === 'string' && (/^https?:\/\//i.test(windowBase) || windowBase.startsWith('/'))) {
       return windowBase.replace(/\/$/, '');
     }
   }
 
   const viteBase = (import.meta.env?.VITE_GC_BASE_URL as string | undefined) ?? undefined;
-  if (typeof viteBase === 'string' && /^https?:\/\//i.test(viteBase)) {
+  if (typeof viteBase === 'string' && (/^https?:\/\//i.test(viteBase) || viteBase.startsWith('/'))) {
     return viteBase.replace(/\/$/, '');
   }
 
@@ -96,6 +95,7 @@ let _clientKey: string | null = null;
 class HttpGuildCraftClient {
   apiKey: string
   baseUrl: string
+  private didFallbackToProxy = false
   private static readonly CHAT_STREAM_TIMEOUT_MS = 30_000
   constructor(apiKey: string, baseUrl = DEMO_FALLBACK_BASE_URL) {
     this.apiKey = apiKey
@@ -116,22 +116,22 @@ class HttpGuildCraftClient {
       return fetch(url, { ...options, headers })
     }
 
-    let res = await fetchOnce(this.baseUrl)
+    let res: Response
+    try {
+      res = await fetchOnce(this.baseUrl)
+    } catch (error) {
+      if (typeof window !== 'undefined' && this.baseUrl !== '/api' && !this.didFallbackToProxy) {
+        this.didFallbackToProxy = true
+        this.baseUrl = '/api'
+        console.warn(`[GuildCraft] Network error against configured base URL. Falling back to ${this.baseUrl}.`, error)
+        res = await fetchOnce(this.baseUrl)
+      } else {
+        throw error
+      }
+    }
 
     console.log(`[GuildCraft] Response status:`, res.status)
     let body = await res.json().catch(() => ({}))
-
-    // If a stale key is present, auto-recover once with the known demo fallback key.
-    const invalidApiKey =
-      res.status === 401 &&
-      typeof body?.error === 'string' &&
-      body.error.toLowerCase().includes('invalid api key')
-    if (invalidApiKey && this.apiKey !== DEMO_FALLBACK_API_KEY) {
-      console.warn('[GuildCraft] Invalid API key detected. Retrying with demo fallback key.')
-      this.apiKey = DEMO_FALLBACK_API_KEY
-      res = await fetchOnce(this.baseUrl)
-      body = await res.json().catch(() => ({}))
-    }
 
     if (!res.ok) {
       console.error(`[GuildCraft] ❌ API Error:`, body)
@@ -233,9 +233,8 @@ class HttpGuildCraftClient {
       controller.abort()
     }, HttpGuildCraftClient.CHAT_STREAM_TIMEOUT_MS)
 
-    let res: Response
-    try {
-      res = await fetch(`${this.baseUrl}/chat/stream`, {
+    const fetchOnce = async (baseUrl: string) => {
+      return fetch(`${baseUrl}/chat/stream`, {
         method: 'POST',
         headers: this._authHeaders(),
         body: JSON.stringify({
@@ -249,16 +248,27 @@ class HttpGuildCraftClient {
         }),
         signal: controller.signal,
       })
+    }
+
+    let res: Response
+    try {
+      res = await fetchOnce(this.baseUrl)
     } catch (err) {
-      clearTimeout(timeoutId)
-      if (err instanceof Error && err.name === 'AbortError') {
-        throw new GuildCraftError(
-          `Chat stream timed out after ${HttpGuildCraftClient.CHAT_STREAM_TIMEOUT_MS / 1000}s`,
-          504,
-          null
-        )
+      if (typeof window !== 'undefined' && this.baseUrl !== '/api' && !this.didFallbackToProxy) {
+        this.didFallbackToProxy = true
+        this.baseUrl = '/api'
+        console.warn(`[GuildCraft] Network error against configured base URL. Falling back to ${this.baseUrl}.`, err)
+        res = await fetchOnce(this.baseUrl)
       }
-      throw err
+        clearTimeout(timeoutId)
+        if (err instanceof Error && err.name === 'AbortError') {
+          throw new GuildCraftError(
+            `Chat stream timed out after ${HttpGuildCraftClient.CHAT_STREAM_TIMEOUT_MS / 1000}s`,
+            504,
+            null
+          )
+        }
+        throw err
     }
 
     if (!res.ok) {

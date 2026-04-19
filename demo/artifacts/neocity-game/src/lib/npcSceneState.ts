@@ -1,4 +1,4 @@
-import type { Character } from '../../../../../frontend/sdk'
+import type { Character } from '@adarsh23/guildcraft-sdk'
 
 type SceneCharactersListener = (characters: Character[]) => void
 

@@ -1,6 +1,6 @@
 /**
  * GuildCraft SDK (internal TypeScript copy)
- * The published npm package (frontend/sdk/) is the canonical JS version.
+ * The published npm package (@adarsh23/guildcraft-sdk) is the canonical JS version.
  * This file keeps the internal server-side types in sync.
  */
 

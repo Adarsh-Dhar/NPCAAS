@@ -1,4 +1,4 @@
-import { clearCharacterCache } from "@/lib/sdk";
+import { clearCharacterCache, getClient, isSdkReady } from "@/lib/sdk";
 import {
   MIDNIGHT_CHARACTER_SEEDS,
   MIDNIGHT_MANIFEST_GAME_NAME,
@@ -9,7 +9,7 @@ import {
 type ProjectRecord = {
   id: string;
   name: string;
-  apiKey: string;
+  apiKey?: string;
   globalContext?: string | null;
 };
 
@@ -19,45 +19,34 @@ type CharacterRecord = {
 };
 
 let setupPromise: Promise<{ gameId: string; apiKey: string }> | null = null;
-
-async function requestJson<T>(input: RequestInfo, init?: RequestInit) {
-  const response = await fetch(input, init);
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    const message = typeof payload.error === "string" ? payload.error : `HTTP ${response.status}`;
-    throw new Error(message);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function requireSetupClient(): any {
+  if (!isSdkReady()) {
+    throw new Error("GuildCraft SDK is not configured. Set VITE_GC_API_KEY and VITE_GC_BASE_URL.");
   }
-  return (await response.json()) as T;
+
+  const client = getClient();
+  if (!client) {
+    throw new Error("GuildCraft client is unavailable.");
+  }
+
+  return client;
 }
 
-async function findOrCreateGame(): Promise<ProjectRecord> {
-  const games = await requestJson<ProjectRecord[]>("/api/games");
+async function findOrCreateGame(client: any): Promise<ProjectRecord> {
+  const games = (await client.getGames()) as ProjectRecord[];
   const existing = games.find((game) => normalizeName(game.name) === normalizeName(MIDNIGHT_MANIFEST_GAME_NAME));
   if (existing) return existing;
 
-  return requestJson<ProjectRecord>("/api/games", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: MIDNIGHT_MANIFEST_GAME_NAME }),
-  });
+  return (await client.createGame(MIDNIGHT_MANIFEST_GAME_NAME)) as ProjectRecord;
 }
 
-async function ensureGlobalContext(gameId: string) {
-  await requestJson<ProjectRecord>(`/api/projects/${encodeURIComponent(gameId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ globalContext: MIDNIGHT_WORLD_CONTEXT }),
-  });
-}
-
-async function loadCharacters(apiKey: string) {
-  return requestJson<CharacterRecord[]>("/api/characters", {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
+async function loadCharacters(client: any) {
+  return (await client.getCharacters()) as CharacterRecord[];
 }
 
 async function createCharacter(
-  apiKey: string,
+  client: any,
   payload: {
     name: string;
     config: Record<string, unknown>;
@@ -65,18 +54,21 @@ async function createCharacter(
     gameIds: string[];
   }
 ) {
-  return requestJson<{ character: CharacterRecord }>("/api/characters", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  const characterConfig = {
+    ...payload.config,
+    gameEvents: payload.gameEvents,
+    worldContext: MIDNIGHT_WORLD_CONTEXT,
+  };
+
+  return (await client.deployCharacter({
+    name: payload.name,
+    config: characterConfig,
+    gameIds: payload.gameIds,
+  })) as { character: CharacterRecord };
 }
 
 async function updateCharacter(
-  apiKey: string,
+  client: any,
   payload: {
     characterId: string;
     name: string;
@@ -84,35 +76,38 @@ async function updateCharacter(
     gameEvents: Array<{ name: string; condition: string }>;
   }
 ) {
-  await requestJson("/api/characters", {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(payload),
+  const characterConfig = {
+    ...payload.config,
+    gameEvents: payload.gameEvents,
+    worldContext: MIDNIGHT_WORLD_CONTEXT,
+  };
+
+  await client.updateCharacter({
+    characterId: payload.characterId,
+    name: payload.name,
+    config: characterConfig,
   });
 }
 
-async function assignCharacters(apiKey: string, gameId: string, characterIds: string[]) {
-  await requestJson(`/api/games/${encodeURIComponent(gameId)}/characters`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({ characterIds }),
-  });
+async function assignCharacters(client: any, gameId: string, characterIds: string[]) {
+  await client.assignCharactersToGame(gameId, characterIds);
 }
 
 export async function ensureMidnightManifestSetup() {
   if (setupPromise) return setupPromise;
 
   setupPromise = (async () => {
-    const game = await findOrCreateGame();
-    await ensureGlobalContext(game.id);
+    const bootstrapClient = requireSetupClient();
+    const game = await findOrCreateGame(bootstrapClient);
 
-    const existing = await loadCharacters(game.apiKey);
+    if (game.apiKey) {
+      (window as Window & { __VITE_GC_API_KEY?: string }).__VITE_GC_API_KEY = game.apiKey;
+      clearCharacterCache();
+    }
+
+    const client = requireSetupClient();
+
+    const existing = await loadCharacters(client);
     const existingByName = new Map(existing.map((character) => [normalizeName(character.name), character]));
 
     const characterIds: string[] = [];
@@ -121,7 +116,7 @@ export async function ensureMidnightManifestSetup() {
       const matched = existingByName.get(normalizeName(seed.name));
 
       if (matched) {
-        await updateCharacter(game.apiKey, {
+        await updateCharacter(client, {
           characterId: matched.id,
           name: seed.name,
           config: seed.config,
@@ -131,7 +126,7 @@ export async function ensureMidnightManifestSetup() {
         continue;
       }
 
-      const created = await createCharacter(game.apiKey, {
+      const created = await createCharacter(client, {
         name: seed.name,
         config: seed.config,
         gameEvents: seed.gameEvents,
@@ -140,14 +135,16 @@ export async function ensureMidnightManifestSetup() {
       characterIds.push(created.character.id);
     }
 
-    await assignCharacters(game.apiKey, game.id, characterIds);
+    await assignCharacters(client, game.id, characterIds);
 
-    // Point demo SDK runtime key to this game and reset cached characters.
-    (window as Window & { __VITE_GC_API_KEY?: string }).__VITE_GC_API_KEY = game.apiKey;
     clearCharacterCache();
 
-    return { gameId: game.id, apiKey: game.apiKey };
-  })();
+    const activeKey = (window as Window & { __VITE_GC_API_KEY?: string }).__VITE_GC_API_KEY ?? "";
+    return { gameId: game.id, apiKey: activeKey };
+  })().catch((error) => {
+    setupPromise = null
+    throw error
+  })
 
   return setupPromise;
 }

@@ -123,6 +123,24 @@ function getBriefcaseEventTag(input: {
   return shouldForceBriefcaseLocatedEvent(input) ? ' [[EVENT:BRIEFCASE_LOCATED]]' : ''
 }
 
+function resolveSvetlanaBriefcaseResponse(input: {
+  characterName: string
+  userMessage: string
+}): string | null {
+  if (String(input.characterName ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_') !== 'SVETLANA_MOROZOVA') {
+    return null
+  }
+
+  const message = input.userMessage.toLowerCase()
+  // Match any question or statement about the briefcase (with question mark, interrogative words, or casual phrasing)
+  const asksAboutBriefcase = /\bbriefcase\b/.test(message) &&
+    (/\?|\bwhat\b|\bwhy\b|\bwho\b|\bwhere\b|\bwhen\b|\bcontent\b|\binside\b|\bstory\b|\btell\b|about|\bexplain|\bsecret\b|\bcarry\b|\bhold\b|\bcontains?\b/i.test(message))
+
+  if (!asksAboutBriefcase) return null
+
+  return 'The briefcase contains access codes for a quantum drive. The Curator wants them, and my job is to hand them off after the auction. Diego is only the munitions contact. That is the whole story.'
+}
+
 function toCharacterConfig(value: unknown): CharacterConfig {
   const config = asRecord(value)
   const rawFaction = config.factionId ?? config.factions
@@ -682,6 +700,16 @@ export async function POST(request: NextRequest) {
           }
 
           if (parsed.type === 'done' && parsed.final?.text) {
+            const svetlanaBriefcaseResponse = resolveSvetlanaBriefcaseResponse({
+              characterName: character.name,
+              userMessage: message,
+            })
+
+            if (svetlanaBriefcaseResponse) {
+              parsed.final.text = svetlanaBriefcaseResponse
+              parsed.final.tradeIntent = undefined
+            }
+
             const briefcaseEventTag = getBriefcaseEventTag({
               characterName: character.name,
               userMessage: message,
