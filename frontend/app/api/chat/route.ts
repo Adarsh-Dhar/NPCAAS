@@ -16,6 +16,11 @@ import {
 } from '@/lib/npc-inventory'
 import { buildTeeGateResult } from '@/lib/tee-gate'
 import { appendNpcEventTag, shouldForceBriefcaseLocatedEvent } from '@/lib/npc-event-tags'
+import {
+  normalizeAdaptationState,
+  normalizeCharacterConfig,
+  toCanonicalSection2Profile,
+} from '@/lib/character-config'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -300,7 +305,7 @@ async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefin
 }
 
 function toCharacterConfig(value: unknown): CharacterConfig {
-  const payload = asRecord(value)
+  const payload = normalizeCharacterConfig(value)
   const rawFaction = payload.factionId ?? payload.factions
   const factionId = typeof rawFaction === 'string' && rawFaction.trim() ? rawFaction.trim() : undefined
 
@@ -330,11 +335,8 @@ function getTeeTrustScore(teeEnabled: boolean): number {
 }
 
 function toAdaptationMemory(value: unknown): AdaptationMemory {
-  const payload = asRecord(value)
-  const pendingSection2 = asRecord(payload.pendingSection2)
-  const hasPendingSection2 =
-    typeof pendingSection2.systemPrompt === 'string' &&
-    typeof pendingSection2.openness === 'number'
+  const payload = normalizeAdaptationState({ adaptation: value, config: {} })
+  const pendingSection2 = toCanonicalSection2Profile(payload.pendingSection2)
   return {
     specializationActive: Boolean(payload.specializationActive),
     turnCount: typeof payload.turnCount === 'number' ? payload.turnCount : 0,
@@ -345,9 +347,7 @@ function toAdaptationMemory(value: unknown): AdaptationMemory {
       typeof payload.summary === 'string' && payload.summary.trim()
         ? payload.summary
         : 'No adaptation history yet.',
-    pendingSection2: hasPendingSection2
-      ? { systemPrompt: pendingSection2.systemPrompt as string, openness: pendingSection2.openness as number }
-      : undefined,
+    pendingSection2,
     lastUpdatedAt:
       typeof payload.lastUpdatedAt === 'string' ? payload.lastUpdatedAt : new Date().toISOString(),
   }
@@ -582,6 +582,7 @@ export async function POST(request: NextRequest) {
     }
 
     const config = toCharacterConfig(character.config)
+    const persistedConfig = normalizeCharacterConfig(character.config)
     const parsedPaymentProofs = parsePaymentProofs(recentPaymentProofs)
     const gameEvents = parseGameEvents(character.gameEvents)
     const adaptation = toAdaptationMemory(character.adaptation)
@@ -666,11 +667,11 @@ export async function POST(request: NextRequest) {
     // Section 2 activation
     if (isActivationMessage(message) && adaptation.pendingSection2) {
       const appliedProfile = adaptation.pendingSection2
-      const nextConfig = {
-        ...config,
+      const nextConfig = normalizeCharacterConfig({
+        ...persistedConfig,
         systemPrompt: appliedProfile.systemPrompt,
         openness: appliedProfile.openness,
-      }
+      })
       const nextAdaptation = {
         ...adaptation,
         specializationActive: true,

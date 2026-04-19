@@ -7,6 +7,10 @@ import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@/lib/generated/prisma/client'
 import { TreasuryService } from '@/lib/treasury'
 import { buildTeeGateResult } from '@/lib/tee-gate'
+import {
+  normalizeAdaptationState,
+  normalizeCharacterConfig,
+} from '@/lib/character-config'
 
 type GameEventDefinition = {
   name: string
@@ -75,7 +79,7 @@ function resolveGameEvents(name: string, value: unknown): GameEventDefinition[] 
 }
 
 function getBaseCapital(config: unknown): number {
-  const payload = asRecord(config)
+  const payload = normalizeCharacterConfig(config)
   const raw = payload.baseCapital ?? payload.capital
   if (typeof raw === 'number' && Number.isFinite(raw)) return raw
   if (typeof raw === 'string') {
@@ -86,29 +90,18 @@ function getBaseCapital(config: unknown): number {
 }
 
 function getTeeExecution(config: unknown): string | undefined {
-  const payload = asRecord(config)
+  const payload = normalizeCharacterConfig(config)
   return typeof payload.teeExecution === 'string' ? payload.teeExecution : undefined
 }
 
 function normalizeAdaptation(config: unknown, existing: unknown = {}) {
-  const safeConfig = asRecord(config)
-  const safeExisting = asRecord(existing)
-
-  return {
-    specializationActive: Boolean(safeExisting.specializationActive),
-    turnCount: typeof safeExisting.turnCount === 'number' ? safeExisting.turnCount : 0,
-    preferences: Array.isArray(safeExisting.preferences) ? safeExisting.preferences : [],
-    summary:
-      typeof safeExisting.summary === 'string' && safeExisting.summary.trim()
-        ? safeExisting.summary
-        : 'No adaptation history yet.',
-    lastUpdatedAt: new Date().toISOString(),
-    pendingSection2: safeExisting.pendingSection2,
-    configSnapshot: {
-      systemPrompt: typeof safeConfig.systemPrompt === 'string' ? safeConfig.systemPrompt : '',
-      openness: typeof safeConfig.openness === 'number' ? safeConfig.openness : 50,
+  return normalizeAdaptationState({
+    adaptation: {
+      ...asRecord(existing),
+      lastUpdatedAt: new Date().toISOString(),
     },
-  }
+    config,
+  })
 }
 
 function toApiCharacter(character: {
@@ -139,8 +132,11 @@ function toApiCharacter(character: {
     aaProvider: character.aaProvider,
     smartAccountId: character.smartAccountId ?? undefined,
     smartAccountStatus: character.smartAccountStatus,
-    config: asRecord(character.config),
-    adaptation: asRecord(character.adaptation),
+    config: normalizeCharacterConfig(character.config),
+    adaptation: normalizeAdaptationState({
+      adaptation: character.adaptation,
+      config: character.config,
+    }),
     isDeployedOnChain: character.isDeployedOnChain,
     deploymentTxHash: character.deploymentTxHash ?? undefined,
     teeAttestationProof: character.teeAttestationProof ?? undefined,
@@ -353,6 +349,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { name, config, gameEvents, gameIds, projectId } = parsed.data
+    const normalizedConfig = normalizeCharacterConfig(config)
     const candidateGameIds = Array.from(new Set([...(gameIds ?? []), ...(projectId ? [projectId] : [])]))
 
     const games = candidateGameIds.length
@@ -386,7 +383,7 @@ export async function POST(request: NextRequest) {
 
     const sanitizedGameEvents = parseGameEvents(gameEvents)
     const teeGate = buildTeeGateResult({
-      teeExecution: getTeeExecution(config),
+      teeExecution: getTeeExecution(normalizedConfig),
       characterId,
       projectId: games[0]?.id,
     })
@@ -403,14 +400,8 @@ export async function POST(request: NextRequest) {
         ? JSON.stringify(teeGate.attestation)
         : undefined,
       gameEvents: (sanitizedGameEvents ?? []) as unknown as Prisma.InputJsonValue,
-      config: toInputJson(config),
-      adaptation: {
-        specializationActive: false,
-        turnCount: 0,
-        preferences: [],
-        summary: 'No adaptation history yet.',
-        lastUpdatedAt: new Date().toISOString(),
-      },
+      config: toInputJson(normalizedConfig),
+      adaptation: normalizeAdaptation(normalizedConfig),
       isDeployedOnChain: true,
       projects: games.length
         ? {
@@ -530,14 +521,8 @@ export async function POST(request: NextRequest) {
           teeAttestationProof: teeGate.attestation
             ? JSON.stringify(teeGate.attestation)
             : undefined,
-          config: toInputJson(config),
-          adaptation: {
-            specializationActive: false,
-            turnCount: 0,
-            preferences: [],
-            summary: 'No adaptation history yet.',
-            lastUpdatedAt: new Date().toISOString(),
-          } as Prisma.InputJsonValue,
+          config: toInputJson(normalizedConfig),
+          adaptation: normalizeAdaptation(normalizedConfig) as Prisma.InputJsonValue,
           isDeployedOnChain: true,
           projectId: fallbackProjectId,
         }
@@ -558,7 +543,7 @@ export async function POST(request: NextRequest) {
 
     const provisioning = await TreasuryService.provisionNpcWallet(
       character.walletAddress,
-      getBaseCapital(config)
+      getBaseCapital(normalizedConfig)
     )
 
     try {
@@ -633,7 +618,8 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Build update data — only patch fields that have meaningful content
-    const hasConfigFields = Object.keys(config).length > 0
+    const incomingConfig = normalizeCharacterConfig(config)
+    const hasConfigFields = Object.keys(incomingConfig).length > 0
 
     const updateData: Record<string, unknown> = {}
 
@@ -642,11 +628,15 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (hasConfigFields) {
-      updateData.config = toInputJson(config)
-      updateData.adaptation = normalizeAdaptation(config, character.adaptation) as Prisma.InputJsonValue
+      const mergedConfig = normalizeCharacterConfig({
+        ...asRecord(character.config),
+        ...incomingConfig,
+      })
+      updateData.config = toInputJson(mergedConfig)
+      updateData.adaptation = normalizeAdaptation(mergedConfig, character.adaptation) as Prisma.InputJsonValue
 
       const teeGate = buildTeeGateResult({
-        teeExecution: getTeeExecution(config),
+        teeExecution: getTeeExecution(mergedConfig),
         characterId,
         projectId: authorizedProject?.id,
       })

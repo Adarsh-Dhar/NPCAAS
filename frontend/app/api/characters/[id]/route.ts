@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { validateApiKey } from '@/lib/api-key-store'
+import {
+  normalizeAdaptationState,
+  normalizeCharacterConfig,
+} from '@/lib/character-config'
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
@@ -219,8 +223,11 @@ function toApiCharacter(character: {
     aaProvider: character.aaProvider,
     smartAccountId: character.smartAccountId ?? undefined,
     smartAccountStatus: character.smartAccountStatus,
-    config: asRecord(character.config),
-    adaptation: asRecord(character.adaptation),
+    config: normalizeCharacterConfig(character.config),
+    adaptation: normalizeAdaptationState({
+      adaptation: character.adaptation,
+      config: character.config,
+    }),
     gameEvents: resolveGameEvents(character.name, character.gameEvents),
     isDeployedOnChain: character.isDeployedOnChain,
     deploymentTxHash: character.deploymentTxHash ?? undefined,

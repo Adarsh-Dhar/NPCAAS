@@ -203,17 +203,8 @@ export default function GameCharactersPage() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <RetroButton
-              variant="red"
-              size="md"
-              onClick={() => void restartGame()}
-              disabled={isSavingContext || isRestarting}
-            >
-              {isRestarting ? 'RESTARTING...' : 'RESTART GAME'}
-            </RetroButton>
-
-            <Link href={`/characters/new?gameId=${gameId}`}>
+          <div className="flex flex-wrap gap-3">          
+              <Link href={`/characters/new?gameId=${gameId}`}>
               <RetroButton variant="blue" size="md">ADD AGENT</RetroButton>
             </Link>
           </div>

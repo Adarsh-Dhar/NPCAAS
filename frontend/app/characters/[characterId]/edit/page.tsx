@@ -103,6 +103,7 @@ function normalizeInitialConfig(config?: Record<string, unknown> | null): FormCo
   if (!isRecord(config)) return undefined
 
   const snapshot = isRecord(config.configSnapshot) ? config.configSnapshot : null
+  const effective = isRecord(config.effectiveSection2) ? config.effectiveSection2 : null
   const isAdaptationShape =
     Boolean(snapshot) ||
     'specializationActive' in config ||
@@ -118,12 +119,14 @@ function normalizeInitialConfig(config?: Record<string, unknown> | null): FormCo
     marginPercentage: asString(config.marginPercentage),
     systemPrompt:
       asString(config.systemPrompt) ??
+      asString(effective?.systemPrompt) ??
       (isAdaptationShape ? asString(snapshot?.systemPrompt) : undefined),
     openness:
       asNumber(config.openness) ??
+      asNumber(effective?.openness) ??
       (isAdaptationShape ? asNumber(snapshot?.openness) : undefined),
-    factions: asString(config.factions),
-    hostility: asString(config.hostility),
+    factions: asString(config.factionId ?? config.factions),
+    hostility: asString(config.baseHostility ?? config.hostility),
     canTrade: asBoolean(config.canTrade),
     canMove: asBoolean(config.canMove),
     canCraft: asBoolean(config.canCraft),
