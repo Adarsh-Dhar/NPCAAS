@@ -18,15 +18,15 @@
 }
 
 :root {
-  --background: 230 20% 4%;
-  --foreground: 200 80% 85%;
-  --border: 220 30% 15%;
-  --input: 220 30% 15%;
-  --ring: 185 100% 50%;
-  --primary: 185 100% 50%;
-  --primary-foreground: 230 20% 4%;
-  --muted: 230 20% 10%;
-  --muted-foreground: 210 30% 45%;
+  --background: 242 45% 5%;
+  --foreground: 197 100% 87%;
+  --border: 228 45% 18%;
+  --input: 228 45% 18%;
+  --ring: 190 95% 63%;
+  --primary: 190 95% 63%;
+  --primary-foreground: 242 45% 5%;
+  --muted: 236 38% 11%;
+  --muted-foreground: 219 40% 60%;
   --app-font-sans: 'ui-monospace', 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
   --app-font-mono: 'ui-monospace', 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
   --radius: 0.25rem;
@@ -60,6 +60,6 @@
   background: transparent;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #1a2233;
+  background: #24345c;
   border-radius: 3px;
 }

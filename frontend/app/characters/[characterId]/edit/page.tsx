@@ -8,8 +8,6 @@ import TopNav from '@/components/TopNav'
 import LeftPanel from '@/components/creator/LeftPanel'
 import ConfigurationForm from '@/components/creator/ConfigurationForm'
 import FundWalletModal from '@/components/FundWalletModal'
-import { ComputeBalance } from '@/components/ComputeBalance'
-import { ComputeRechargeDialog } from '@/components/ComputeRechargeDialog'
 import RetroButton from '@/components/ui/RetroButton'
 import { PRIMARY_TOKEN_ADDRESS, PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
 import {
@@ -81,7 +79,6 @@ interface FormConfigSnapshot {
   canCraft?: boolean
   interGameTransactionsEnabled?: boolean
   teeExecution?: string
-  computeBudget?: string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -132,7 +129,6 @@ function normalizeInitialConfig(config?: Record<string, unknown> | null): FormCo
     canCraft: asBoolean(config.canCraft),
     interGameTransactionsEnabled: asBoolean(config.interGameTransactionsEnabled),
     teeExecution: asString(config.teeExecution),
-    computeBudget: asString(config.computeBudget),
   }
 }
 
@@ -150,10 +146,8 @@ export default function EditCharacterPage() {
   const [balanceLoading, setBalanceLoading] = useState(false)
   const [transferTargets, setTransferTargets] = useState<GameCharacterOption[]>([])
   const [targetCharacterId, setTargetCharacterId] = useState('')
-    const [computeBalance, setComputeBalance] = useState<any>(null)
   const [transferAmount, setTransferAmount] = useState('0.01')
   const [teeFundingAmount, setTeeFundingAmount] = useState('5')
-  const [teeFundingDestination, setTeeFundingDestination] = useState(TEE_RECHARGE_ADDRESS)
   const [transferLoading, setTransferLoading] = useState(false)
   const [transferError, setTransferError] = useState('')
   const [transferSuccess, setTransferSuccess] = useState('')
@@ -369,7 +363,7 @@ export default function EditCharacterPage() {
       return
     }
 
-    const destination = teeFundingDestination.trim()
+    const destination = TEE_RECHARGE_ADDRESS
     if (!ethers.isAddress(destination)) {
       setTeeFundingError('Enter a valid TEE destination wallet address.')
       setTeeFundingSuccess('')
@@ -472,10 +466,10 @@ export default function EditCharacterPage() {
           <div className="p-8 bg-black">
             <div className="mb-8 flex items-start justify-between">
               <div>
-                <h1 className="gradient-text gradient-cyan-magenta text-4xl font-bold mb-2">
+                <h1 className="gradient-text gradient-neon text-4xl font-bold mb-2">
                   EDIT YOUR AGENT
                 </h1>
-                <p className="text-cyan-400 text-sm uppercase font-bold">
+                <p className="text-blue-400 text-sm uppercase font-bold">
                   Update configuration and save changes.
                 </p>
               </div>
@@ -483,13 +477,13 @@ export default function EditCharacterPage() {
               {character && (
                 <div className="flex flex-col items-end gap-2">
                   {/* Wallet info */}
-                  <div className="border-2 border-cyan-500/40 p-3 text-right">
+                  <div className="border-2 border-blue-500/40 p-3 text-right">
                     <p className="text-xs text-gray-400 uppercase font-bold mb-1">Wallet Address</p>
-                    <p className="text-xs font-mono text-cyan-300 max-w-48 break-all">
+                    <p className="text-xs font-mono text-blue-300 max-w-48 break-all">
                       {character.walletAddress}
                     </p>
                     <p className="mt-3 text-xs text-gray-400 uppercase font-bold mb-1">Token Balance (ERC-20)</p>
-                    <p className="text-sm font-bold text-green-300">
+                    <p className="text-sm font-bold text-blue-300">
                       {balanceLoading ? 'Loading...' : erc20Balance ? `${erc20Balance} ${PRIMARY_TOKEN_SYMBOL}` : 'Unavailable'}
                     </p>
                     <p className="mt-1 text-[11px] text-gray-400 font-mono">
@@ -497,18 +491,11 @@ export default function EditCharacterPage() {
                         ? `${PRIMARY_TOKEN_SYMBOL} is the same token contract as ${erc20Symbol}.`
                         : PRIMARY_TOKEN_SYMBOL}
                     </p>
-                    <p className="mt-2 text-xs text-gray-400 uppercase font-bold mb-1">Native Gas Balance (${NATIVE_GAS_SYMBOL})</p>
-                    <p className="text-sm font-bold text-yellow-300">
-                      {balanceLoading ? 'Loading...' : kiteBalance ? `${kiteBalance} ${NATIVE_GAS_SYMBOL}` : 'Unavailable'}
-                    </p>
-                    <p className="mt-1 text-[11px] text-gray-400 font-mono">
-                      Sponsored ERC-20 transfers do not increase native gas balance.
-                    </p>
                     <p className="mt-1 text-[11px] text-gray-400 font-mono break-all">
                       Token contract: {PRIMARY_TOKEN_ADDRESS}
                     </p>
 
-                    <div className="mt-4 border-t border-cyan-500/30 pt-3 text-left">
+                    <div className="mt-4 border-t border-blue-500/30 pt-3 text-left">
                       <p className="text-xs text-gray-400 uppercase font-bold mb-2">x402 Bot-to-Bot Transfer</p>
 
                       <label className="block text-[11px] text-gray-400 uppercase font-bold mb-1">
@@ -517,7 +504,7 @@ export default function EditCharacterPage() {
                       <select
                         value={targetCharacterId}
                         onChange={(event) => setTargetCharacterId(event.target.value)}
-                        className="w-full bg-gray-900 border-2 border-cyan-500/40 text-cyan-200 text-xs font-mono px-2 py-2 mb-2"
+                        className="w-full bg-gray-900 border-2 border-blue-500/40 text-blue-200 text-xs font-mono px-2 py-2 mb-2"
                       >
                         {transferTargets.length === 0 ? (
                           <option value="">No available targets</option>
@@ -543,7 +530,7 @@ export default function EditCharacterPage() {
                       />
 
                       <RetroButton
-                        variant="cyan"
+                        variant="blue"
                         size="sm"
                         onClick={submitBotToBotTransfer}
                         disabled={transferLoading || !targetCharacterId || !transferAmount}
@@ -561,7 +548,7 @@ export default function EditCharacterPage() {
                         step="0.001"
                         value={teeFundingAmount}
                         onChange={(event) => setTeeFundingAmount(event.target.value)}
-                        className="w-full bg-gray-900 border-2 border-magenta-500/40 text-magenta-200 text-xs font-mono px-2 py-2 mb-2"
+                        className="w-full bg-gray-900 border-2 border-purple-500/40 text-purple-200 text-xs font-mono px-2 py-2 mb-2"
                       />
 
                       <label className="block text-[11px] text-gray-400 uppercase font-bold mb-1">
@@ -569,15 +556,15 @@ export default function EditCharacterPage() {
                       </label>
                       <input
                         type="text"
-                        value={teeFundingDestination}
-                        onChange={(event) => setTeeFundingDestination(event.target.value)}
-                        className="w-full bg-gray-900 border-2 border-magenta-500/40 text-magenta-200 text-xs font-mono px-2 py-2 mb-2"
+                        value={TEE_RECHARGE_ADDRESS}
+                        className="w-full bg-gray-900 border-2 border-purple-500/40 text-purple-200 text-xs font-mono px-2 py-2 mb-2"
                         placeholder="0x..."
                         spellCheck={false}
+                        readOnly
                       />
 
                       <RetroButton
-                        variant="magenta"
+                        variant="purple"
                         size="sm"
                         onClick={submitTeeExecutionFunding}
                         disabled={teeFundingLoading || !teeFundingAmount}
@@ -603,26 +590,10 @@ export default function EditCharacterPage() {
                         <p className="mt-2 text-[11px] text-red-300 font-mono">{teeFundingError}</p>
                       ) : null}
                     </div>
-                    
-                      <div className="mt-4 border-t border-cyan-500/30 pt-3">
-                        <p className="text-xs text-gray-400 uppercase font-bold mb-3">Compute Budget</p>
-                        <ComputeBalance
-                          characterId={character.id}
-                          npcName={character.name}
-                          onBalanceUpdated={setComputeBalance}
-                        />
-                      </div>
                   </div>
                     <div className="flex flex-col gap-2 mt-4">
-                      {computeBalance && (
-                        <ComputeRechargeDialog
-                          characterId={character.id}
-                          npcName={character.name}
-                          maxAvailable={parseFloat(computeBalance.kiteUsdWalletBalance)}
-                        />
-                      )}
                       <RetroButton
-                        variant="yellow"
+                        variant="blue"
                         size="sm"
                         onClick={() => setShowFundModal(true)}
                         className="text-xs"
@@ -635,9 +606,9 @@ export default function EditCharacterPage() {
             </div>
 
             {loading ? (
-              <p className="text-cyan-400 font-mono">Loading character configuration...</p>
+              <p className="text-blue-400 font-mono">Loading character configuration...</p>
             ) : error || !character ? (
-              <div className="border-4 border-red-500 p-4 text-red-400">{error || 'Character not found'}</div>
+              <div className="border-4 border-purple-500 p-4 text-purple-300">{error || 'Character not found'}</div>
             ) : (
               <ConfigurationForm
                 characterName={character.name}

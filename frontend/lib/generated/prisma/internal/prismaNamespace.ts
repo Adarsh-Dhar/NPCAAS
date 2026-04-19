@@ -763,9 +763,6 @@ export const CharacterScalarFieldEnum = {
   smartAccountStatus: 'smartAccountStatus',
   isDeployedOnChain: 'isDeployedOnChain',
   deploymentTxHash: 'deploymentTxHash',
-  computeUsageTokens: 'computeUsageTokens',
-  computeLimitTokens: 'computeLimitTokens',
-  lastComputeResetAt: 'lastComputeResetAt',
   teeAttestationProof: 'teeAttestationProof',
   gameEvents: 'gameEvents',
   config: 'config',
@@ -782,11 +779,6 @@ export const NpcLogScalarFieldEnum = {
   characterId: 'characterId',
   eventType: 'eventType',
   details: 'details',
-  kiteUsdAmount: 'kiteUsdAmount',
-  computeTokensAwarded: 'computeTokensAwarded',
-  tokensUsed: 'tokensUsed',
-  estUsdCost: 'estUsdCost',
-  balanceAfter: 'balanceAfter',
   txHash: 'txHash',
   createdAt: 'createdAt'
 } as const
@@ -911,20 +903,6 @@ export type BooleanFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel,
 
 
 /**
- * Reference to a field of type 'BigInt'
- */
-export type BigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BigInt'>
-    
-
-
-/**
- * Reference to a field of type 'BigInt[]'
- */
-export type ListBigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BigInt[]'>
-    
-
-
-/**
  * Reference to a field of type 'Json'
  */
 export type JsonFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Json'>
@@ -935,20 +913,6 @@ export type JsonFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'J
  * Reference to a field of type 'QueryMode'
  */
 export type EnumQueryModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'QueryMode'>
-    
-
-
-/**
- * Reference to a field of type 'Decimal'
- */
-export type DecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Decimal'>
-    
-
-
-/**
- * Reference to a field of type 'Decimal[]'
- */
-export type ListDecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Decimal[]'>
     
 
 

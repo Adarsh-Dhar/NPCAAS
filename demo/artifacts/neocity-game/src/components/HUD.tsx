@@ -16,7 +16,14 @@ import type { TradeIntent } from "@/components/ChatWindow";
 import { formatNpcDisplayName, PROTOCOL_BABEL_NODE_NAMES } from "@/lib/protocolBabel";
 import { usePlayerState } from "@/context/PlayerStateContext";
 import { PRIMARY_TOKEN_SYMBOL } from "@/lib/token-config";
-import { emitPlayerEvent, getPlayerState, subscribePlayerState, type MissionSnapshot } from "@/lib/playerState";
+import {
+  emitPlayerEvent,
+  getPlayerState,
+  recordPaymentProof,
+  subscribePlayerState,
+  type MissionSnapshot,
+} from "@/lib/playerState";
+import { worldLoop } from "@/lib/npcWorldLoop";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,6 +49,7 @@ interface UserPaidTxRequest {
 
 interface ExecuteTransactionResult {
   txHash?: string;
+  userOpHash?: string;
   mode: string;
   txRequest?: UserPaidTxRequest;
 }
@@ -49,7 +57,7 @@ interface ExecuteTransactionResult {
 type TxStatus =
   | { state: "idle" }
   | { state: "pending" }
-  | { state: "success"; txHash?: string; mode: string }
+  | { state: "success"; txHash?: string; signature?: string; mode: string }
   | { state: "error"; message: string };
 
 export interface HUDProps {
@@ -60,6 +68,8 @@ export interface HUDProps {
   pendingTrade: TradeIntent | null;
   onTradeExecuted?: (details: {
     txHash?: string;
+    signature?: string;
+    userOpHash?: string;
     mode: string;
     trade: TradeIntent;
     npcName: string | null;
@@ -68,10 +78,10 @@ export interface HUDProps {
 
 const AEGIS_PRIME_CANONICAL_NAME = "AEGIS_PRIME";
 const AEGIS_GATE_TOLL_PRICE = 500;
-const AEGIS_GATE_TOLL_CURRENCY = "KITE_USD";
+const AEGIS_GATE_TOLL_CURRENCY = "PYUSD";
 const NODE_ALPHA_CANONICAL_NAME = "NODE_ALPHA";
 const NODE_ALPHA_ESCROW_PRICE = 5000;
-const NODE_ALPHA_ESCROW_CURRENCY = "KITE_USD";
+const NODE_ALPHA_ESCROW_CURRENCY = "PYUSD";
 
 declare global {
   interface Window {
@@ -201,10 +211,14 @@ export function HUD({
       ) as ExecuteTransactionResult;
 
       let txHash = result.txHash;
+      let userOpHash = result.userOpHash;
       let mode = result.mode;
+      let signedTxRequest: UserPaidTxRequest | undefined;
+      let senderWallet: string | undefined;
 
       if (result.mode === "user-paid") {
         const txRequest = result.txRequest;
+        signedTxRequest = txRequest;
         if (!txRequest?.to || !txRequest.value) {
           throw new Error("Missing wallet transaction request from server.");
         }
@@ -218,6 +232,7 @@ export function HUD({
         if (!from) {
           throw new Error("Wallet account unavailable. Unlock wallet and retry.");
         }
+        senderWallet = from;
 
         if (!isHexAddress(txRequest.to)) {
           throw new Error("Invalid recipient address in transaction request.");
@@ -225,7 +240,7 @@ export function HUD({
 
         const chainId = await window.ethereum.request({ method: "eth_chainId" });
         if (typeof chainId === "string" && chainId.toLowerCase() !== "0x940") {
-          throw new Error("Wallet is on the wrong network. Switch to KITE_USD Testnet (2368) and retry.");
+          throw new Error("Wallet is on the wrong network. Switch to PYUSD Testnet (2368) and retry.");
         }
 
         const valueHex = `0x${BigInt(txRequest.value).toString(16)}`
@@ -245,7 +260,45 @@ export function HUD({
         mode = "user-paid";
       }
 
-      setTxStatus({ state: "success", txHash, mode });
+      const signature = userOpHash ?? txHash;
+      const confirmedAt = new Date().toISOString();
+
+      if (txHash || signature) {
+        recordPaymentProof({
+          txHash,
+          signature,
+          userOpHash,
+          amount: Number(pendingTrade.price),
+          currency: String(pendingTrade.currency).toUpperCase(),
+          item: pendingTrade.item,
+          recipientName: activeNpcName ?? undefined,
+          recipientWallet: walletState?.walletAddress,
+          senderWallet,
+          mode,
+          confirmedAt,
+        });
+
+        worldLoop.localBroadcast({
+          sourceId: "player-wallet",
+          sourceName: "PLAYER_WALLET",
+          actionType: "PAYMENT_SENT",
+          payload: {
+            to: activeNpcName ?? "unknown",
+            toWallet: walletState?.walletAddress ?? signedTxRequest?.to,
+            senderWallet,
+            amount: pendingTrade.price,
+            currency: String(pendingTrade.currency).toUpperCase(),
+            item: pendingTrade.item,
+            mode,
+            txHash,
+            signature,
+            userOpHash,
+          },
+          timestamp: confirmedAt,
+        });
+      }
+
+      setTxStatus({ state: "success", txHash, signature, mode });
 
       const isAegisTollPayment =
         !!activeNpcName &&
@@ -272,6 +325,8 @@ export function HUD({
       setTimeout(() => void fetchBalances(), 2000);
       onTradeExecuted?.({
         txHash,
+        signature,
+        userOpHash,
         mode,
         trade: pendingTrade,
         npcName: activeNpcName,
@@ -280,7 +335,7 @@ export function HUD({
       const msg = normalizeWalletError(err);
       setTxStatus({ state: "error", message: msg });
     }
-  }, [resolvedCharId, pendingTrade, fetchBalances, onTradeExecuted, activeNpcName]);
+  }, [resolvedCharId, pendingTrade, fetchBalances, onTradeExecuted, activeNpcName, walletState]);
 
   // Node-Alpha escrow is a mandatory funding gate, so auto-open the wallet
   // prompt when a matching trade intent is detected.
@@ -323,7 +378,7 @@ export function HUD({
       >
         <div
           className="mb-2 flex items-center gap-2"
-          style={{ color: "#00ffff", letterSpacing: 3 }}
+          style={{ color: "#67e8f9", letterSpacing: 3 }}
         >
           MIDNIGHT MANIFEST
           {sdkActive && (
@@ -331,8 +386,8 @@ export function HUD({
               className="flex items-center gap-1 px-1.5 py-0.5 rounded"
               style={{
                 background: "rgba(0,255,255,0.08)",
-                border: "1px solid rgba(0,255,255,0.2)",
-                color: "#00ffff88",
+                border: "1px solid rgba(103,232,249,0.22)",
+                color: "#67e8f988",
                 fontSize: "8px",
                 letterSpacing: 1,
               }}
@@ -342,25 +397,25 @@ export function HUD({
             </span>
           )}
         </div>
-        <div style={{ color: "#8db8ff" }}>PHASE {mission.phase}: {phaseLabel}</div>
-        <div style={{ color: "#5f89b6" }}>Read the noise. Move the money.</div>
-        <div className="mt-1" style={{ color: "#66d9ff" }}>
+        <div style={{ color: "#93c5fd" }}>PHASE {mission.phase}: {phaseLabel}</div>
+        <div style={{ color: "#64748b" }}>Read the noise. Move the money.</div>
+        <div className="mt-1" style={{ color: "#38bdf8" }}>
           BALANCE: {credits.toLocaleString()} {PRIMARY_TOKEN_SYMBOL}
         </div>
-        <div style={{ color: mission.frenzyActive ? "#ff8e8e" : "#ffd166" }}>
+        <div style={{ color: mission.frenzyActive ? "#f472b6" : "#c4b5fd" }}>
           FRENZY: {mission.frenzyActive ? "ACTIVE" : "STANDBY"}
         </div>
-        <div className="mt-3 rounded border border-cyan-500/20 px-2 py-2" style={{ background: "rgba(3,16,24,0.65)" }}>
-          <div style={{ color: "#8df9ff", letterSpacing: 2 }}>INVENTORY LEDGER</div>
-          <div style={{ color: "#a9ced8" }}>chips delivered: {mission.chipsDelivered}/6</div>
+        <div className="mt-3 rounded border border-cyan-300/25 px-2 py-2" style={{ background: "rgba(7,14,30,0.72)" }}>
+          <div style={{ color: "#67e8f9", letterSpacing: 2 }}>INVENTORY LEDGER</div>
+          <div style={{ color: "#a9ced8" }}>chips delivered: {mission.chipsDelivered}/5</div>
           <div style={{ color: "#a9ced8" }}>crates mislabeled: {mission.cratesMislabeled}/2</div>
-          <div style={{ color: mission.briefcaseLocated ? "#ffe08a" : "#6e7d8e" }}>
+          <div style={{ color: mission.briefcaseLocated ? "#c4b5fd" : "#6e7d8e" }}>
             briefcase located: {mission.briefcaseLocated ? "YES" : "NO"}
           </div>
-          <div style={{ color: mission.briefcaseTransferred ? "#7dff9b" : "#6e7d8e" }}>
+          <div style={{ color: mission.briefcaseTransferred ? "#22d3ee" : "#6e7d8e" }}>
             briefcase transferred: {mission.briefcaseTransferred ? "YES" : "NO"}
           </div>
-          <div style={{ color: mission.escapeRouteOpened ? "#7dff9b" : "#6e7d8e" }}>
+          <div style={{ color: mission.escapeRouteOpened ? "#22d3ee" : "#6e7d8e" }}>
             tunnel route: {mission.escapeRouteOpened ? "OPEN" : "LOCKED"}
           </div>
         </div>
@@ -388,11 +443,11 @@ export function HUD({
           className="rounded p-3 mb-3"
           style={{
             background: "rgba(5,5,15,0.92)",
-            border: "1px solid rgba(0,255,255,0.12)",
+            border: "1px solid rgba(103,232,249,0.22)",
             minWidth: "180px",
           }}
         >
-          <div className="text-xs font-bold mb-2" style={{ color: "#00ffff", letterSpacing: 2 }}>
+          <div className="text-xs font-bold mb-2" style={{ color: "#67e8f9", letterSpacing: 2 }}>
             THE BAZAAR
           </div>
           <div style={{ color: "#445566" }}>
@@ -408,8 +463,8 @@ export function HUD({
             className="mt-3 rounded p-3 space-y-1"
             style={{
               background: "rgba(5,5,15,0.92)",
-              border: `1px solid ${npcColor}44`,
-              boxShadow: `0 0 12px ${npcColor}11`,
+              border: `1px solid ${npcColor}66`,
+              boxShadow: `0 0 12px ${npcColor}1f`,
               minWidth: "180px",
             }}
           >
@@ -490,14 +545,14 @@ export function HUD({
             className="mt-3 rounded p-3"
             style={{
               background: "rgba(5,5,15,0.92)",
-              border: "1px solid rgba(255,200,0,0.4)",
-              boxShadow: "0 0 12px rgba(255,200,0,0.08)",
+              border: "1px solid rgba(196,181,253,0.45)",
+              boxShadow: "0 0 12px rgba(167,139,250,0.14)",
               minWidth: "180px",
             }}
           >
             <div
               className="text-xs font-bold mb-2 flex items-center gap-1"
-              style={{ color: "#ffcc00", letterSpacing: 2 }}
+              style={{ color: "#c4b5fd", letterSpacing: 2 }}
             >
               <Zap size={10} />
               TRADE PROPOSAL
@@ -528,21 +583,21 @@ export function HUD({
                 className="w-full text-xs py-1.5 px-2 rounded font-bold tracking-widest transition-all"
                 style={{
                   background: resolvedCharId
-                    ? "rgba(255,200,0,0.15)"
-                    : "rgba(255,200,0,0.05)",
-                  border: "1px solid rgba(255,200,0,0.5)",
-                  color: resolvedCharId ? "#ffcc00" : "#66550088",
+                    ? "rgba(167,139,250,0.2)"
+                    : "rgba(167,139,250,0.08)",
+                  border: "1px solid rgba(196,181,253,0.6)",
+                  color: resolvedCharId ? "#ddd6fe" : "#8b81a888",
                   cursor: resolvedCharId ? "pointer" : "not-allowed",
                 }}
                 onMouseEnter={(e) => {
                   if (resolvedCharId)
                     (e.currentTarget as HTMLElement).style.background =
-                      "rgba(255,200,0,0.25)";
+                      "rgba(167,139,250,0.32)";
                 }}
                 onMouseLeave={(e) => {
                   if (resolvedCharId)
                     (e.currentTarget as HTMLElement).style.background =
-                      "rgba(255,200,0,0.15)";
+                      "rgba(167,139,250,0.2)";
                 }}
               >
                 SIGN &amp; EXECUTE
@@ -553,9 +608,9 @@ export function HUD({
               <div
                 className="w-full text-xs py-1.5 px-2 rounded flex items-center justify-center gap-2"
                 style={{
-                  background: "rgba(255,200,0,0.08)",
-                  border: "1px solid rgba(255,200,0,0.3)",
-                  color: "#ffcc0088",
+                  background: "rgba(196,181,253,0.12)",
+                  border: "1px solid rgba(196,181,253,0.4)",
+                  color: "#ddd6fe",
                 }}
               >
                 <Loader2 size={10} className="animate-spin" />
@@ -568,9 +623,9 @@ export function HUD({
                 <div
                   className="w-full text-xs py-1.5 px-2 rounded flex items-center justify-center gap-2"
                   style={{
-                    background: "rgba(0,255,100,0.08)",
-                    border: "1px solid rgba(0,255,100,0.3)",
-                    color: "#00ff64",
+                    background: "rgba(34,211,238,0.12)",
+                    border: "1px solid rgba(103,232,249,0.45)",
+                    color: "#67e8f9",
                   }}
                 >
                   <CheckCircle size={10} />
@@ -578,13 +633,13 @@ export function HUD({
                     ? "GASLESS SUCCESS"
                     : "SUCCESS"}
                 </div>
-                {txStatus.txHash && (
+                {(txStatus.txHash || txStatus.signature) && (
                   <div
                     className="text-xs truncate text-center"
                     style={{ color: "#334455", fontSize: "9px" }}
                   >
-                    {txStatus.txHash.slice(0, 10)}…
-                    {txStatus.txHash.slice(-6)}
+                    sig {(txStatus.signature ?? txStatus.txHash ?? '').slice(0, 10)}…
+                    {(txStatus.signature ?? txStatus.txHash ?? '').slice(-6)}
                   </div>
                 )}
               </div>
@@ -594,9 +649,9 @@ export function HUD({
               <div
                 className="w-full text-xs py-1.5 px-2 rounded flex items-center gap-2"
                 style={{
-                  background: "rgba(255,0,100,0.08)",
-                  border: "1px solid rgba(255,0,100,0.3)",
-                  color: "#ff0064",
+                  background: "rgba(244,114,182,0.12)",
+                  border: "1px solid rgba(244,114,182,0.4)",
+                  color: "#f9a8d4",
                 }}
               >
                 <XCircle size={10} />
@@ -610,7 +665,7 @@ export function HUD({
       {/* ── Bottom: district label ──────────────────────────────────── */}
       <div
         className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 text-xs select-none"
-        style={{ fontFamily: "monospace", color: "#1a2233" }}
+        style={{ fontFamily: "monospace", color: "#334155" }}
       >
         DISTRICT-7 SURVEILLANCE ACTIVE
       </div>

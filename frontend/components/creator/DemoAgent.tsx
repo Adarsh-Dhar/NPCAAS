@@ -74,22 +74,22 @@ export default function DemoAgent({ currentAction }: DemoAgentProps) {
   }[animState]
 
   const statusColor = {
-    idle: 'text-yellow-400 bg-yellow-500',
-    wave: 'text-cyan-400 bg-cyan-500',
-    happy: 'text-green-400 bg-green-500',
+    idle: 'text-blue-400 bg-blue-500',
+    wave: 'text-blue-300 bg-blue-700',
+    happy: 'text-purple-300 bg-purple-500',
     think: 'text-purple-400 bg-purple-500',
     greet: 'text-blue-400 bg-blue-500',
-    rub_hands: 'text-orange-400 bg-orange-500',
+    rub_hands: 'text-blue-300 bg-blue-700',
     shrug: 'text-gray-400 bg-gray-500',
-    excited: 'text-pink-400 bg-pink-500',
+    excited: 'text-purple-300 bg-purple-500',
   }[animState]
 
   return (
-    <div className="retro-card-green p-4">
+    <div className="retro-card-blue p-4">
       {/* Header */}
       <div className="text-center mb-3">
         <h3 className="text-sm font-bold uppercase text-white mb-1">KERMIT_NPC_01</h3>
-        <div className="text-[10px] text-green-400 font-mono">AUTONOMOUS AGENT</div>
+        <div className="text-[10px] text-blue-400 font-mono">AUTONOMOUS AGENT</div>
       </div>
 
       {/* SVG Character */}
@@ -100,7 +100,7 @@ export default function DemoAgent({ currentAction }: DemoAgentProps) {
           width="140"
           height="165"
           xmlns="http://www.w3.org/2000/svg"
-          style={{ overflow: 'visible', filter: 'drop-shadow(0 4px 8px rgba(34,197,94,0.3))' }}
+          style={{ overflow: 'visible', filter: 'drop-shadow(0 4px 8px rgba(59,130,246,0.3))' }}
         >
           {/* Shadow */}
           <ellipse cx="60" cy="160" rx="28" ry="5" fill="#000" opacity="0.25" />
@@ -108,15 +108,15 @@ export default function DemoAgent({ currentAction }: DemoAgentProps) {
           {/* ── LEGS ── */}
           <g>
             {/* Left leg */}
-            <line x1="42" y1="120" x2="22" y2="148" stroke="#15803d" strokeWidth="9" strokeLinecap="round"/>
-            <ellipse cx="17" cy="150" rx="10" ry="5" fill="#15803d"/>
+            <line x1="42" y1="120" x2="22" y2="148" stroke="#2563eb" strokeWidth="9" strokeLinecap="round"/>
+            <ellipse cx="17" cy="150" rx="10" ry="5" fill="#2563eb"/>
             {/* Right leg */}
-            <line x1="78" y1="120" x2="98" y2="148" stroke="#15803d" strokeWidth="9" strokeLinecap="round"/>
-            <ellipse cx="103" cy="150" rx="10" ry="5" fill="#15803d"/>
+            <line x1="78" y1="120" x2="98" y2="148" stroke="#2563eb" strokeWidth="9" strokeLinecap="round"/>
+            <ellipse cx="103" cy="150" rx="10" ry="5" fill="#2563eb"/>
           </g>
 
           {/* ── BODY ── */}
-          <ellipse cx="60" cy="100" rx="34" ry="28" fill="#16a34a"/>
+          <ellipse cx="60" cy="100" rx="34" ry="28" fill="#2563eb"/>
           {/* Belly */}
           <ellipse cx="60" cy="103" rx="23" ry="18" fill="#86efac"/>
 
@@ -229,8 +229,8 @@ export default function DemoAgent({ currentAction }: DemoAgentProps) {
 
       {/* Action display */}
       {currentAction && (
-        <div className="border border-green-700 bg-black bg-opacity-50 p-2 mb-3 min-h-[36px]">
-          <p className="text-[10px] text-green-400 font-mono italic text-center leading-relaxed">
+        <div className="border border-blue-700 bg-black bg-opacity-50 p-2 mb-3 min-h-[36px]">
+          <p className="text-[10px] text-blue-400 font-mono italic text-center leading-relaxed">
             *{currentAction}*
           </p>
         </div>
@@ -240,15 +240,15 @@ export default function DemoAgent({ currentAction }: DemoAgentProps) {
       <div className="space-y-2 text-xs text-gray-300">
         <div className="flex justify-between">
           <span>CAPITAL:</span>
-          <span className="text-green-400 font-bold">1000 KITE_USD</span>
+          <span className="text-blue-400 font-bold">1000 PYUSD</span>
         </div>
         <div className="flex justify-between">
           <span>HEALTH:</span>
-          <span className="text-cyan-400 font-bold">100%</span>
+          <span className="text-blue-300 font-bold">100%</span>
         </div>
         <div className="flex justify-between">
           <span>REPUTATION:</span>
-          <span className="text-yellow-400 font-bold">50</span>
+          <span className="text-purple-300 font-bold">50</span>
         </div>
       </div>
     </div>

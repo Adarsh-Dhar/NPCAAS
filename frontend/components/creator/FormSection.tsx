@@ -6,12 +6,12 @@ interface FormSectionProps {
 }
 
 const colorMap = {
-  orange: 'retro-card-orange',
+  orange: 'retro-card-blue',
   purple: 'retro-card-purple',
-  red: 'retro-card-red',
-  yellow: 'retro-card-yellow',
-  cyan: 'retro-card-cyan',
-  green: 'retro-card-green',
+  red: 'retro-card-blue',
+  yellow: 'retro-card-blue',
+  cyan: 'retro-card-blue',
+  green: 'retro-card-blue',
 }
 
 export default function FormSection({

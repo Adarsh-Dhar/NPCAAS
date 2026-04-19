@@ -4,7 +4,7 @@
  * Production write-transaction pipeline using the real gokite-aa-sdk.
  *
  * Flow:
- *   1. Attempt sponsored execution via the KITE_USD bundler (gasless for the user)
+ *   1. Attempt sponsored execution via the PYUSD bundler (gasless for the user)
  *   2. If sponsorship fails, throw an explicit error.
  *
  * The NPC's ownerId is required for signing — it must match the value used
@@ -55,7 +55,7 @@ export interface SponsoredExecutionResult {
  * For ERC-20 token transfers: pass tokenAddress or ensure characterConfig contains
  *   tokenContractAddresses mapping for the active currency label.
  * 
- * Gas is always sponsored via the KITE_USD EIP-4337 bundler.
+ * Gas is always sponsored via the PYUSD EIP-4337 bundler.
  */
 export async function executeWriteTransaction(
   input: WriteTransactionInput
@@ -72,7 +72,7 @@ export async function executeWriteTransaction(
     input.tokenAddress ??
     (input.currency && tokenContractAddresses?.[input.currency]) ??
     tokenContractAddresses?.[PRIMARY_TOKEN_SYMBOL] ??
-    tokenContractAddresses?.KITE_USD ??
+    tokenContractAddresses?.PYUSD ??
     PRIMARY_TOKEN_ADDRESS
 
   const isTokenTransfer = Boolean(resolvedTokenAddress)

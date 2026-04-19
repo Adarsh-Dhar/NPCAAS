@@ -65,10 +65,10 @@ export default function NewCharacterPage() {
         <div className="w-2/3 overflow-y-auto">
           <div className="p-8 bg-black">
             <div className="mb-8">
-              <h1 className="gradient-text gradient-cyan-magenta text-4xl font-bold mb-2">
+              <h1 className="gradient-text gradient-neon text-4xl font-bold mb-2">
                 CREATE YOUR AGENT
               </h1>
-              <p className="text-cyan-400 text-sm uppercase font-bold">
+              <p className="text-blue-400 text-sm uppercase font-bold">
                 Configure all five layers and deploy. Assignment to games happens next.
               </p>
             </div>

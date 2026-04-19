@@ -94,9 +94,6 @@ export const CharacterScalarFieldEnum = {
   smartAccountStatus: 'smartAccountStatus',
   isDeployedOnChain: 'isDeployedOnChain',
   deploymentTxHash: 'deploymentTxHash',
-  computeUsageTokens: 'computeUsageTokens',
-  computeLimitTokens: 'computeLimitTokens',
-  lastComputeResetAt: 'lastComputeResetAt',
   teeAttestationProof: 'teeAttestationProof',
   gameEvents: 'gameEvents',
   config: 'config',
@@ -113,11 +110,6 @@ export const NpcLogScalarFieldEnum = {
   characterId: 'characterId',
   eventType: 'eventType',
   details: 'details',
-  kiteUsdAmount: 'kiteUsdAmount',
-  computeTokensAwarded: 'computeTokensAwarded',
-  tokensUsed: 'tokensUsed',
-  estUsdCost: 'estUsdCost',
-  balanceAfter: 'balanceAfter',
   txHash: 'txHash',
   createdAt: 'createdAt'
 } as const

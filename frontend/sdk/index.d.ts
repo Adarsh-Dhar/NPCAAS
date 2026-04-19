@@ -43,6 +43,7 @@ export interface ChatResponse {
   success: boolean
   response: string
   action?: string
+  worldEvent?: string | null
   characterId: string
   tradeIntent?: TradeIntent
   specializationActive?: boolean
@@ -80,10 +81,25 @@ export interface ExecuteTransactionResponse {
   mode: 'sponsored' | 'fallback' | 'user-paid'
   sponsored: boolean
   txHash?: string
+  userOpHash?: string
   txRequest?: TxRequest
   status: 'pending' | 'success'
   message: string
   sponsorError?: string
+}
+
+export interface PaymentProof {
+  txHash?: string
+  signature?: string
+  userOpHash?: string
+  amount: number
+  currency: string
+  item?: string
+  recipientName?: string
+  recipientWallet?: string
+  senderWallet?: string
+  mode: string
+  confirmedAt: string
 }
 
 // ---------------------------------------------------------------------------
@@ -175,11 +191,29 @@ export declare class GuildCraftClient {
   ): Promise<{ message: string; gameId: string; assignedCharacterIds: string[] }>
 
   // Chat
-  chat(characterId: string, message: string, opts?: { npcName?: string; characterId?: string }): Promise<ChatResponse>
+  chat(
+    characterId: string,
+    message: string,
+    opts?: {
+      npcName?: string
+      characterId?: string
+      sessionId?: string
+      playerId?: string
+      gameId?: string
+      recentPaymentProofs?: PaymentProof[]
+    }
+  ): Promise<ChatResponse>
   chatStream(
     characterId: string,
     message: string,
-    opts?: { npcName?: string; characterId?: string }
+    opts?: {
+      npcName?: string
+      characterId?: string
+      sessionId?: string
+      playerId?: string
+      gameId?: string
+      recentPaymentProofs?: PaymentProof[]
+    }
   ): AsyncGenerator<StreamEvent, void, undefined>
   executeTransaction(
     characterId: string,

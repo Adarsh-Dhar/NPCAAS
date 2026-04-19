@@ -1,52 +1,247 @@
 // src/components/WorldEventFeed.tsx
 // Shows live NPC-to-NPC interactions in a scrolling feed on the HUD.
 
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { worldLoop, type WorldEvent } from '@/lib/npcWorldLoop'
 import { subscribePlayerState } from '@/lib/playerState'
+import { formatNpcDisplayName } from '@/lib/protocolBabel'
 import { Zap } from 'lucide-react'
 
+const MIDNIGHT_GAME_ID = 'THE_MIDNIGHT_MANIFEST'
+const FEED_STORAGE_KEY = `neocity.worldEvents.${MIDNIGHT_GAME_ID}.v1`
+const WORLD_EVENTS_BASE_URL =
+  (import.meta.env?.VITE_WORLD_EVENTS_BASE_URL as string | undefined)?.replace(/\/$/, '') ||
+  'http://localhost:3002'
+const WORLD_EVENTS_ENDPOINT = `${WORLD_EVENTS_BASE_URL}/api/world-events`
+const MAX_FEED_EVENTS = 50
+
 const ACTION_COLOR: Record<string, string> = {
-  PAYMENT_SENT:     '#ffcc00',
-  ITEM_TRANSFERRED: '#00ff88',
-  TRADE_ACCEPTED:   '#00ff88',
-  TRADE_PROPOSED:   '#ff9900',
-  MANIFEST_ACCEPTED: '#7df9ff',
-  INVENTORY_COMPROMISED: '#ffb703',
-  BRIEFCASE_LOCATED: '#ffd166',
-  BRIEFCASE_TRANSFERRED: '#7dff9b',
-  SECURITY_ALERTED: '#ff5d73',
-  ESCAPE_ROUTE_OPENED: '#80ed99',
-  ARTIFACT_INTERCEPTED: '#00f5d4',
+  PAYMENT_SENT: '#67e8f9',
+  ITEM_TRANSFERRED: '#22d3ee',
+  TRADE_ACCEPTED: '#38bdf8',
+  TRADE_PROPOSED: '#a78bfa',
+  MANIFEST_ACCEPTED: '#7dd3fc',
+  INVENTORY_COMPROMISED: '#c4b5fd',
+  BRIEFCASE_LOCATED: '#93c5fd',
+  BRIEFCASE_TRANSFERRED: '#22d3ee',
+  SECURITY_ALERTED: '#f472b6',
+  ESCAPE_ROUTE_OPENED: '#8b5cf6',
+  ARTIFACT_INTERCEPTED: '#67e8f9',
 }
 
-const FEED_EVENT_WHITELIST = new Set([
-  'PAYMENT_SENT',
-  'ITEM_TRANSFERRED',
-  'TRADE_ACCEPTED',
-  'TRADE_PROPOSED',
-  'MANIFEST_ACCEPTED',
-  'INVENTORY_COMPROMISED',
-  'BRIEFCASE_LOCATED',
-  'BRIEFCASE_TRANSFERRED',
-  'SECURITY_ALERTED',
-  'ESCAPE_ROUTE_OPENED',
-  'ARTIFACT_INTERCEPTED',
-])
+function hashColor(value: string) {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0
+  }
 
-function shouldDisplayEvent(event: WorldEvent) {
-  return FEED_EVENT_WHITELIST.has(event.actionType)
+  return `hsl(${hash % 360} 85% 65%)`
+}
+
+function getEventColor(actionType: string) {
+  return ACTION_COLOR[actionType] ?? hashColor(actionType)
+}
+
+function formatFallbackSummary(event: WorldEvent) {
+  const payload = event.payload as Record<string, unknown>
+
+  if (typeof payload.summary === 'string' && payload.summary.trim()) {
+    return payload.summary.trim()
+  }
+
+  if (typeof payload.response === 'string' && payload.response.trim()) {
+    return payload.response.trim()
+  }
+
+  if (typeof payload.message === 'string' && payload.message.trim()) {
+    return payload.message.trim()
+  }
+
+  return `${event.sourceName} signaled ${event.actionType.replace(/_/g, ' ').toLowerCase()}`
+}
+
+function truncateProof(proof: string) {
+  if (proof.length <= 14) return proof
+  return `${proof.slice(0, 10)}…${proof.slice(-6)}`
+}
+
+function formatPaymentProof(payload: Record<string, unknown>) {
+  const signature = typeof payload.signature === 'string' ? payload.signature.trim() : ''
+  if (signature) return `sig ${truncateProof(signature)}`
+
+  const userOpHash = typeof payload.userOpHash === 'string' ? payload.userOpHash.trim() : ''
+  if (userOpHash) return `uop ${truncateProof(userOpHash)}`
+
+  const txHash = typeof payload.txHash === 'string' ? payload.txHash.trim() : ''
+  if (txHash) return `tx ${truncateProof(txHash)}`
+
+  return null
+}
+
+function shouldDisplayEvent(_event: WorldEvent) {
+  return true
+}
+
+function getEventSignature(event: WorldEvent) {
+  return [
+    event.sourceId,
+    event.sourceName,
+    event.actionType,
+    event.timestamp,
+    JSON.stringify(event.payload),
+  ].join('|')
+}
+
+function mergeEvents(existing: WorldEvent[], incoming: WorldEvent[]) {
+  const combined = [...incoming, ...existing]
+  const seen = new Set<string>()
+  const merged: WorldEvent[] = []
+
+  for (const event of combined) {
+    const signature = getEventSignature(event)
+    if (seen.has(signature)) continue
+    seen.add(signature)
+    merged.push(event)
+  }
+
+  return merged
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
+    .slice(0, MAX_FEED_EVENTS)
+}
+
+function loadPersistedEvents() {
+  if (typeof window === 'undefined') return [] as WorldEvent[]
+
+  try {
+    const raw = window.localStorage.getItem(FEED_STORAGE_KEY)
+    if (!raw) return []
+
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+
+    return parsed.filter((event): event is WorldEvent => {
+      return Boolean(
+        event &&
+          typeof event === 'object' &&
+          typeof event.sourceId === 'string' &&
+          typeof event.sourceName === 'string' &&
+          typeof event.actionType === 'string' &&
+          typeof event.timestamp === 'string' &&
+          event.payload &&
+          typeof event.payload === 'object'
+      )
+    })
+  } catch {
+    return []
+  }
+}
+
+function persistEvents(events: WorldEvent[]) {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.localStorage.setItem(FEED_STORAGE_KEY, JSON.stringify(events))
+  } catch {
+    // Ignore storage failures; the feed still has the server event log.
+  }
+}
+
+async function persistEvent(event: WorldEvent) {
+  if (typeof window === 'undefined') return
+
+  try {
+    await fetch(WORLD_EVENTS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        gameId: MIDNIGHT_GAME_ID,
+        ...event,
+      }),
+    })
+  } catch {
+    // Ignore storage failures; feed still works in memory.
+  }
 }
 
 export function WorldEventFeed() {
-  const [events, setEvents] = useState<WorldEvent[]>([])
+  const [events, setEvents] = useState<WorldEvent[]>(() => loadPersistedEvents())
   const feedRef = useRef<HTMLDivElement>(null)
+  const seenEventsRef = useRef<Set<string>>(new Set())
+
+  const pushEvent = useCallback((event: WorldEvent) => {
+    if (!shouldDisplayEvent(event)) return
+
+    const signature = getEventSignature(event)
+    if (seenEventsRef.current.has(signature)) return
+    seenEventsRef.current.add(signature)
+
+    setEvents((prev) => {
+      const next = mergeEvents(prev, [event])
+      persistEvents(next)
+      return next
+    })
+    void persistEvent(event)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadEvents = async () => {
+      try {
+        const response = await fetch(
+          `${WORLD_EVENTS_ENDPOINT}?gameId=${encodeURIComponent(MIDNIGHT_GAME_ID)}&limit=${MAX_FEED_EVENTS}`
+        )
+
+        if (!response.ok) return
+
+        const payload = (await response.json()) as { events?: WorldEvent[] }
+        const loaded = Array.isArray(payload.events) ? payload.events : []
+        if (cancelled) return
+
+        setEvents((current) => {
+          const next = mergeEvents(current, loaded)
+          persistEvents(next)
+          return next
+        })
+        for (const event of loaded) {
+          seenEventsRef.current.add(getEventSignature(event))
+        }
+      } catch {
+        // Ignore hydration failures; live events still work.
+      }
+    }
+
+    void loadEvents()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     const unsub = worldLoop.subscribe(event => {
-      if (!shouldDisplayEvent(event)) return
-      setEvents(prev => [event, ...prev].slice(0, 30))
+      pushEvent(event)
     })
+
+    const handleNpcSystemEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ eventName?: string; npcName?: string }>).detail
+      if (!detail?.eventName) return
+      const actionType = detail.eventName
+
+      const sourceName = detail.npcName ? formatNpcDisplayName(detail.npcName) : 'SYSTEM'
+
+      pushEvent({
+        sourceId: `system:${detail.npcName ?? actionType}`,
+        sourceName,
+        actionType,
+        payload: {
+          npcName: detail.npcName,
+          eventName: actionType,
+        },
+        timestamp: new Date().toISOString(),
+      })
+    }
+    window.addEventListener('NPC_SYSTEM_EVENT', handleNpcSystemEvent)
     const unsubState = subscribePlayerState((snapshot) => {
       if (snapshot.lastEventType) {
         const actionType =
@@ -54,27 +249,40 @@ export function WorldEventFeed() {
             ? snapshot.lastEventType
             : 'PLAYER_EVENT'
 
-        if (!FEED_EVENT_WHITELIST.has(actionType)) return
+        const latestPaymentProof = snapshot.recentPaymentProofs[0]
+        const payload: Record<string, unknown> =
+          actionType === 'PAYMENT_SENT' && latestPaymentProof
+            ? {
+                to: latestPaymentProof.recipientName ?? 'unknown',
+                toWallet: latestPaymentProof.recipientWallet,
+                senderWallet: latestPaymentProof.senderWallet,
+                amount: latestPaymentProof.amount,
+                currency: latestPaymentProof.currency,
+                item: latestPaymentProof.item,
+                mode: latestPaymentProof.mode,
+                txHash: latestPaymentProof.txHash,
+                signature: latestPaymentProof.signature,
+                userOpHash: latestPaymentProof.userOpHash,
+              }
+            : {
+                inventory: snapshot.inventory,
+                escrowFunded: snapshot.escrowFunded,
+                lastEventType: snapshot.lastEventType,
+                lastEventAt: snapshot.lastEventAt,
+              }
 
-        setEvents((prev) => [
-          {
-            sourceId: 'local-player',
-            sourceName: 'PLAYER_STATE',
-            actionType,
-            payload: {
-              inventory: snapshot.inventory,
-              escrowFunded: snapshot.escrowFunded,
-              lastEventType: snapshot.lastEventType,
-              lastEventAt: snapshot.lastEventAt,
-            } as Record<string, unknown>,
-            timestamp: snapshot.lastEventAt ?? new Date().toISOString(),
-          },
-          ...prev,
-        ].slice(0, 30))
+        pushEvent({
+          sourceId: 'local-player',
+          sourceName: 'PLAYER_STATE',
+          actionType,
+          payload,
+          timestamp: snapshot.lastEventAt ?? new Date().toISOString(),
+        })
       }
     })
     return () => {
       unsub()
+      window.removeEventListener('NPC_SYSTEM_EVENT', handleNpcSystemEvent)
       unsubState()
     }
   }, [])
@@ -91,7 +299,7 @@ export function WorldEventFeed() {
       className="absolute bottom-16 left-4 z-20 w-72 max-h-48 overflow-y-auto"
       style={{
         background: 'rgba(5,5,15,0.9)',
-        border: '1px solid rgba(0,255,204,0.2)',
+        border: '1px solid rgba(103,232,249,0.24)',
         fontFamily: 'monospace',
       }}
     >
@@ -99,8 +307,8 @@ export function WorldEventFeed() {
         className="sticky top-0 flex items-center gap-1 px-2 py-1 text-xs"
         style={{
           background: 'rgba(5,5,15,0.95)',
-          borderBottom: '1px solid rgba(0,255,204,0.2)',
-          color: '#00ffcc',
+          borderBottom: '1px solid rgba(103,232,249,0.24)',
+          color: '#67e8f9',
           letterSpacing: 2,
         }}
       >
@@ -109,13 +317,14 @@ export function WorldEventFeed() {
       </div>
 
       {events.map((event, i) => {
-        const color = ACTION_COLOR[event.actionType] ?? '#aaccdd'
-        const payload = event.payload as any
+        const color = getEventColor(event.actionType)
+        const payload = event.payload as Record<string, unknown>
+        const paymentProof = event.actionType === 'PAYMENT_SENT' ? formatPaymentProof(payload) : null
         const summary =
           event.actionType === 'PAYMENT_SENT'
-            ? `→ ${payload.to}: ${payload.amount} ${payload.currency} for ${payload.item}`
+            ? `${`→ ${typeof payload.to === 'string' ? payload.to : 'unknown'}: ${String(payload.amount ?? '?')} ${typeof payload.currency === 'string' ? payload.currency : ''} for ${typeof payload.item === 'string' ? payload.item : 'unknown item'}`.trim()}${paymentProof ? ` [${paymentProof}]` : ''}`
             : event.actionType === 'ITEM_TRANSFERRED'
-            ? `→ ${payload.to}: transferred ${payload.item}`
+            ? `→ ${typeof payload.to === 'string' ? payload.to : 'unknown'}: transferred ${typeof payload.item === 'string' ? payload.item : 'unknown item'}`
             : event.actionType === 'MANIFEST_ACCEPTED'
             ? 'Vinnie handed over the quartermaster cover'
             : event.actionType === 'INVENTORY_COMPROMISED'
@@ -130,7 +339,7 @@ export function WorldEventFeed() {
             ? 'Maintenance tunnel now available'
             : event.actionType === 'ARTIFACT_INTERCEPTED'
             ? 'Quantum drive access codes secured'
-            : JSON.stringify(payload).slice(0, 50)
+            : formatFallbackSummary(event)
 
         return (
           <div

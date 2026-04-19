@@ -357,8 +357,8 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
                 msg.role === 'system'
                   ? 'text-cyan-300'
                   : msg.role === 'user'
-                    ? 'text-yellow-200 bg-yellow-900/20 border border-yellow-400/30 rounded px-2 py-2'
-                    : 'text-green-200 bg-green-900/20 border border-green-400/30 rounded px-2 py-2'
+                    ? 'text-blue-200 bg-blue-950/30 border border-blue-400/30 rounded px-2 py-2'
+                    : 'text-purple-200 bg-purple-950/30 border border-purple-400/30 rounded px-2 py-2'
               }
             >
               {msg.text}
@@ -368,7 +368,7 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
             {msg.tradeIntent && (
               <div className="mt-2 ml-2">
                 <RetroButton
-                  variant={transactionState[msg.id]?.status === 'success' ? 'green' : 'magenta'}
+                  variant={transactionState[msg.id]?.status === 'success' ? 'blue' : 'purple'}
                   size="sm"
                   onClick={() => handleAcceptTrade(msg.id, msg.tradeIntent!)}
                   disabled={
@@ -384,12 +384,12 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
                       : 'Accept trade'}
                 </RetroButton>
                         {transactionState[msg.id]?.status === 'success' && (
-                          <div className="mt-1 text-[10px] text-green-300">
+                          <div className="mt-1 text-[10px] text-blue-300">
                             Tx: {transactionState[msg.id]?.txHash?.slice(0, 16)}...
                           </div>
                         )}
                 {transactionState[msg.id]?.status === 'failed' && (
-                  <div className="mt-1 text-[10px] text-yellow-300">
+                  <div className="mt-1 text-[10px] text-purple-300">
                     {transactionState[msg.id]?.error}
                   </div>
                 )}
@@ -408,7 +408,7 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
                   rel="noopener noreferrer"
                   className="inline-block"
                 >
-                  <RetroButton variant="yellow" size="sm" className="text-xs">
+                  <RetroButton variant="blue" size="sm" className="text-xs">
                     VIEW ON EXPLORER
                   </RetroButton>
                 </a>
@@ -417,7 +417,7 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
           </div>
         ))}
         {loading && (
-          <div className="text-cyan-300 animate-pulse">Thinking...</div>
+          <div className="text-blue-300 animate-pulse">Thinking...</div>
         )}
       </div>
 

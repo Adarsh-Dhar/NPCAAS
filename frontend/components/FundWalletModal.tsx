@@ -51,7 +51,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
         }
       }
 
-      // Step 2: ensure we're on the KITE_USD network
+      // Step 2: ensure we're on the PYUSD network
       const currentChainIdHex = await window.ethereum.request({ method: 'eth_chainId' }) as string
       const currentChainId = parseInt(currentChainIdHex, 16)
       if (currentChainId !== 2368) {
@@ -61,7 +61,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
         const newChainIdHex = await window.ethereum.request({ method: 'eth_chainId' }) as string
         const newChainId = parseInt(newChainIdHex, 16)
         if (newChainId !== 2368) {
-          setError('Please switch to KITE_USD Testnet (Chain ID 2368) in your wallet to continue.')
+          setError('Please switch to PYUSD Testnet (Chain ID 2368) in your wallet to continue.')
           setStatus('error')
           return
         }
@@ -119,16 +119,16 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="w-full max-w-md border-4 border-yellow-400 bg-black shadow-[8px_8px_0px_0px_rgba(234,179,8,1)]">
+      <div className="w-full max-w-md border-4 border-blue-400 bg-black shadow-[8px_8px_0px_0px_rgba(59,130,246,1)]">
         {/* Header */}
-        <div className="border-b-4 border-yellow-400 px-6 py-4 flex items-center justify-between">
+        <div className="border-b-4 border-blue-400 px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-bold text-white uppercase">Fund Agent</h2>
-            <p className="text-yellow-400 text-xs mt-1">{characterName}</p>
+            <p className="text-blue-300 text-xs mt-1">{characterName}</p>
           </div>
           <button
             onClick={onClose}
-            className="text-yellow-400 hover:text-white text-xl font-bold transition-colors"
+            className="text-blue-300 hover:text-white text-xl font-bold transition-colors"
           >
             ✕
           </button>
@@ -137,12 +137,12 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
         <div className="p-6">
           {/* Network badge */}
           <div className="flex items-center gap-2 mb-4">
-            <div className={`w-2 h-2 rounded-full ${onKiteNetwork && address ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
+            <div className={`w-2 h-2 rounded-full ${onKiteNetwork && address ? 'bg-blue-400 animate-pulse' : 'bg-purple-400'}`} />
             <span className="text-xs font-mono text-gray-400">
               {!address
                 ? 'Wallet not connected'
                 : onKiteNetwork
-                  ? 'KITE_USD Testnet ✓'
+                  ? 'PYUSD Testnet ✓'
                   : 'Wrong network — will switch automatically on send'}
             </span>
           </div>
@@ -150,15 +150,15 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
           {/* Recipient address */}
           <div className="mb-4">
             <p className="text-xs font-bold uppercase text-gray-400 mb-1">Character Wallet</p>
-            <div className="bg-gray-950 border-2 border-yellow-400/40 p-3 break-all">
-              <p className="text-yellow-300 font-mono text-xs leading-relaxed">{walletAddress}</p>
+            <div className="bg-slate-950 border-2 border-blue-400/40 p-3 break-all">
+              <p className="text-blue-300 font-mono text-xs leading-relaxed">{walletAddress}</p>
             </div>
           </div>
 
           {status === 'success' ? (
             <div>
-              <div className="border-4 border-green-400 bg-green-950/20 p-4 mb-4">
-                <p className="text-green-400 text-sm font-bold mb-2">✓ {amount} {PRIMARY_TOKEN_SYMBOL} sent!</p>
+              <div className="border-4 border-blue-400 bg-blue-950/20 p-4 mb-4">
+                <p className="text-blue-300 text-sm font-bold mb-2">✓ {amount} {PRIMARY_TOKEN_SYMBOL} sent!</p>
                 <p className="text-xs text-gray-400 font-mono break-all">
                   Tx: {txHash.slice(0, 20)}...{txHash.slice(-8)}
                 </p>
@@ -170,11 +170,11 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
                   rel="noopener noreferrer"
                   className="flex-1"
                 >
-                  <RetroButton variant="yellow" size="sm" className="w-full text-xs">
+                  <RetroButton variant="blue" size="sm" className="w-full text-xs">
                     VIEW ON EXPLORER
                   </RetroButton>
                 </a>
-                <RetroButton variant="cyan" size="sm" onClick={onClose} className="flex-1">
+                <RetroButton variant="purple" size="sm" onClick={onClose} className="flex-1">
                   DONE
                 </RetroButton>
               </div>
@@ -182,7 +182,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
           ) : (
             <>
               <RetroInput
-                borderColor="yellow"
+                borderColor="blue"
                 label="Amount (Token)"
                 type="number"
                 value={amount}
@@ -194,7 +194,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
               />
 
               <p className="mt-2 text-xs text-gray-500 font-mono">
-                Sending {PRIMARY_TOKEN_SYMBOL} token {PRIMARY_TOKEN_ADDRESS} on KITE_USD Testnet (Chain ID: 2368)
+                Sending {PRIMARY_TOKEN_SYMBOL} token {PRIMARY_TOKEN_ADDRESS} on PYUSD Testnet (Chain ID: 2368)
               </p>
 
               {(status === 'error' && error) && (
@@ -205,7 +205,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
 
               <div className="mt-6 flex gap-3 justify-end">
                 <RetroButton
-                  variant="magenta"
+                  variant="purple"
                   size="sm"
                   onClick={onClose}
                   disabled={isBusy}
@@ -213,7 +213,7 @@ export default function FundWalletModal({ characterName, walletAddress, onClose 
                   CANCEL
                 </RetroButton>
                 <RetroButton
-                  variant="yellow"
+                  variant="blue"
                   size="sm"
                   onClick={handleSend}
                   disabled={isBusy || !amount || parseFloat(amount) <= 0}

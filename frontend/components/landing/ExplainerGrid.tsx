@@ -4,9 +4,9 @@ export default function ExplainerGrid() {
   const cards = [
     {
       icon: '⛓️',
-      title: 'KITE_USD ECOSYSTEM',
+      title: 'PYUSD ECOSYSTEM',
       description:
-        'Deploy on the KITE_USD network, the first Web3 ecosystem designed for autonomous economic agents.',
+        'Deploy on the PYUSD network, the first Web3 ecosystem designed for autonomous economic agents.',
       borderColor: 'cyan',
     },
     {
@@ -26,9 +26,9 @@ export default function ExplainerGrid() {
   ]
 
   const colorMap = {
-    cyan: 'retro-card-cyan',
-    yellow: 'retro-card-yellow',
-    magenta: 'retro-card-magenta',
+    cyan: 'retro-card-blue',
+    yellow: 'retro-card-blue',
+    magenta: 'retro-card-purple',
   }
 
   return (

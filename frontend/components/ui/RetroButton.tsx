@@ -9,13 +9,13 @@ interface RetroButtonProps
 }
 
 const variantClasses = {
-  green: 'bg-green-500 border-green-700 text-black hover:bg-green-600',
-  magenta: 'bg-pink-500 border-pink-700 text-white hover:bg-pink-600',
-  cyan: 'bg-cyan-500 border-cyan-700 text-black hover:bg-cyan-600',
-  yellow: 'bg-yellow-500 border-yellow-700 text-black hover:bg-yellow-600',
-  orange: 'bg-orange-500 border-orange-700 text-black hover:bg-orange-600',
-  red: 'bg-red-500 border-red-700 text-white hover:bg-red-600',
-  blue: 'bg-blue-500 border-blue-700 text-white hover:bg-blue-600',
+  green: 'bg-cyan-600 border-cyan-300 text-slate-950 hover:bg-cyan-500',
+  magenta: 'bg-purple-700 border-fuchsia-300 text-white hover:bg-purple-600',
+  cyan: 'bg-blue-600 border-cyan-300 text-white hover:bg-sky-600',
+  yellow: 'bg-indigo-700 border-blue-300 text-blue-50 hover:bg-indigo-600',
+  orange: 'bg-purple-700 border-cyan-300 text-blue-50 hover:bg-purple-600',
+  red: 'bg-fuchsia-800 border-purple-200 text-white hover:bg-fuchsia-700',
+  blue: 'bg-blue-600 border-blue-200 text-white hover:bg-blue-500',
 }
 
 const sizeClasses = {
@@ -26,7 +26,7 @@ const sizeClasses = {
 
 const RetroButton = React.forwardRef<HTMLButtonElement, RetroButtonProps>(
   (
-    { variant = 'cyan', size = 'md', className = '', ...props },
+    { variant = 'blue', size = 'md', className = '', ...props },
     ref
   ) => {
     return (
@@ -42,18 +42,18 @@ const RetroButton = React.forwardRef<HTMLButtonElement, RetroButtonProps>(
           ${className}
         `}
         style={{
-          boxShadow: '4px 4px 0px 0px rgba(255, 255, 255, 1)',
+          boxShadow: '4px 4px 0px 0px rgba(34, 211, 238, 0.75), 0 0 18px rgba(34, 211, 238, 0.14)',
         }}
         onMouseDown={(e) => {
           e.currentTarget.style.boxShadow = 'none'
           e.currentTarget.style.transform = 'translate(4px, 4px)'
         }}
         onMouseUp={(e) => {
-          e.currentTarget.style.boxShadow = '4px 4px 0px 0px rgba(255, 255, 255, 1)'
+          e.currentTarget.style.boxShadow = '4px 4px 0px 0px rgba(34, 211, 238, 0.75), 0 0 18px rgba(34, 211, 238, 0.14)'
           e.currentTarget.style.transform = 'translate(0, 0)'
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.boxShadow = '4px 4px 0px 0px rgba(255, 255, 255, 1)'
+          e.currentTarget.style.boxShadow = '4px 4px 0px 0px rgba(34, 211, 238, 0.75), 0 0 18px rgba(34, 211, 238, 0.14)'
           e.currentTarget.style.transform = 'translate(0, 0)'
         }}
         {...props}

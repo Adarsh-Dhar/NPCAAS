@@ -32,6 +32,7 @@ export async function POST(
     await prisma.character.update({
       where: { id: character.id },
       data: { config: updatedConfig as Prisma.InputJsonValue },
+      select: { id: true },
     })
 
     await (prisma as any).npcLog.create({
@@ -40,6 +41,7 @@ export async function POST(
         eventType: 'LOOP_STOP',
         details: { stoppedAt: new Date().toISOString() },
       },
+      select: { id: true },
     })
 
     return NextResponse.json({

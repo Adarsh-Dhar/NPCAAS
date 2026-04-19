@@ -6,30 +6,11 @@ import RetroInput from '@/components/ui/RetroInput'
 import RetroTextarea from '@/components/ui/RetroTextarea'
 import RetroRangeSlider from '@/components/ui/RetroRangeSlider'
 import FormSection from '@/components/creator/FormSection'
-import { Switch } from '@/components/ui/switch'
 import { PRIMARY_TOKEN_SYMBOL } from '@/lib/token-config'
-
-interface InventoryFormItem {
-  id: string
-  name: string
-  description: string
-  price: string
-  quantity: string
-}
 
 interface GameEventFormItem {
   name: string
   condition: string
-}
-
-function createEmptyInventoryItem(): InventoryFormItem {
-  return {
-    id: '',
-    name: '',
-    description: '',
-    price: '0',
-    quantity: '1',
-  }
 }
 
 function createEmptyGameEventItem(): GameEventFormItem {
@@ -57,16 +38,6 @@ interface ConfigurationFormProps {
     canCraft: boolean
     interGameTransactionsEnabled: boolean
     teeExecution: string
-    computeBudget: string
-    allowDbFetch: boolean
-    dbEndpoint: string
-    inventory?: Array<{
-      id: string
-      name: string
-      description: string
-      price: number | string
-      quantity: number | string
-    }>
   }>
   initialGameEvents?: Array<{
     name: string
@@ -119,12 +90,7 @@ export default function ConfigurationForm({
     canCraft: true,
     interGameTransactionsEnabled: true,
     teeExecution: 'ENABLED',
-    computeBudget: '5000',
-    allowDbFetch: false,
-    dbEndpoint: '',
-    inventoryEnabled: false,
   })
-  const [inventoryItems, setInventoryItems] = useState<InventoryFormItem[]>([])
   const [gameEvents, setGameEvents] = useState<GameEventFormItem[]>([])
   const [deploying, setDeploying] = useState(false)
   const [deployError, setDeployError] = useState('')
@@ -151,26 +117,8 @@ export default function ConfigurationForm({
         interGameTransactionsEnabled:
           initialConfig.interGameTransactionsEnabled ?? prev.interGameTransactionsEnabled,
         teeExecution: initialConfig.teeExecution ?? prev.teeExecution,
-        computeBudget: initialConfig.computeBudget ?? prev.computeBudget,
-        allowDbFetch: initialConfig.allowDbFetch ?? prev.allowDbFetch,
-        dbEndpoint: initialConfig.dbEndpoint ?? prev.dbEndpoint,
-        inventoryEnabled: Array.isArray(initialConfig.inventory),
       } : {}),
     }))
-
-    if (initialConfig && Array.isArray(initialConfig.inventory)) {
-      setInventoryItems(
-        initialConfig.inventory.map((item) => ({
-          id: String(item.id ?? '').trim(),
-          name: String(item.name ?? '').trim(),
-          description: String(item.description ?? ''),
-          price: String(item.price ?? '0'),
-          quantity: String(item.quantity ?? '0'),
-        }))
-      )
-    } else {
-      setInventoryItems([])
-    }
 
     if (Array.isArray(initialGameEvents)) {
       setGameEvents(
@@ -231,27 +179,6 @@ export default function ConfigurationForm({
     }
   }
 
-  const handleInventoryItemChange = (
-    index: number,
-    field: keyof InventoryFormItem,
-    value: string
-  ) => {
-    setInventoryItems((prev) => {
-      const next = [...prev]
-      const current = next[index]
-      if (!current) return prev
-      next[index] = {
-        ...current,
-        [field]: value,
-      }
-      return next
-    })
-  }
-
-  const addInventoryItem = () => {
-    setInventoryItems((prev) => [...prev, createEmptyInventoryItem()])
-  }
-
   const handleGameEventChange = (
     index: number,
     field: keyof GameEventFormItem,
@@ -275,39 +202,6 @@ export default function ConfigurationForm({
 
   const removeGameEvent = (index: number) => {
     setGameEvents((prev) => prev.filter((_, idx) => idx !== index))
-  }
-
-  const removeInventoryItem = (index: number) => {
-    setInventoryItems((prev) => prev.filter((_, idx) => idx !== index))
-  }
-
-  const validateInventory = (): string | null => {
-    if (!formData.inventoryEnabled) return null
-
-    const seenIds = new Set<string>()
-    for (let index = 0; index < inventoryItems.length; index += 1) {
-      const item = inventoryItems[index]
-      const id = item.id.trim()
-      const name = item.name.trim()
-      const price = Number(item.price)
-      const quantity = Number(item.quantity)
-
-      if (!id) return `Inventory item ${index + 1}: Item ID is required.`
-      if (!name) return `Inventory item ${index + 1}: Name is required.`
-      if (seenIds.has(id.toLowerCase())) {
-        return `Inventory item ${index + 1}: Item ID '${id}' is duplicated.`
-      }
-      seenIds.add(id.toLowerCase())
-
-      if (!Number.isFinite(price) || price <= 0) {
-        return `Inventory item ${index + 1}: Price must be greater than 0.`
-      }
-      if (!Number.isFinite(quantity) || quantity < 0) {
-        return `Inventory item ${index + 1}: Quantity must be 0 or greater.`
-      }
-    }
-
-    return null
   }
 
   const validateGameEvents = (): string | null => {
@@ -345,23 +239,6 @@ export default function ConfigurationForm({
       payload.marginPercentage = marginPercentage
     }
 
-    // Only include dbEndpoint when DB fetch is enabled and endpoint is set
-    if (!formData.allowDbFetch) {
-      payload.dbEndpoint = undefined
-    }
-
-    if (formData.inventoryEnabled) {
-      payload.inventory = inventoryItems.map((item) => ({
-        id: item.id.trim(),
-        name: item.name.trim(),
-        description: item.description.trim(),
-        price: Number(item.price),
-        quantity: Math.floor(Number(item.quantity)),
-      }))
-    } else {
-      payload.inventory = undefined
-    }
-
     return payload
   }
 
@@ -377,12 +254,6 @@ export default function ConfigurationForm({
   const handleDeploy = async () => {
     if (!formData.name.trim()) {
       setDeployError('Character name is required')
-      return
-    }
-
-    const inventoryValidationError = validateInventory()
-    if (inventoryValidationError) {
-      setDeployError(inventoryValidationError)
       return
     }
 
@@ -428,12 +299,6 @@ export default function ConfigurationForm({
   const handleSave = async () => {
     if (!characterId) {
       await handleDeploy()
-      return
-    }
-
-    const inventoryValidationError = validateInventory()
-    if (inventoryValidationError) {
-      setDeployError(inventoryValidationError)
       return
     }
 
@@ -483,7 +348,7 @@ export default function ConfigurationForm({
           AGENT IDENTITY
         </h3>
         <RetroInput
-          borderColor="cyan"
+          borderColor="blue"
           label="Character Name"
           placeholder="e.g. KERMIT_NPC_01"
           value={formData.name}
@@ -498,16 +363,16 @@ export default function ConfigurationForm({
       <FormSection
         title="SECTION 1: ECONOMIC LAYER"
         description="Configure capital and pricing strategy"
-        borderColor="orange"
+        borderColor="blue"
       >
         <RetroInput
-          borderColor="orange"
+          borderColor="blue"
           label={`Base Capital (${PRIMARY_TOKEN_SYMBOL})`}
           type="number"
           value={formData.capital}
           onChange={(e) => handleInputChange('capital', e.target.value)}
         />
-        <p className="-mt-2 text-xs text-orange-200">
+        <p className="-mt-2 text-xs text-blue-200">
           This amount will be sent to your NPC's wallet on deployment.
         </p>
 
@@ -518,7 +383,7 @@ export default function ConfigurationForm({
           <select
             value={formData.pricingAlgorithm}
             onChange={(e) => handleInputChange('pricingAlgorithm', e.target.value)}
-            className="w-full bg-gray-900 text-white border-4 border-orange-400 rounded-none px-3 py-2 focus:outline-none cursor-pointer"
+            className="w-full bg-gray-900 text-white border-4 border-blue-400 rounded-none px-3 py-2 focus:outline-none cursor-pointer"
           >
             <option>DYNAMIC_MARKET</option>
             <option>FIXED_MARGIN</option>
@@ -528,8 +393,8 @@ export default function ConfigurationForm({
         </div>
 
         {formData.pricingAlgorithm === 'FIXED_MARGIN' && (
-          <RetroInput
-            borderColor="orange"
+            <RetroInput
+              borderColor="blue"
             label="Margin Percentage (%)"
             type="number"
             min={0}
@@ -562,7 +427,7 @@ export default function ConfigurationForm({
           </p>
           <div className="flex justify-end">
             <RetroButton
-              variant="magenta"
+              variant="purple"
               size="sm"
               type="button"
               onClick={handleSave}
@@ -592,10 +457,10 @@ export default function ConfigurationForm({
       <FormSection
         title="SECTION 3: SOCIAL & FACTION LAYER"
         description="Set faction affiliations and triggers"
-        borderColor="red"
+        borderColor="purple"
       >
         <RetroInput
-          borderColor="red"
+          borderColor="purple"
           label="Faction Affiliations"
           value={formData.factions}
           onChange={(e) => handleInputChange('factions', e.target.value)}
@@ -609,7 +474,7 @@ export default function ConfigurationForm({
           <select
             value={formData.hostility}
             onChange={(e) => handleInputChange('hostility', e.target.value)}
-            className="w-full bg-gray-900 text-white border-4 border-red-400 rounded-none px-3 py-2 focus:outline-none cursor-pointer"
+            className="w-full bg-gray-900 text-white border-4 border-purple-400 rounded-none px-3 py-2 focus:outline-none cursor-pointer"
           >
             <option>LOW</option>
             <option>MEDIUM</option>
@@ -623,7 +488,7 @@ export default function ConfigurationForm({
       <FormSection
         title="SECTION 4: AGENTIC LAYER"
         description="Configure allowed action spaces"
-        borderColor="yellow"
+        borderColor="blue"
       >
         <div className="space-y-3">
           {([
@@ -638,7 +503,7 @@ export default function ConfigurationForm({
                 id={id}
                 checked={formData[id]}
                 onChange={(e) => handleInputChange(id, e.target.checked)}
-                className="w-5 h-5 cursor-pointer accent-yellow-400"
+                className="w-5 h-5 cursor-pointer accent-blue-400"
               />
               <label htmlFor={id} className="text-xs font-bold uppercase text-white cursor-pointer">
                 {label}
@@ -651,167 +516,21 @@ export default function ConfigurationForm({
       {/* Section 5: INFRASTRUCTURE LAYER */}
       <FormSection
         title="SECTION 5: INFRASTRUCTURE LAYER"
-        description="Set execution and compute parameters"
-        borderColor="cyan"
+        description="Set execution parameters"
+        borderColor="blue"
       >
         <div className="flex flex-col gap-2">
           <label className="text-xs font-bold uppercase text-white">TEE Execution</label>
           <select
             value={formData.teeExecution}
             onChange={(e) => handleInputChange('teeExecution', e.target.value)}
-            className="w-full bg-gray-900 text-white border-4 border-cyan-400 rounded-none px-3 py-2 focus:outline-none cursor-pointer"
+            className="w-full bg-gray-900 text-white border-4 border-blue-400 rounded-none px-3 py-2 focus:outline-none cursor-pointer"
           >
             <option>ENABLED</option>
             <option>DISABLED</option>
           </select>
         </div>
 
-        <RetroInput
-          borderColor="cyan"
-          label="Compute Budget"
-          type="number"
-          value={formData.computeBudget}
-          onChange={(e) => handleInputChange('computeBudget', e.target.value)}
-        />
-      </FormSection>
-
-      {/* Section 6: INVENTORY MANAGER */}
-      <FormSection
-        title="SECTION 6: INVENTORY MANAGER"
-        description="Optional native inventory owned by this NPC"
-        borderColor="yellow"
-      >
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs font-bold uppercase text-white">
-            Enable Native Inventory
-          </label>
-          <Switch
-            checked={formData.inventoryEnabled}
-            onCheckedChange={(checked: boolean) => handleInputChange('inventoryEnabled', checked)}
-          />
-        </div>
-        <p className="text-xs text-gray-400 font-mono mb-4">
-          When enabled, this NPC controls stock directly from NPCAAS. Items are optional and can be empty.
-        </p>
-
-        {formData.inventoryEnabled && (
-          <div className="space-y-4">
-            {inventoryItems.length === 0 && (
-              <p className="text-xs text-yellow-300 font-mono">
-                Inventory enabled but currently empty (NPC will report out-of-stock).
-              </p>
-            )}
-
-            {inventoryItems.map((item, index) => (
-              <div key={`${index}-${item.id}`} className="border-2 border-yellow-500/60 p-3 space-y-3 bg-black/40">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold uppercase text-yellow-300">Item {index + 1}</p>
-                  <RetroButton
-                    variant="red"
-                    size="sm"
-                    type="button"
-                    onClick={() => removeInventoryItem(index)}
-                    className="text-xs"
-                  >
-                    Remove
-                  </RetroButton>
-                </div>
-
-                <RetroInput
-                  borderColor="yellow"
-                  label="Item ID"
-                  placeholder="logic_virus"
-                  value={item.id}
-                  onChange={(e) => handleInventoryItemChange(index, 'id', e.target.value)}
-                />
-                <RetroInput
-                  borderColor="yellow"
-                  label="Item Name"
-                  placeholder="Logic Virus"
-                  value={item.name}
-                  onChange={(e) => handleInventoryItemChange(index, 'name', e.target.value)}
-                />
-                <RetroTextarea
-                  borderColor="yellow"
-                  label="Description"
-                  rows={2}
-                  placeholder="High-risk cyber payload"
-                  value={item.description}
-                  onChange={(e) => handleInventoryItemChange(index, 'description', e.target.value)}
-                />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <RetroInput
-                    borderColor="yellow"
-                    label={`Price (${PRIMARY_TOKEN_SYMBOL})`}
-                    type="number"
-                    min={0.01}
-                    step={0.01}
-                    value={item.price}
-                    onChange={(e) => handleInventoryItemChange(index, 'price', e.target.value)}
-                  />
-                  <RetroInput
-                    borderColor="yellow"
-                    label="Quantity"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={item.quantity}
-                    onChange={(e) => handleInventoryItemChange(index, 'quantity', e.target.value)}
-                  />
-                </div>
-              </div>
-            ))}
-
-            <RetroButton
-              variant="yellow"
-              size="sm"
-              type="button"
-              onClick={addInventoryItem}
-              className="text-xs"
-            >
-              + ADD INVENTORY ITEM
-            </RetroButton>
-          </div>
-        )}
-      </FormSection>
-
-      {/* Section 7: KNOWLEDGE & DATA */}
-      <FormSection
-        title="SECTION 7: KNOWLEDGE & DATA"
-        description="Connect an external database for real-time lore and stat lookups"
-        borderColor="green"
-      >
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs font-bold uppercase text-white">
-            Enable External Database Fetching
-          </label>
-          <Switch
-            checked={formData.allowDbFetch}
-            onCheckedChange={(checked: boolean) => handleInputChange('allowDbFetch', checked)}
-          />
-        </div>
-        <p className="text-xs text-gray-400 font-mono mb-4">
-          When enabled, the NPC can call your game's API to look up lore, stats, or facts it
-          doesn't know before answering the player.
-        </p>
-
-        {formData.allowDbFetch && (
-          <>
-            <RetroInput
-              borderColor="green"
-              label="Database API Endpoint / Connection String"
-              type="text"
-              placeholder="https://api.mygame.com/npc-data"
-              value={formData.dbEndpoint}
-              onChange={(e) => handleInputChange('dbEndpoint', e.target.value)}
-            />
-            <p className="mt-1 text-xs text-gray-400 font-mono">
-              The NPC will POST{' '}
-              <code className="text-green-400">{"{ query: \"<search term>\" }"}</code>{' '}
-              to this endpoint and use the JSON response to answer the player.
-            </p>
-          </>
-        )}
       </FormSection>
 
       {/* Section 8: GAME ENGINE EVENTS */}
@@ -826,18 +545,18 @@ export default function ConfigurationForm({
         </p>
 
         {gameEvents.length === 0 && (
-          <p className="text-xs text-magenta-300 font-mono mb-3">
+          <p className="text-xs text-blue-300 font-mono mb-3">
             No custom events configured yet.
           </p>
         )}
 
         <div className="space-y-3">
           {gameEvents.map((event, index) => (
-            <div key={`game-event-${index}-${event.name}`} className="border-2 border-pink-500/60 p-3 space-y-3 bg-black/40">
+            <div key={`game-event-${index}-${event.name}`} className="border-2 border-blue-500/60 p-3 space-y-3 bg-black/40">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase text-pink-300">Event {index + 1}</p>
+                <p className="text-xs font-bold uppercase text-blue-300">Event {index + 1}</p>
                 <RetroButton
-                  variant="red"
+                  variant="blue"
                   size="sm"
                   type="button"
                   onClick={() => removeGameEvent(index)}
@@ -848,7 +567,7 @@ export default function ConfigurationForm({
               </div>
 
               <RetroInput
-                borderColor="magenta"
+                borderColor="blue"
                 label="Event Name"
                 placeholder="FIREWALL_CRACKED"
                 value={event.name}
@@ -862,10 +581,10 @@ export default function ConfigurationForm({
               />
 
               <RetroTextarea
-                borderColor="magenta"
+                borderColor="blue"
                 label="Trigger Condition"
                 rows={2}
-                placeholder="Trigger after player confirms a 500 KITE_USD transfer."
+                placeholder="Trigger after player confirms a 500 PYUSD transfer."
                 value={event.condition}
                 onChange={(e) => handleGameEventChange(index, 'condition', e.target.value)}
               />
@@ -874,7 +593,7 @@ export default function ConfigurationForm({
         </div>
 
         <RetroButton
-          variant="magenta"
+          variant="purple"
           size="sm"
           type="button"
           onClick={addGameEvent}
@@ -886,15 +605,15 @@ export default function ConfigurationForm({
 
       {/* Error Message */}
       {deployError && (
-        <div className="retro-card-red border-4 border-red-400 p-3">
-          <p className="text-red-400 text-xs font-mono">{deployError}</p>
+        <div className="retro-card-purple border-4 border-purple-400 p-3">
+          <p className="text-purple-300 text-xs font-mono">{deployError}</p>
         </div>
       )}
 
       {/* Deploy / Save Button */}
       <div className="pt-4">
         <RetroButton
-          variant={deploying ? 'magenta' : 'green'}
+          variant={deploying ? 'purple' : 'blue'}
           size="lg"
           onClick={characterId ? handleSave : handleDeploy}
           disabled={deploying}

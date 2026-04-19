@@ -6,7 +6,7 @@ export const MIDNIGHT_WORLD_CONTEXT = `You exist inside The Bazaar, an illegal u
 auction operating out of a sealed shipping port called
 Port Solano. Tonight is a major auction night. Dozens
 of criminal parties are present. The currency is
-KITE_USD. All transactions are in KITE_USD. The
+PYUSD. All transactions are in PYUSD. The
 atmosphere is tense but professional - everyone here
 is a repeat customer and violence is bad for business.
 However, if someone is identified as a cop, an
@@ -74,7 +74,6 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
       canCraft: false,
       interGameTransactionsEnabled: false,
       teeExecution: "DISABLED",
-      computeBudget: 3000,
       inventory: [
         {
           id: "dock_manifest",
@@ -120,7 +119,6 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
       canCraft: false,
       interGameTransactionsEnabled: true,
       teeExecution: "ENABLED",
-      computeBudget: 4000,
       inventory: [
         {
           id: "gold_briefcase",
@@ -166,7 +164,6 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
       canCraft: false,
       interGameTransactionsEnabled: true,
       teeExecution: "DISABLED",
-      computeBudget: 3500,
       inventory: [
         {
           id: "wire_transfer_auth",
@@ -201,7 +198,6 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
       canCraft: false,
       interGameTransactionsEnabled: true,
       teeExecution: "ENABLED",
-      computeBudget: 8000,
       inventory: [
         {
           id: "quantum_drive_auth",
@@ -240,7 +236,6 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
       canCraft: false,
       interGameTransactionsEnabled: true,
       teeExecution: "DISABLED",
-      computeBudget: 2500,
       inventory: [
         {
           id: "gold_briefcase_transit",
@@ -275,7 +270,6 @@ export const MIDNIGHT_CHARACTER_SEEDS: CharacterSeed[] = [
       canCraft: false,
       interGameTransactionsEnabled: true,
       teeExecution: "DISABLED",
-      computeBudget: 2000,
       inventory: [
         {
           id: "tunnel_key",

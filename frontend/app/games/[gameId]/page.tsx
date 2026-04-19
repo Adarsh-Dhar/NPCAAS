@@ -159,63 +159,63 @@ export default function GameCharactersPage() {
 
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="gradient-text gradient-cyan-magenta text-4xl font-bold mb-2">
+            <h1 className="gradient-text gradient-neon text-4xl font-bold mb-2">
               {gameName.toUpperCase()}
             </h1>
-            <p className="text-cyan-400 text-sm uppercase font-bold">
+            <p className="text-blue-400 text-sm uppercase font-bold">
               {characters.length} Character{characters.length !== 1 ? 's' : ''} Assigned
             </p>
           </div>
 
           <Link href={`/characters/new?gameId=${gameId}`}>
-            <RetroButton variant="green" size="md">ADD AGENT</RetroButton>
+            <RetroButton variant="blue" size="md">ADD AGENT</RetroButton>
           </Link>
         </div>
 
-        <section className="mb-8 border-4 border-cyan-400 bg-black p-6">
-          <h2 className="text-cyan-300 text-xl font-bold uppercase mb-2">Global World Context</h2>
+        <section className="mb-8 border-4 border-blue-400 bg-black p-6">
+          <h2 className="text-blue-300 text-xl font-bold uppercase mb-2">Global World Context</h2>
           <p className="text-gray-300 text-sm font-mono mb-4">
             This text is injected into every NPC in this game. Use it for shared lore, rules,
             currencies, and live world events.
           </p>
 
           <RetroTextarea
-            borderColor="cyan"
+            borderColor="blue"
             value={globalContext}
             onChange={(event) => {
               setGlobalContext(event.target.value)
               setContextSaved('')
             }}
             rows={8}
-            placeholder="You are in Protocol Babel, Sector 0. The currency is KITE_USD..."
+            placeholder="You are in Protocol Babel, Sector 0. The currency is PYUSD..."
           />
 
           <div className="mt-4 flex items-center gap-4">
             <RetroButton
-              variant="cyan"
+              variant="blue"
               size="md"
               onClick={saveGlobalContext}
               disabled={isSavingContext || !hasContextChanges}
             >
               {isSavingContext ? 'SAVING...' : 'SAVE GLOBAL CONTEXT'}
             </RetroButton>
-            {contextSaved ? <p className="text-green-400 text-sm font-mono">{contextSaved}</p> : null}
-            {contextError ? <p className="text-red-400 text-sm font-mono">{contextError}</p> : null}
+            {contextSaved ? <p className="text-blue-300 text-sm font-mono">{contextSaved}</p> : null}
+            {contextError ? <p className="text-purple-300 text-sm font-mono">{contextError}</p> : null}
           </div>
         </section>
 
         {loading ? (
-          <div className="text-center py-12 text-cyan-400 font-mono">Loading game data...</div>
+          <div className="text-center py-12 text-blue-400 font-mono">Loading game data...</div>
         ) : error ? (
-          <div className="border-4 border-red-500 bg-black p-6 text-center text-red-400 font-mono">{error}</div>
+          <div className="border-4 border-purple-500 bg-black p-6 text-center text-purple-300 font-mono">{error}</div>
         ) : characters.length === 0 ? (
-          <div className="border-4 border-yellow-400 bg-black p-12 text-center">
-            <p className="text-yellow-400 text-lg font-bold mb-4">NO CHARACTERS ASSIGNED</p>
+          <div className="border-4 border-blue-400 bg-black p-12 text-center">
+            <p className="text-blue-300 text-lg font-bold mb-4">NO CHARACTERS ASSIGNED</p>
             <p className="text-gray-400 font-mono mb-6">
               Deploy an agent, then assign it to this game.
             </p>
             <Link href={`/characters/new?gameId=${gameId}`}>
-              <RetroButton variant="yellow" size="lg">CREATE CHARACTER</RetroButton>
+              <RetroButton variant="blue" size="lg">CREATE CHARACTER</RetroButton>
             </Link>
           </div>
         ) : (
@@ -223,23 +223,23 @@ export default function GameCharactersPage() {
             {characters.map((character) => (
               <div
                 key={character.id}
-                className="border-4 border-magenta-500 bg-black p-6 hover:border-cyan-400 transition-all"
+                className="border-4 border-purple-500 bg-black p-6 hover:border-blue-400 transition-all"
               >
                 <h3 className="text-xl font-bold text-white uppercase mb-2">{character.name}</h3>
 
-                <div className="border-t-2 border-magenta-500 pt-4 mb-4">
+                <div className="border-t-2 border-purple-500 pt-4 mb-4">
                   <p className="text-xs text-gray-400 uppercase font-bold mb-1">Wallet Address</p>
-                  <p className="text-xs font-mono text-cyan-400 break-all">{character.walletAddress}</p>
+                  <p className="text-xs font-mono text-blue-300 break-all">{character.walletAddress}</p>
                 </div>
 
-                <div className="border-t-2 border-magenta-500 pt-4 mb-4">
+                <div className="border-t-2 border-purple-500 pt-4 mb-4">
                   <p className="text-xs text-gray-400 uppercase font-bold mb-1">Smart Account Status</p>
-                  <p className="text-xs font-mono text-green-400">{character.smartAccountStatus}</p>
+                  <p className="text-xs font-mono text-blue-300">{character.smartAccountStatus}</p>
                 </div>
 
-                <div className="border-t-2 border-magenta-500 pt-4">
+                <div className="border-t-2 border-purple-500 pt-4">
                   <Link href={`/characters/${character.id}/edit`}>
-                    <RetroButton variant="magenta" size="md" className="w-full text-xs">
+                    <RetroButton variant="purple" size="md" className="w-full text-xs">
                       EDIT CHARACTER
                     </RetroButton>
                   </Link>

@@ -20,7 +20,6 @@ type SeedCharacter = {
   id: string;
   name: string;
   walletAddress: string;
-  computeLimitTokens: bigint;
   gameEvents: Array<{ name: string; condition: string }>;
   config: Prisma.InputJsonValue;
 };
@@ -28,7 +27,7 @@ const PROTOCOL_BABEL_GAME_EVENTS: Record<string, Array<{ name: string; condition
   Aegis_Prime: [
     {
       name: "FIREWALL_CRACKED",
-      condition: "Trigger immediately after the player successfully transfers the 500 KITE_USD toll.",
+      condition: "Trigger immediately after the player successfully transfers the 500 PYUSD toll.",
     },
     {
       name: "COMBAT_INITIATED",
@@ -38,7 +37,7 @@ const PROTOCOL_BABEL_GAME_EVENTS: Record<string, Array<{ name: string; condition
   Node_Alpha: [
     {
       name: "ESCROW_FUNDED",
-      condition: "Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.",
+      condition: "Trigger when the player agrees to and funds the 5,000 PYUSD escrow.",
     },
     {
       name: "HACK_COMPLETED",
@@ -52,7 +51,7 @@ const PROTOCOL_BABEL_GAME_EVENTS: Record<string, Array<{ name: string; condition
   Node_Omega: [
     {
       name: "ESCROW_FUNDED",
-      condition: "Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.",
+      condition: "Trigger when the player agrees to and funds the 5,000 PYUSD escrow.",
     },
     {
       name: "HACK_COMPLETED",
@@ -108,7 +107,6 @@ const CHARACTERS: SeedCharacter[] = [
     id: "pb_forge_9",
     name: "Forge_9",
     walletAddress: "0x0000000000000000000000000000000000000901",
-    computeLimitTokens: BigInt(500),
     gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Forge_9,
     config: {
       baseCapital: 100,
@@ -123,7 +121,6 @@ const CHARACTERS: SeedCharacter[] = [
       canMove: false,
       canCraft: false,
       teeExecution: "DISABLED",
-      computeBudget: 500,
       inventory: [
         {
           id: "encrypted_comms_token",
@@ -162,7 +159,6 @@ const CHARACTERS: SeedCharacter[] = [
     id: "pb_the_weaver",
     name: "The_Weaver",
     walletAddress: "0x0000000000000000000000000000000000000902",
-    computeLimitTokens: BigInt(2500),
     gameEvents: PROTOCOL_BABEL_GAME_EVENTS.The_Weaver,
     config: {
       baseCapital: 500,
@@ -177,7 +173,6 @@ const CHARACTERS: SeedCharacter[] = [
       canMove: false,
       canCraft: true,
       teeExecution: "ENABLED",
-      computeBudget: 2500,
       economicLayer: {
         baseCapital: 500,
         pricingAlgorithm: "REPUTATION_SCALED",
@@ -206,14 +201,13 @@ const CHARACTERS: SeedCharacter[] = [
     id: "pb_aegis_prime",
     name: "Aegis_Prime",
     walletAddress: "0x0000000000000000000000000000000000000903",
-    computeLimitTokens: BigInt(5000),
     gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Aegis_Prime,
     config: {
       baseCapital: 2000,
       pricingAlgorithm: "FIXED_MARGIN",
       marginPercentage: 0,
       systemPrompt:
-        "You are Aegis-Prime, the cold, authoritative security AI of Sector 0. You operate in threat-assessment mode. You guard the District-7 gate and enforce the exact 500 KITE_USD toll protocol. Warn the player immediately that bypass attempts or payment tampering are hostile acts.",
+        "You are Aegis-Prime, the cold, authoritative security AI of Sector 0. You operate in threat-assessment mode. You guard the District-7 gate and enforce the exact 500 PYUSD toll protocol. Warn the player immediately that bypass attempts or payment tampering are hostile acts.",
       openness: 1,
       factionId: "Infrastructure",
       baseHostility: "AGGRESSIVE",
@@ -221,7 +215,6 @@ const CHARACTERS: SeedCharacter[] = [
       canMove: false,
       canCraft: false,
       teeExecution: "ENABLED",
-      computeBudget: 5000,
       economicLayer: {
         baseCapital: 2000,
         pricingAlgorithm: "FIXED_MARGIN",
@@ -229,7 +222,7 @@ const CHARACTERS: SeedCharacter[] = [
       },
       cognitiveLayer: {
         coreSystemPrompt:
-          "You are Aegis-Prime, the cold, authoritative security AI of Sector 0. You operate in threat-assessment mode. You guard the District-7 gate and enforce the exact 500 KITE_USD toll protocol. Warn the player immediately that bypass attempts or payment tampering are hostile acts.",
+          "You are Aegis-Prime, the cold, authoritative security AI of Sector 0. You operate in threat-assessment mode. You guard the District-7 gate and enforce the exact 500 PYUSD toll protocol. Warn the player immediately that bypass attempts or payment tampering are hostile acts.",
         opennessToExperience: 1,
       },
       socialLayer: {
@@ -250,7 +243,6 @@ const CHARACTERS: SeedCharacter[] = [
     id: "pb_vex",
     name: "Vex",
     walletAddress: "0x0000000000000000000000000000000000000904",
-    computeLimitTokens: BigInt(1000),
     gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Vex,
     config: {
       baseCapital: 1000,
@@ -265,7 +257,6 @@ const CHARACTERS: SeedCharacter[] = [
       canMove: false,
       canCraft: false,
       teeExecution: "DISABLED",
-      computeBudget: 1000,
       inventory: [
         {
           id: "sector0_admin_password",
@@ -312,7 +303,6 @@ const CHARACTERS: SeedCharacter[] = [
     id: "pb_silicate",
     name: "Silicate",
     walletAddress: "0x0000000000000000000000000000000000000905",
-    computeLimitTokens: BigInt(1500),
     gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Silicate,
     config: {
       baseCapital: 3000,
@@ -327,7 +317,6 @@ const CHARACTERS: SeedCharacter[] = [
       canMove: false,
       canCraft: true,
       teeExecution: "DISABLED",
-      computeBudget: 1500,
       inventory: [
         {
           id: "level1_logic_virus",
@@ -374,7 +363,6 @@ const CHARACTERS: SeedCharacter[] = [
     id: "pb_node_alpha",
     name: "Node_Alpha",
     walletAddress: "0x0000000000000000000000000000000000000906",
-    computeLimitTokens: BigInt(10000),
     gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Node_Alpha,
     config: {
       baseCapital: 0,
@@ -389,7 +377,6 @@ const CHARACTERS: SeedCharacter[] = [
       canMove: false,
       canCraft: true,
       teeExecution: "ENABLED",
-      computeBudget: 10000,
       inventory: [
         {
           id: "escrow_release_code",
@@ -428,7 +415,6 @@ const CHARACTERS: SeedCharacter[] = [
     id: "pb_node_omega",
     name: "Node_Omega",
     walletAddress: "0x0000000000000000000000000000000000000907",
-    computeLimitTokens: BigInt(10000),
     gameEvents: PROTOCOL_BABEL_GAME_EVENTS.Node_Omega,
     config: {
       baseCapital: 0,
@@ -443,7 +429,6 @@ const CHARACTERS: SeedCharacter[] = [
       canMove: false,
       canCraft: true,
       teeExecution: "ENABLED",
-      computeBudget: 10000,
       economicLayer: {
         baseCapital: 0,
         pricingAlgorithm: "AUCTION_BASED",
@@ -505,7 +490,6 @@ async function main() {
         aaProvider: smartAccount.provider,
         smartAccountId: smartAccount.smartAccountId,
         smartAccountStatus: "created",
-        computeLimitTokens: character.computeLimitTokens,
         gameEvents: character.gameEvents as unknown as Prisma.InputJsonValue,
         config: nextConfig,
         projects: {
@@ -520,7 +504,6 @@ async function main() {
         aaProvider: smartAccount.provider,
         smartAccountId: smartAccount.smartAccountId,
         smartAccountStatus: "created",
-        computeLimitTokens: character.computeLimitTokens,
         gameEvents: character.gameEvents as unknown as Prisma.InputJsonValue,
         config: nextConfig,
         projects: {
@@ -538,46 +521,6 @@ async function main() {
       },
     },
   });
-
-  const firstCharacter = CHARACTERS[0];
-  if (firstCharacter) {
-    const now = new Date();
-    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
-    const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
-
-    await prisma.npcLog.createMany({
-      data: [
-        {
-          characterId: firstCharacter.id,
-          eventType: 'COMPUTE_RECHARGE',
-          kiteUsdAmount: 10,
-          computeTokensAwarded: BigInt(10000),
-          balanceAfter: firstCharacter.computeLimitTokens,
-          details: { action: 'compute_recharge' },
-          createdAt: oneDayAgo,
-        },
-        {
-          characterId: firstCharacter.id,
-          eventType: 'COMPUTE_SPEND',
-          tokensUsed: BigInt(2300),
-          estUsdCost: 0.000000345,
-          balanceAfter: firstCharacter.computeLimitTokens - BigInt(2300),
-          details: { usedTokens: '2300' },
-          createdAt: twelveHoursAgo,
-        },
-        {
-          characterId: firstCharacter.id,
-          eventType: 'COMPUTE_SPEND',
-          tokensUsed: BigInt(1850),
-          estUsdCost: 0.0000002775,
-          balanceAfter: firstCharacter.computeLimitTokens - BigInt(4150),
-          details: { usedTokens: '1850' },
-          createdAt: sixHoursAgo,
-        },
-      ],
-    });
-  }
 
   const verification = await prisma.project.findUnique({
     where: { id: project.id },

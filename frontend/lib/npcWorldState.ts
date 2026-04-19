@@ -14,8 +14,6 @@ export interface NpcPublicProfile {
   interGameTransactionsEnabled?: boolean
   smartAccountStatus?: string
   isDeployedOnChain?: boolean
-  computeUsageTokens?: string | number
-  computeLimitTokens?: string | number
   teeAttestationProof?: string | null
   config?: Record<string, unknown>
   adaptation?: Record<string, unknown>
@@ -83,8 +81,6 @@ class NpcWorldState {
     const projectIds = profile.projectIds ?? (profile.projectId ? [profile.projectId] : [])
     const configSummary = profile.config ? JSON.stringify(profile.config) : '{}'
     const adaptationSummary = profile.adaptation ? JSON.stringify(profile.adaptation) : '{}'
-    const computeUsageTokens = profile.computeUsageTokens ?? 'unknown'
-    const computeLimitTokens = profile.computeLimitTokens ?? 'unknown'
 
     const metadata = [
       `projects=${projectIds.length > 0 ? projectIds.join(',') : 'none'}`, 
@@ -95,8 +91,6 @@ class NpcWorldState {
       `interGameTransactionsEnabled=${profile.interGameTransactionsEnabled !== false}`,
       `smartAccountStatus=${profile.smartAccountStatus ?? 'unknown'}`,
       `isDeployedOnChain=${profile.isDeployedOnChain ?? true}`,
-      `computeUsageTokens=${computeUsageTokens}`,
-      `computeLimitTokens=${computeLimitTokens}`,
       `teeAttestationProof=${profile.teeAttestationProof ? 'present' : 'missing'}`,
       `lastAction=${profile.lastAction ?? 'none'}`,
       `lastActionAt=${profile.lastActionAt ?? 'unknown'}`,

@@ -87,7 +87,10 @@ export async function GET(request: NextRequest) {
 
       const characters = await (prisma.character as any).findMany({
         where,
-        include: { projects: { select: { id: true } } },
+        select: {
+          id: true,
+          config: true,
+        },
         orderBy: { createdAt: 'desc' as const },
       })
 

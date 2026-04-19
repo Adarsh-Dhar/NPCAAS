@@ -59,6 +59,7 @@ export async function POST(
           action: agentResponse.action ?? null,
         },
       },
+      select: { id: true },
     })
 
     if (recordInMemory) {
@@ -74,6 +75,7 @@ export async function POST(
       await prisma.character.update({
         where: { id: character.id },
         data: { adaptation: updatedAdaptation as Prisma.InputJsonValue },
+        select: { id: true },
       })
     }
 

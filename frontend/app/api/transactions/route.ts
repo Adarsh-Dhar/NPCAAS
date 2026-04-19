@@ -65,6 +65,19 @@ const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
 const KITE_CHAIN_ID = Number(process.env.KITE_AA_CHAIN_ID ?? '2368')
 const BOT_TO_BOT_TOKEN_ADDRESS = PRIMARY_TOKEN_ADDRESS
 
+const TRANSACTION_CHARACTER_SELECT = {
+  id: true,
+  name: true,
+  walletAddress: true,
+  aaChainId: true,
+  aaProvider: true,
+  smartAccountId: true,
+  smartAccountStatus: true,
+  config: true,
+  createdAt: true,
+  projects: { select: { id: true } },
+} as const
+
 function getCorsHeaders(origin: string | null) {
   const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
   return {
@@ -208,14 +221,14 @@ function classifyExecutionError(error: unknown): ExecutionErrorShape {
       httpStatus: 400,
       error: 'On-chain execution reverted',
       details,
-      hint: 'Target smart account may reject native KITE_USD transfer or sender policy/signer may be invalid.',
+      hint: 'Target smart account may reject native PYUSD transfer or sender policy/signer may be invalid.',
     }
   }
 
   if (lower.includes('fetch failed') || lower.includes('network error')) {
     return {
       httpStatus: 502,
-      error: 'KITE_USD bundler/network error',
+      error: 'PYUSD bundler/network error',
       details,
       hint: 'Retry in a few seconds. If it persists, check KITE_AA_BUNDLER_URL and RPC connectivity.',
     }
@@ -233,9 +246,9 @@ function extractX402TokenAddress(config: unknown): string | null {
   const tokenMap = asRecord(payload.tokenContractAddresses)
 
   const candidate =
-    (typeof tokenMap.KITE_USD === 'string' ? tokenMap.KITE_USD : undefined) ??
+    (typeof tokenMap.PYUSD === 'string' ? tokenMap.PYUSD : undefined) ??
     (typeof payload.kiteUsdTokenAddress === 'string' ? payload.kiteUsdTokenAddress : undefined) ??
-    process.env.KITE_USD_TOKEN_ADDRESS ??
+    process.env.PYUSD_TOKEN_ADDRESS ??
     PRIMARY_TOKEN_ADDRESS
 
   if (!candidate || !ethers.isAddress(candidate)) {
@@ -271,6 +284,7 @@ async function repairLegacyCharacterWallet(character: ApiCharacter) {
       smartAccountStatus: 'created',
       config: nextConfig as unknown as any,
     },
+    select: { id: true },
   })
 
   return {
@@ -401,7 +415,7 @@ export async function POST(request: NextRequest) {
     // -- Load character ----------------------------------------------------
     const character = await prisma.character.findUnique({
       where: { id: characterId },
-      include: { projects: { select: { id: true } } },
+      select: TRANSACTION_CHARACTER_SELECT,
     })
     if (!character) {
       return NextResponse.json({ error: 'Character not found' }, { status: 404, headers: cors })
@@ -568,7 +582,7 @@ export async function POST(request: NextRequest) {
 
       const recipientCharacter = await prisma.character.findFirst({
         where: { walletAddress: directTx.to },
-        include: { projects: { select: { id: true } } },
+        select: TRANSACTION_CHARACTER_SELECT,
       })
 
       if (recipientCharacter) {
@@ -826,7 +840,7 @@ export async function POST(request: NextRequest) {
           characterId,
           transaction: directTx,
           message: execution.mode === 'sponsored'
-              ? `Transaction sent — gas sponsored by KITE_USD.`
+              ? `Transaction sent — gas sponsored by PYUSD.`
               : 'Sponsorship unavailable. Fallback requires user-paid gas.',
         },
         { status: 200, headers: cors }

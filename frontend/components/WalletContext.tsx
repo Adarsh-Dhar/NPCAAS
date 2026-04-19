@@ -46,8 +46,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       params: [
         {
           chainId: KITE_CHAIN_ID_HEX,
-          chainName: 'KITE_USD Testnet',
-          nativeCurrency: { name: 'KITE_USD', symbol: 'KITE_USD', decimals: 18 },
+          chainName: 'PYUSD Testnet',
+          nativeCurrency: { name: 'PYUSD', symbol: 'PYUSD', decimals: 18 },
           rpcUrls: ['https://rpc-testnet.gokite.ai'],
           blockExplorerUrls: ['https://testnet.kitescan.ai'],
         },

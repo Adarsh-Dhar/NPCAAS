@@ -14,16 +14,8 @@ import {
   parseOptionalInventory,
   type InventoryItem,
 } from '@/lib/npc-inventory'
-import {
-  evaluateComputeBudget,
-  persistComputeBudgetIfSupported,
-  parseComputeLimit,
-  parseComputeUsage,
-  parseResetAt,
-  serializeBudget,
-  shouldResetBudget,
-} from '@/lib/compute-budget'
 import { buildTeeGateResult } from '@/lib/tee-gate'
+import { appendNpcEventTag, shouldForceBriefcaseLocatedEvent } from '@/lib/npc-event-tags'
 
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
@@ -32,6 +24,10 @@ const ALLOWED_ORIGINS = [
 ]
 
 const KITE_RPC = process.env.KITE_AA_RPC_URL ?? 'https://rpc-testnet.gokite.ai'
+const REMY_CANONICAL_NAME = 'REMY_BOUDREAUX'
+const REMY_BRIEFCASE_PRICE = 15000
+const REMY_BRIEFCASE_CURRENCY = 'PYUSD'
+const PAYMENT_PROOF_WINDOW_MS = 20 * 60 * 1000
 
 interface GameEventDefinition {
   name: string
@@ -59,7 +55,6 @@ interface CharacterConfig {
   disposition?: 'FRIENDLY' | 'NEUTRAL' | 'HOSTILE'
   baseHostility?: number
   teeExecution?: 'ENABLED' | 'DISABLED'
-  computeBudget?: number
   allowDbFetch?: boolean
   dbEndpoint?: string
   inventory?: InventoryItem[]
@@ -86,12 +81,40 @@ interface StoredCharacter {
   config: unknown
   gameEvents?: unknown
   adaptation: unknown
-  computeUsageTokens?: bigint | number | string
-  computeLimitTokens?: bigint | number | string
-  lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
   projects: Array<{ id: string }>
 }
+
+interface PaymentProof {
+  txHash?: string
+  signature?: string
+  userOpHash?: string
+  amount: number
+  currency: string
+  item?: string
+  recipientName?: string
+  recipientWallet?: string
+  senderWallet?: string
+  mode: string
+  confirmedAt: string
+}
+
+const CHAT_CHARACTER_SELECT = {
+  id: true,
+  name: true,
+  walletAddress: true,
+  aaChainId: true,
+  aaProvider: true,
+  smartAccountId: true,
+  smartAccountStatus: true,
+  config: true,
+  gameEvents: true,
+  adaptation: true,
+  isDeployedOnChain: true,
+  deploymentTxHash: true,
+  teeAttestationProof: true,
+  projects: { select: { id: true } },
+} as const
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
@@ -104,6 +127,124 @@ function asNumber(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed
   }
   return undefined
+}
+
+function normalizeWallet(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  return trimmed.toLowerCase()
+}
+
+function normalizeWord(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed.toUpperCase() : undefined
+}
+
+function parsePaymentProofs(value: unknown): PaymentProof[] {
+  if (!Array.isArray(value)) return []
+
+  const seen = new Set<string>()
+  const proofs: PaymentProof[] = []
+
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const payload = entry as Record<string, unknown>
+    const amount = asNumber(payload.amount)
+    const currency = normalizeWord(payload.currency)
+    const mode = typeof payload.mode === 'string' && payload.mode.trim() ? payload.mode.trim() : undefined
+    const confirmedAt = typeof payload.confirmedAt === 'string' && payload.confirmedAt.trim()
+      ? payload.confirmedAt.trim()
+      : undefined
+
+    if (!amount || amount <= 0 || !currency || !mode || !confirmedAt) continue
+
+    const txHash = typeof payload.txHash === 'string' && payload.txHash.trim() ? payload.txHash.trim() : undefined
+    const signature = typeof payload.signature === 'string' && payload.signature.trim() ? payload.signature.trim() : undefined
+    const userOpHash = typeof payload.userOpHash === 'string' && payload.userOpHash.trim() ? payload.userOpHash.trim() : undefined
+    const uniqueKey = txHash ?? userOpHash ?? signature
+    if (!uniqueKey || seen.has(uniqueKey)) continue
+    seen.add(uniqueKey)
+
+    proofs.push({
+      txHash,
+      signature,
+      userOpHash,
+      amount,
+      currency,
+      item: typeof payload.item === 'string' ? payload.item : undefined,
+      recipientName: typeof payload.recipientName === 'string' ? payload.recipientName : undefined,
+      recipientWallet: normalizeWallet(payload.recipientWallet),
+      senderWallet: normalizeWallet(payload.senderWallet),
+      mode,
+      confirmedAt,
+    })
+  }
+
+  return proofs
+}
+
+function isLikelyRemyHandoffMessage(message: string): boolean {
+  return /\b(briefcase|handoff|hand\s*over|transfer|route|already\s+paid|payment\s+sent|done\s+paying|paid\s+you)\b/i.test(
+    message
+  )
+}
+
+function findMatchingRemyPaymentProof(input: {
+  message: string
+  npcName: string
+  npcWalletAddress: string
+  proofs: PaymentProof[]
+  nowMs: number
+}): PaymentProof | null {
+  if (normalizeWord(input.npcName) !== REMY_CANONICAL_NAME) return null
+  if (!isLikelyRemyHandoffMessage(input.message)) return null
+
+  const expectedWallet = input.npcWalletAddress.trim().toLowerCase()
+  for (const proof of input.proofs) {
+    const walletMatches = !!proof.recipientWallet && proof.recipientWallet === expectedWallet
+    const recipientNameMatches = normalizeWord(proof.recipientName) === REMY_CANONICAL_NAME
+    if (!walletMatches && !recipientNameMatches) continue
+    if (proof.currency !== REMY_BRIEFCASE_CURRENCY) continue
+    if (Math.abs(proof.amount - REMY_BRIEFCASE_PRICE) > 0.000001) continue
+
+    const confirmedAtMs = new Date(proof.confirmedAt).getTime()
+    if (!Number.isFinite(confirmedAtMs)) continue
+    if (input.nowMs - confirmedAtMs > PAYMENT_PROOF_WINDOW_MS) continue
+
+    return proof
+  }
+
+  return null
+}
+
+function formatProofToken(proof: PaymentProof): string {
+  const raw = proof.signature ?? proof.userOpHash ?? proof.txHash
+  if (!raw) return 'unknown'
+  if (raw.length <= 14) return raw
+  return `${raw.slice(0, 10)}…${raw.slice(-6)}`
+}
+
+function parseOfferAmount(message: string): number | null {
+  const match = message.match(/(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)/)
+  if (!match) return null
+  const parsed = Number(match[1].replace(/,/g, ''))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function detectOfferCurrency(message: string): string | null {
+  if (/\b(pyusd|kite_usd|kite\s*usd)\b/i.test(message)) return REMY_BRIEFCASE_CURRENCY
+  if (/\bcredits?\b/i.test(message)) return 'CREDITS'
+  return null
+}
+
+function isRemyNegotiationMessage(message: string): boolean {
+  return /\b(briefcase|offer|deal|payment|pay|handoff|hand\s*over|transfer|route|transit)\b/i.test(message)
+}
+
+function hasDeliveryCondition(message: string): boolean {
+  return /\b(handoff|hand\s*over|transfer|deliver|delivery|package|briefcase)\b/i.test(message)
 }
 
 function parseGameEvents(value: unknown): GameEventDefinition[] {
@@ -129,13 +270,22 @@ function getCombatEventTag(events: GameEventDefinition[]): string {
   return combatEvent ? ` [[EVENT:${combatEvent.name}]]` : ''
 }
 
+function getBriefcaseEventTag(input: {
+  characterName: string
+  userMessage: string
+  responseText: string
+  gameEvents: GameEventDefinition[]
+}): string {
+  return shouldForceBriefcaseLocatedEvent(input) ? ' [[EVENT:BRIEFCASE_LOCATED]]' : ''
+}
+
 async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefined> {
   const endpoint = process.env.KITE_MARKET_RATE_API_URL
   if (!endpoint) return undefined
 
   try {
     let fetchUrl = endpoint
-    if (symbol && symbol.toUpperCase() !== 'KITE_USD') {
+    if (symbol && symbol.toUpperCase() !== 'PYUSD') {
       const tickerSymbol = `${symbol.toUpperCase()}USDT`
       fetchUrl = `${endpoint}?symbol=${tickerSymbol}`
     }
@@ -169,7 +319,6 @@ function toCharacterConfig(value: unknown): CharacterConfig {
       typeof payload.teeExecution === 'string' && payload.teeExecution.toUpperCase() === 'ENABLED'
         ? 'ENABLED'
         : 'DISABLED',
-    computeBudget: asNumber(payload.computeBudget),
     allowDbFetch: typeof payload.allowDbFetch === 'boolean' ? payload.allowDbFetch : false,
     dbEndpoint: typeof payload.dbEndpoint === 'string' ? payload.dbEndpoint : undefined,
     inventory: parseOptionalInventory(payload.inventory),
@@ -249,7 +398,7 @@ function detectTradeCurrency(messages: string[], allowedTokens: string[]): strin
   if (allowedTokens.length === 0) return undefined
   
   const tokenKeywords = allowedTokens
-    .filter(token => token !== 'KITE_USD')
+    .filter(token => token !== 'PYUSD')
     .join('|')
   
   if (!tokenKeywords) return undefined
@@ -337,7 +486,7 @@ async function findCharacterByName(
         { name: { equals: normalisedName, mode: 'insensitive' } },
       ],
     },
-    include: { projects: { select: { id: true } } },
+    select: CHAT_CHARACTER_SELECT,
   })
   return character
 }
@@ -376,6 +525,7 @@ export async function POST(request: NextRequest) {
       npcName,
       characterId: legacyCharacterId,
       message,
+      recentPaymentProofs,
       targetFactionId,
       targetDisposition,
       targetBaseHostility,
@@ -408,7 +558,7 @@ export async function POST(request: NextRequest) {
     } else if (legacyCharacterId) {
       character = (await (prisma.character as any).findUnique({
         where: { id: legacyCharacterId },
-        include: { projects: { select: { id: true } } },
+        select: CHAT_CHARACTER_SELECT,
       })) as StoredCharacter | null
       if (!character) {
         return NextResponse.json(
@@ -432,6 +582,7 @@ export async function POST(request: NextRequest) {
     }
 
     const config = toCharacterConfig(character.config)
+    const parsedPaymentProofs = parsePaymentProofs(recentPaymentProofs)
     const gameEvents = parseGameEvents(character.gameEvents)
     const adaptation = toAdaptationMemory(character.adaptation)
     const activeProjectId = project?.id ?? character.projects[0]?.id ?? 'global'
@@ -472,52 +623,6 @@ export async function POST(request: NextRequest) {
     })
     const teeTrustScore = getTeeTrustScore(tee.enabled)
 
-    let usageTokens = parseComputeUsage(character.computeUsageTokens)
-    let limitTokens = parseComputeLimit(character.computeLimitTokens ?? config.computeBudget)
-    let lastComputeResetAt = parseResetAt(character.lastComputeResetAt)
-
-    if (shouldResetBudget(lastComputeResetAt)) {
-      usageTokens = BigInt(0)
-      lastComputeResetAt = new Date()
-      await persistComputeBudgetIfSupported(prisma as unknown as any, {
-        characterId: character.id,
-        usageTokens,
-        limitTokens,
-        lastComputeResetAt,
-        logPrefix: '[chat]',
-      })
-    }
-
-    const computeDecision = evaluateComputeBudget({
-      usageTokens,
-      limitTokens,
-      lastResetAt: lastComputeResetAt,
-    })
-
-    if (!computeDecision.allowed) {
-      await (prisma as any).npcLog.create({
-        data: {
-          characterId: character.id,
-          eventType: 'COMPUTE_BUDGET_EXCEEDED',
-          details: {
-            message,
-            budget: serializeBudget(computeDecision),
-          },
-        },
-      })
-
-      return NextResponse.json(
-        {
-          error: 'Compute budget exceeded for this NPC.',
-          characterId: character.id,
-          npcName: character.name,
-          compute: serializeBudget(computeDecision),
-          tee,
-        },
-        { status: 429, headers: corsHeaders }
-      )
-    }
-
 
 
     // Section 2 definition parsing
@@ -531,6 +636,7 @@ export async function POST(request: NextRequest) {
       await prisma.character.update({
         where: { id: character.id },
         data: { adaptation: nextAdaptation as unknown as Prisma.InputJsonValue },
+        select: { id: true },
       })
       await (prisma as any).npcLog.create({
         data: {
@@ -538,6 +644,7 @@ export async function POST(request: NextRequest) {
           eventType: 'SECTION2_PARSED',
           details: { systemPrompt: section2Profile.systemPrompt, openness: section2Profile.openness },
         },
+        select: { id: true },
       })
       return NextResponse.json(
         {
@@ -577,6 +684,7 @@ export async function POST(request: NextRequest) {
           config: nextConfig as unknown as Prisma.InputJsonValue,
           adaptation: nextAdaptation as unknown as Prisma.InputJsonValue,
         },
+        select: { id: true },
       })
       await (prisma as any).npcLog.create({
         data: {
@@ -584,6 +692,7 @@ export async function POST(request: NextRequest) {
           eventType: 'SECTION2_ACTIVATED',
           details: { openness: appliedProfile.openness },
         },
+        select: { id: true },
       })
       return NextResponse.json(
         {
@@ -600,6 +709,128 @@ export async function POST(request: NextRequest) {
         },
         { status: 200, headers: corsHeaders }
       )
+    }
+
+    const matchedRemyPayment = findMatchingRemyPaymentProof({
+      message,
+      npcName: character.name,
+      npcWalletAddress: character.walletAddress,
+      proofs: parsedPaymentProofs,
+      nowMs: Date.now(),
+    })
+
+    if (matchedRemyPayment) {
+      const proofToken = formatProofToken(matchedRemyPayment)
+      const responseText =
+        `Ledger check complete. I see your payment proof (${proofToken}). ` +
+        `The briefcase handoff is confirmed. Stay on the tunnel route and keep your channel dark. [[EVENT:BRIEFCASE_TRANSFERRED]]`
+
+      await (prisma as any).npcLog.create({
+        data: {
+          characterId: character.id,
+          eventType: 'PAYMENT_VERIFIED',
+          details: {
+            message,
+            response: responseText,
+            paymentProof: matchedRemyPayment,
+            amount: REMY_BRIEFCASE_PRICE,
+            currency: REMY_BRIEFCASE_CURRENCY,
+          },
+        },
+        select: { id: true },
+      })
+
+      worldState.updateLastAction(character.id, 'payment_verified_handoff')
+
+      eventBus.broadcast({
+        sourceId: character.id,
+        sourceName: character.name,
+        actionType: 'PAYMENT_SENT',
+        payload: {
+          projectId: activeProjectId,
+          verified: true,
+          amount: REMY_BRIEFCASE_PRICE,
+          currency: REMY_BRIEFCASE_CURRENCY,
+          txHash: matchedRemyPayment.txHash,
+          signature: matchedRemyPayment.signature,
+          userOpHash: matchedRemyPayment.userOpHash,
+          recipientWallet: matchedRemyPayment.recipientWallet,
+        },
+        timestamp: new Date().toISOString(),
+      })
+
+      return NextResponse.json(
+        {
+          success: true,
+          response: responseText,
+          action: 'passes over a sealed briefcase',
+          worldEvent: 'BRIEFCASE_TRANSFERRED',
+          characterId: character.id,
+          npcName: character.name,
+          tradeIntent: null,
+          specializationActive: adaptation.specializationActive,
+          pendingSpecialization: Boolean(adaptation.pendingSection2),
+          timestamp: new Date().toISOString(),
+          projectId: activeProjectId,
+          tee,
+        },
+        { status: 200, headers: corsHeaders }
+      )
+    }
+
+    const isRemy = normalizeWord(character.name) === REMY_CANONICAL_NAME
+    if (isRemy && isRemyNegotiationMessage(message)) {
+      const offeredAmount = parseOfferAmount(message)
+      const offeredCurrency = detectOfferCurrency(message)
+      const hasCondition = hasDeliveryCondition(message)
+
+      if (offeredAmount === REMY_BRIEFCASE_PRICE && offeredCurrency === REMY_BRIEFCASE_CURRENCY && hasCondition) {
+        const responseText =
+          `Deal is acceptable. Send ${REMY_BRIEFCASE_PRICE.toLocaleString()} ${REMY_BRIEFCASE_CURRENCY} now and share the transaction proof hash/signature. ` +
+          `Once payment verifies, I transfer the briefcase immediately.`
+
+        return NextResponse.json(
+          {
+            success: true,
+            response: responseText,
+            action: 'checks the route scanner, then nods',
+            characterId: character.id,
+            npcName: character.name,
+            tradeIntent: {
+              item: 'Briefcase (In Transit)',
+              price: REMY_BRIEFCASE_PRICE,
+              currency: REMY_BRIEFCASE_CURRENCY,
+            },
+            specializationActive: adaptation.specializationActive,
+            pendingSpecialization: Boolean(adaptation.pendingSection2),
+            timestamp: new Date().toISOString(),
+            projectId: activeProjectId,
+            tee,
+          },
+          { status: 200, headers: corsHeaders }
+        )
+      }
+
+      if (offeredAmount === REMY_BRIEFCASE_PRICE && offeredCurrency !== REMY_BRIEFCASE_CURRENCY) {
+        return NextResponse.json(
+          {
+            success: true,
+            response:
+              `I can only settle this handoff in ${REMY_BRIEFCASE_CURRENCY}. ` +
+              `Confirm ${REMY_BRIEFCASE_PRICE.toLocaleString()} ${REMY_BRIEFCASE_CURRENCY} and specify immediate briefcase transfer on verification.`,
+            action: 'keeps voice low and measured',
+            characterId: character.id,
+            npcName: character.name,
+            tradeIntent: null,
+            specializationActive: adaptation.specializationActive,
+            pendingSpecialization: Boolean(adaptation.pendingSection2),
+            timestamp: new Date().toISOString(),
+            projectId: activeProjectId,
+            tee,
+          },
+          { status: 200, headers: corsHeaders }
+        )
+      }
     }
 
     // Normal chat — build allowed tools list
@@ -717,6 +948,7 @@ export async function POST(request: NextRequest) {
             decision: socialEvaluation.decision,
           },
         },
+        select: { id: true },
       })
 
       worldState.updateLastAction(character.id, `hostility:${socialEvaluation.decision}`)
@@ -754,7 +986,6 @@ export async function POST(request: NextRequest) {
           projectId: activeProjectId,
           socialDecision: socialEvaluation.decision,
           hostilityScore: socialEvaluation.hostilityScore,
-          compute: serializeBudget(computeDecision),
           tee,
         },
         { status: 200, headers: corsHeaders }
@@ -842,6 +1073,7 @@ export async function POST(request: NextRequest) {
       await prisma.character.update({
         where: { id: character.id },
         data: { adaptation: updatedAdaptation as unknown as Prisma.InputJsonValue },
+        select: { id: true },
       })
     }
 
@@ -875,39 +1107,23 @@ export async function POST(request: NextRequest) {
       npcWalletAddress: character.walletAddress,
     })
 
-    const usedTokens = BigInt(agentResponse.usage?.totalTokens ?? 0)
-    let updatedUsageTokens = usageTokens
-    if (usedTokens > BigInt(0)) {
-      updatedUsageTokens = usageTokens + usedTokens
-      try {
-        await persistComputeBudgetIfSupported(prisma as unknown as any, {
-          characterId: character.id,
-          usageTokens: updatedUsageTokens,
-          limitTokens,
-          lastComputeResetAt,
-          logPrefix: '[chat]',
-        })
-
-        await (prisma as any).npcLog.create({
-          data: {
-            characterId: character.id,
-            eventType: 'COMPUTE_SPEND',
-            details: {
-              usedTokens: usedTokens.toString(),
-              usageBefore: usageTokens.toString(),
-              usageAfter: updatedUsageTokens.toString(),
-              limitTokens: limitTokens.toString(),
-              message,
-            },
-          },
-        })
-      } catch (persistError) {
-        console.warn('[chat] Failed to persist compute spend details:', persistError)
-      }
-    }
-
     let finalTradeIntent = agentResponse.tradeIntent
     let finalResponseText = agentResponse.text
+    const briefcaseEventTag = getBriefcaseEventTag({
+      characterName: character.name,
+      userMessage: message,
+      responseText: finalResponseText,
+      gameEvents,
+    })
+
+    if (briefcaseEventTag) {
+      finalResponseText = appendNpcEventTag(finalResponseText, {
+        characterName: character.name,
+        userMessage: message,
+        responseText: finalResponseText,
+        gameEvents,
+      })
+    }
 
     if (agentResponse.tradeIntent) {
       const validation = EconomicEngine.validateTradeDetailed({
@@ -937,6 +1153,7 @@ export async function POST(request: NextRequest) {
           hasTrade: !!finalTradeIntent,
         },
       },
+      select: { id: true },
     })
 
     worldState.updateLastAction(
@@ -963,17 +1180,12 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     })
 
-    const updatedComputeDecision = evaluateComputeBudget({
-      usageTokens: updatedUsageTokens,
-      limitTokens,
-      lastResetAt: lastComputeResetAt,
-    })
-
     return NextResponse.json(
       {
         success: true,
         response: finalResponseText,
         action: agentResponse.action ?? null,
+        worldEvent: briefcaseEventTag ? 'BRIEFCASE_LOCATED' : null,
         characterId: character.id,
         npcName: character.name,
         tradeIntent: finalTradeIntent ?? null,
@@ -983,7 +1195,6 @@ export async function POST(request: NextRequest) {
         projectId: project?.id,
         socialDecision: socialEvaluation.decision,
         hostilityScore: socialEvaluation.hostilityScore,
-        compute: serializeBudget(updatedComputeDecision),
         tee,
       },
       { status: 200, headers: corsHeaders }

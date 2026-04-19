@@ -93,6 +93,7 @@ export async function POST(
         eventType: 'ACTION_QUEUED',
         details: { actionId: newAction.id, actionType: type, description },
       },
+      select: { id: true },
     })
 
     return NextResponse.json(
@@ -160,6 +161,7 @@ export async function DELETE(
         eventType: 'ACTION_VETOED',
         details: { actionId, actionType: action.actionType },
       },
+      select: { id: true },
     })
 
     return NextResponse.json({

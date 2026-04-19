@@ -153,7 +153,18 @@ export async function GET(request: NextRequest, context: { params: Promise<{ gam
     try {
       characters = await characterDelegate.findMany({
         where: { projects: { some: { id: game.id } } },
-        include: { projects: { select: { id: true } } },
+        select: {
+          id: true,
+          name: true,
+          walletAddress: true,
+          aaChainId: true,
+          aaProvider: true,
+          smartAccountId: true,
+          smartAccountStatus: true,
+          config: true,
+          createdAt: true,
+          projects: { select: { id: true } },
+        },
         orderBy: { createdAt: 'desc' },
       })
     } catch (error) {

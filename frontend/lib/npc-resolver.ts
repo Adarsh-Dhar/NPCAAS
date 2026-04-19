@@ -73,6 +73,23 @@ export interface ResolvedCharacter {
   projects: Array<{ id: string }>
 }
 
+const RESOLVED_CHARACTER_SELECT = {
+  id: true,
+  name: true,
+  walletAddress: true,
+  aaChainId: true,
+  aaProvider: true,
+  smartAccountId: true,
+  smartAccountStatus: true,
+  config: true,
+  adaptation: true,
+  isDeployedOnChain: true,
+  deploymentTxHash: true,
+  createdAt: true,
+  updatedAt: true,
+  projects: { select: { id: true } },
+} as const
+
 /**
  * Find a character by (name, projectId).
  * Returns the character or a NextResponse 404/403.
@@ -85,7 +102,7 @@ export async function resolveCharacterByName(
   try {
     const byId = await (prisma.character as any).findUnique({
       where: { id: npcName },
-      include: { projects: { select: { id: true } } },
+      select: RESOLVED_CHARACTER_SELECT,
     })
 
     if (byId) {
@@ -119,7 +136,7 @@ export async function resolveCharacterByName(
         { name: { equals: normalisedName, mode: 'insensitive' } },
       ],
     },
-    include: { projects: { select: { id: true } } },
+    select: RESOLVED_CHARACTER_SELECT,
   })
 
   if (!character) {

@@ -32,7 +32,7 @@ export function GameCanvas({ onOpenChat, onCloseChat, characters }: GameCanvasPr
       type: Phaser.AUTO,
       width: containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
-      backgroundColor: "#05050f",
+        backgroundColor: "#050510",
       parent: containerRef.current,
       physics: {
         default: "arcade",
@@ -70,7 +70,7 @@ export function GameCanvas({ onOpenChat, onCloseChat, characters }: GameCanvasPr
     <div
       ref={containerRef}
       className="absolute inset-0 z-0"
-      style={{ background: "#05050f" }}
+      style={{ background: "#050510" }}
     />
   );
 }

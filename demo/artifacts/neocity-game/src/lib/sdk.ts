@@ -6,6 +6,7 @@
 
 import type { Character } from "../../../../../frontend/sdk";
 export type { Character } from "../../../../../frontend/sdk";
+import { normalizeNpcName } from '@/lib/protocolBabel'
 
 const DEMO_FALLBACK_API_KEY = "gc_live_c814f7a2fac63fce275b4298b5949e6d";
 const DEMO_FALLBACK_BASE_URL = "/api";
@@ -66,6 +67,14 @@ function getRuntimeBaseUrl(): string {
     return DEMO_FALLBACK_BASE_URL;
   }
   return DEMO_FALLBACK_BASE_URL;
+}
+
+function getNormalizedCharacterKeys(name: string): string[] {
+  const trimmed = String(name).trim().toLowerCase()
+  if (!trimmed) return []
+
+  const normalized = normalizeNpcName(name).toLowerCase()
+  return normalized === trimmed ? [trimmed] : [trimmed, normalized]
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +223,15 @@ class HttpGuildCraftClient {
     const charId = opts.characterId ?? characterId
     return this._request('/chat', {
       method: 'POST',
-      body: JSON.stringify({ npcName, characterId: charId, message }),
+      body: JSON.stringify({
+        npcName,
+        characterId: charId,
+        message,
+        sessionId: opts.sessionId,
+        playerId: opts.playerId,
+        gameId: opts.gameId,
+        recentPaymentProofs: opts.recentPaymentProofs,
+      }),
     })
   }
 
@@ -235,7 +252,15 @@ class HttpGuildCraftClient {
       res = await fetch(`${this.baseUrl}/chat/stream`, {
         method: 'POST',
         headers: this._authHeaders(),
-        body: JSON.stringify({ npcName, characterId: charId, message }),
+        body: JSON.stringify({
+          npcName,
+          characterId: charId,
+          message,
+          sessionId: opts.sessionId,
+          playerId: opts.playerId,
+          gameId: opts.gameId,
+          recentPaymentProofs: opts.recentPaymentProofs,
+        }),
         signal: controller.signal,
       })
     } catch (err) {
@@ -363,7 +388,9 @@ export async function loadCharacters(): Promise<Map<string, Character>> {
       const map = new Map<string, Character>();
       console.log("[GuildCraft] Loaded characters:", chars);
       for (const char of chars) {
-        map.set(char.name.toLowerCase(), char);
+        for (const key of getNormalizedCharacterKeys(char.name)) {
+          map.set(key, char)
+        }
       }
       _characterCache = map;
       _characterCacheKey = currentKey;
@@ -388,7 +415,11 @@ export async function getCharacterByName(
   name: string
 ): Promise<Character | null> {
   const map = await loadCharacters();
-  return map.get(name.toLowerCase()) ?? null;
+  for (const key of getNormalizedCharacterKeys(name)) {
+    const match = map.get(key)
+    if (match) return match
+  }
+  return null;
 }
 
 /**
@@ -397,7 +428,11 @@ export async function getCharacterByName(
  */
 export function getCharacterByNameSync(name: string): Character | null {
   if (!_characterCache) return null;
-  return _characterCache.get(name.toLowerCase()) ?? null;
+  for (const key of getNormalizedCharacterKeys(name)) {
+    const match = _characterCache.get(key)
+    if (match) return match
+  }
+  return null;
 }
 
 /** Returns all cached characters as an array. */

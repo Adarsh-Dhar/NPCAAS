@@ -31,6 +31,7 @@
 const { test, describe, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const { GuildCraftClient, GuildCraftError } = require('../sdk/index.js')
+const { appendNpcEventTag } = require('../lib/npc-event-tags.js')
 
 // ---------------------------------------------------------------------------
 // Config
@@ -113,7 +114,6 @@ describe('0 · Setup — create game + character', () => {
           canMove: true,
           canCraft: false,
           teeExecution: 'ENABLED',
-          computeBudget: '1000',
         },
         gameIds: [state.gameId],
       }),
@@ -412,6 +412,22 @@ describe('5 · Chat API', () => {
     assert.ok('action' in body, 'action field should be in response')
   })
 
+  test('BRIEFCASE_LOCATED helper forces Svetlana acknowledgement tags', () => {
+    const tagged = appendNpcEventTag('It is not your concern. The briefcase is mine.', {
+      characterName: 'Svetlana_Morozova',
+      userMessage: 'I noticed you are carrying a gold briefcase. Is that part of the munitions deal with Diego, or something else?',
+      responseText: 'It is not your concern. The briefcase is mine.',
+      gameEvents: [
+        {
+          name: 'BRIEFCASE_LOCATED',
+          condition: 'Trigger when the player asks about the gold briefcase and Svetlana mentions it.',
+        },
+      ],
+    })
+
+    assert.match(tagged, /\[\[EVENT:BRIEFCASE_LOCATED\]\]/)
+  })
+
   test('POST /api/chat — low openness increases hostility response rigidity', async () => {
     const { status: patchStatus } = await req('/characters', {
       method: 'PATCH',
@@ -478,87 +494,6 @@ describe('5 · Chat API', () => {
     assert.ok(body.hostilityScore < 60)
   })
 
-  test('POST /api/chat — compute budget exceeded returns 429', async () => {
-    const { status: patchStatus } = await req('/characters', {
-      method: 'PATCH',
-      apiKey: state.apiKey,
-      body: JSON.stringify({
-        characterId: state.characterId,
-        config: {
-          computeBudget: '1',
-          teeExecution: 'DISABLED',
-        },
-      }),
-    })
-    assert.equal(patchStatus, 200)
-
-    const { status, body } = await req('/chat', {
-      method: 'POST',
-      apiKey: state.apiKey,
-      body: JSON.stringify({
-        characterId: state.characterId,
-        message: 'Can you still respond?',
-      }),
-    })
-
-    assert.equal(status, 429)
-    assert.ok(body.compute, 'compute budget details should be present')
-    assert.equal(typeof body.compute.remainingTokens, 'string')
-  })
-
-  test('POST /api/npcs/:name/refill — missing auth returns 401', async () => {
-    const { status, body } = await req(`/npcs/${state.characterId}/refill`, {
-      method: 'POST',
-    })
-
-    assert.equal(status, 401)
-    assert.ok(body.error)
-  })
-
-  test('POST /api/npcs/:name/refill — unknown npc returns 404', async () => {
-    const { status, body } = await req('/npcs/nonexistent_npc_999/refill', {
-      method: 'POST',
-      apiKey: state.apiKey,
-    })
-
-    assert.equal(status, 404)
-    assert.ok(body.error)
-  })
-
-  test('POST /api/npcs/:name/refill — restores budget so chat can continue', async () => {
-    // Exhaust budget first
-    const exhausted = await req('/chat', {
-      method: 'POST',
-      apiKey: state.apiKey,
-      body: JSON.stringify({
-        characterId: state.characterId,
-        message: 'Still blocked before refill?',
-      }),
-    })
-    assert.equal(exhausted.status, 429)
-
-    const refill = await req(`/npcs/${state.characterId}/refill`, {
-      method: 'POST',
-      apiKey: state.apiKey,
-    })
-    assert.equal(refill.status, 200)
-    assert.equal(refill.body.success, true)
-    assert.ok(refill.body.compute)
-    assert.equal(refill.body.compute.usageTokens, '0')
-    assert.ok(refill.body.compute.resetAt)
-
-    const afterRefill = await req('/chat', {
-      method: 'POST',
-      apiKey: state.apiKey,
-      body: JSON.stringify({
-        characterId: state.characterId,
-        message: 'Back online after refill?',
-      }),
-    })
-    assert.equal(afterRefill.status, 200)
-    assert.ok(typeof afterRefill.body.response === 'string')
-  })
-
   test('POST /api/chat — tee enabled response includes attestation metadata', async () => {
     const { status: patchStatus } = await req('/characters', {
       method: 'PATCH',
@@ -566,7 +501,6 @@ describe('5 · Chat API', () => {
       body: JSON.stringify({
         characterId: state.characterId,
         config: {
-          computeBudget: '500000',
           teeExecution: 'ENABLED',
         },
       }),
@@ -586,7 +520,6 @@ describe('5 · Chat API', () => {
     assert.ok(body.tee, 'tee field should be present')
     assert.equal(typeof body.tee.enabled, 'boolean')
     assert.equal(body.tee.enabled, true)
-    assert.ok(body.compute, 'compute object should be included in response')
   })
 
   test('POST /api/chat — missing message → 400', async () => {
@@ -733,16 +666,16 @@ Openness to Experience
     assert.ok(value && value.length > 0, 'Should receive at least one chunk')
   })
 
-  test('GET /api/system/usage — uses runtime compute counters', async () => {
+  test('GET /api/system/usage — returns runtime usage summary', async () => {
     const { status, body } = await req('/system/usage', {
       apiKey: state.apiKey,
     })
 
     assert.equal(status, 200)
     assert.ok(body.compute, 'compute object should be present')
-    assert.equal(typeof body.compute.llmTokensConsumed, 'string')
-    assert.equal(typeof body.compute.llmTokensLimit, 'string')
-    assert.equal(typeof body.compute.llmTokensRemaining, 'string')
+    assert.equal(typeof body.compute.totalChatTurns, 'number')
+    assert.equal(typeof body.compute.totalPreferencesStored, 'number')
+    assert.equal(typeof body.compute.pendingActionsInQueue, 'number')
   })
 })
 
@@ -1438,7 +1371,7 @@ describe('17 · Transactions', () => {
       apiKey: state.apiKey,
       body: JSON.stringify({
         characterId: state.characterId,
-        tradeIntent: { item: 'Iron Sword', price: 0.01, currency: 'KITE_USD' },
+        tradeIntent: { item: 'Iron Sword', price: 0.01, currency: 'PYUSD' },
       }),
     })
     assert.equal(status, 200)
@@ -1471,7 +1404,7 @@ describe('17 · Transactions', () => {
   test('POST /api/transactions — missing characterId → 400', async () => {
     const { status } = await req('/transactions', {
       method: 'POST',
-      body: JSON.stringify({ tradeIntent: { item: 'Sword', price: 1, currency: 'KITE_USD' } }),
+      body: JSON.stringify({ tradeIntent: { item: 'Sword', price: 1, currency: 'PYUSD' } }),
     })
     assert.equal(status, 400)
   })
@@ -1482,7 +1415,7 @@ describe('17 · Transactions', () => {
       apiKey: state.apiKey,
       body: JSON.stringify({
         characterId: 'clfakeid0000',
-        tradeIntent: { item: 'Sword', price: 1, currency: 'KITE_USD' },
+        tradeIntent: { item: 'Sword', price: 1, currency: 'PYUSD' },
       }),
     })
     assert.equal(status, 404)
@@ -1683,7 +1616,7 @@ describe('18 · SDK Integration (GuildCraftClient)', () => {
   test('gc.executeTransaction() — tradeIntent → user-paid response', async () => {
     const result = await state.gc.executeTransaction(
       state.characterId,
-      { item: 'Health Potion', price: 0.005, currency: 'KITE_USD' }
+      { item: 'Health Potion', price: 0.005, currency: 'PYUSD' }
     )
     assert.equal(result.success, true)
     assert.equal(result.mode, 'user-paid')

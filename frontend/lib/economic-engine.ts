@@ -212,7 +212,7 @@ export class EconomicEngine {
     const openness = normalizeOpenness(input.openness)
     const discountTolerance = getDiscountTolerance(openness)
     const minPrice = EconomicEngine.calculateMinPrice(input.config, input.currentMarketRate)
-    const tradeCurrency = input.currentTradeCurrency ?? 'KITE_USD'
+    const tradeCurrency = input.currentTradeCurrency ?? 'PYUSD'
 
     const lines: string[] = [
       'ECONOMIC CONSTRAINTS:',

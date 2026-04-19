@@ -32,15 +32,17 @@ function isFunctionToolCall(
 }
 
 function createOpenAIClient(): OpenAI {
-  const llmTimeout = Number(process.env.LLM_TIMEOUT_MS ?? '20000')
-  const timeout = Number.isFinite(llmTimeout) && llmTimeout > 0 ? llmTimeout : 20000
+  const llmTimeout = Number(process.env.LLM_TIMEOUT_MS ?? '45000')
+  const timeout = Number.isFinite(llmTimeout) && llmTimeout > 0 ? llmTimeout : 45000
+  const llmMaxRetries = Number(process.env.LLM_MAX_RETRIES ?? '2')
+  const maxRetries = Number.isFinite(llmMaxRetries) && llmMaxRetries >= 0 ? llmMaxRetries : 2
 
   const openaiKey = process.env.OPENAI_API_KEY
   if (openaiKey) {
     return new OpenAI({
       apiKey: openaiKey,
       timeout,
-      maxRetries: 0,
+      maxRetries,
     })
   }
 
@@ -51,7 +53,7 @@ function createOpenAIClient(): OpenAI {
       baseURL: 'https://models.inference.ai.azure.com',
       apiKey: githubToken,
       timeout,
-      maxRetries: 0,
+      maxRetries,
     })
   }
 
@@ -88,6 +90,56 @@ function formatLlmError(err: unknown): string {
   }
 
   return message
+}
+
+function isSafetyFilterBlocked(err: unknown, message: string): boolean {
+  const status =
+    typeof err === 'object' && err !== null && 'status' in err
+      ? Number((err as { status?: unknown }).status)
+      : undefined
+
+  if (status === 400) {
+    return /content management policy|content filter|filtered due to the prompt|safety filters/i.test(message)
+  }
+
+  return /content management policy|content filter|filtered due to the prompt|safety filters/i.test(message)
+}
+
+function buildSafetyFallbackResponse(userMessage: string, ctx: AgentContext = {}): ChatResponse {
+  const tradeLikeRequest = /\b(buy|sell|trade|offer|deal|price|credits?|pyusd|kite_usd|package|handoff|transfer)\b/i.test(
+    userMessage
+  )
+  const hasQuotedCurrency = /\b(pyusd|kite_usd|kite\s*usd)\b/i.test(userMessage)
+  const hasDeliveryCondition = /\b(handoff|hand\s*over|transfer|deliver|delivery|package|briefcase)\b/i.test(
+    userMessage
+  )
+
+  const quotedCurrency = ctx.currentTradeCurrency ?? PRIMARY_TOKEN_SYMBOL
+
+  if (tradeLikeRequest) {
+    if (hasQuotedCurrency && hasDeliveryCondition) {
+      return {
+        text:
+          `Understood. Terms and delivery condition are clear in-world. ` +
+          `For a secure close, proceed with payment in ${quotedCurrency} and share the transaction proof hash/signature so I can confirm handoff immediately.`,
+        action: 'keeps voice low and measured',
+      }
+    }
+
+    return {
+      text:
+        `Let's keep this strictly as in-world auction negotiation. ` +
+        `I can discuss terms, pricing, and handoff conditions. ` +
+        `Restate your offer in ${quotedCurrency} with a clear delivery condition and I will respond in character.`,
+      action: 'keeps voice low and measured',
+    }
+  }
+
+  return {
+    text:
+      'I can continue this as in-world roleplay. Ask about the mission, trade terms, or faction intent and I will respond in character.',
+    action: 'nods and waits for your next move',
+  }
 }
 
 function getModel(): string {
@@ -591,6 +643,10 @@ export class KiteAgentClient {
       })
     } catch (err) {
       const msg = formatLlmError(err)
+      if (isSafetyFilterBlocked(err, msg)) {
+        console.warn('[KiteAgentClient] LLM request blocked by safety filters, using fallback response.')
+        return buildSafetyFallbackResponse(userMessage, ctx)
+      }
       console.error('[KiteAgentClient] LLM request failed:', msg, err)
       return {
         text:   `LLM error: ${msg}`,

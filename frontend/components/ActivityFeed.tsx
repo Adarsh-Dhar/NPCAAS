@@ -16,7 +16,7 @@ const mockActivities: Activity[] = [
     timestamp: '08:14:02',
     agent: 'Thorin',
     role: 'Blacksmith',
-    action: 'executed Swap: 10 KITE_USD for 5 Iron Ore',
+    action: 'executed Swap: 10 PYUSD for 5 Iron Ore',
   },
   {
     id: '2',
@@ -51,14 +51,14 @@ const mockActivities: Activity[] = [
     timestamp: '08:38:22',
     agent: 'Thorin',
     role: 'Blacksmith',
-    action: 'approved PayMaster sponsorship for batch transaction (gas: 0.45 KITE_USD)',
+    action: 'approved PayMaster sponsorship for batch transaction (gas: 0.45 PYUSD)',
   },
   {
     id: '7',
     timestamp: '08:45:09',
     agent: 'Elara',
     role: 'Merchant',
-    action: 'negotiated bulk deal: 500 units @ 8.5 KITE_USD each',
+    action: 'negotiated bulk deal: 500 units @ 8.5 PYUSD each',
   },
   {
     id: '8',
@@ -91,14 +91,14 @@ export default function ActivityFeed() {
   )
 
   return (
-    <div className="border-4 border-cyan-400 bg-black rounded-none max-h-96 overflow-y-auto">
+    <div className="border-4 border-blue-400 bg-black rounded-none max-h-96 overflow-y-auto">
       {/* Header */}
-      <div className="sticky top-0 bg-black border-b-4 border-cyan-400 px-4 py-3 z-10">
+      <div className="sticky top-0 bg-black border-b-4 border-blue-400 px-4 py-3 z-10">
         <h3 className="text-sm font-bold text-white uppercase">
           AGENTIC ACTIVITY FEED
         </h3>
-        <p className="text-xs text-cyan-400 mt-1">
-          Real-time autonomous actions on KITE_USD Network
+        <p className="text-xs text-blue-400 mt-1">
+          Real-time autonomous actions on PYUSD Network
         </p>
       </div>
 
@@ -113,17 +113,17 @@ export default function ActivityFeed() {
           >
             {/* Timestamp and Agent Name */}
             <div className="flex items-start gap-3 font-mono text-xs">
-              <span className="text-green-700 flex-shrink-0 w-12">
+              <span className="text-blue-700 flex-shrink-0 w-12">
                 [{activity.timestamp}]
               </span>
-              <span className="text-green-400 font-bold flex-shrink-0 min-w-fit">
+              <span className="text-blue-300 font-bold flex-shrink-0 min-w-fit">
                 {activity.agent}
               </span>
               <span className="text-gray-500">({activity.role})</span>
             </div>
 
             {/* Action Description */}
-            <div className="ml-16 mt-1 font-mono text-xs text-green-400">
+            <div className="ml-16 mt-1 font-mono text-xs text-purple-300">
               {activity.action}
             </div>
           </div>
@@ -131,8 +131,8 @@ export default function ActivityFeed() {
       </div>
 
       {/* Footer */}
-      <div className="sticky bottom-0 bg-black border-t-4 border-cyan-400 px-4 py-2">
-        <p className="text-xs text-cyan-400 font-mono">
+      <div className="sticky bottom-0 bg-black border-t-4 border-blue-400 px-4 py-2">
+        <p className="text-xs text-blue-400 font-mono">
           {sortedActivities.length} recent events • live monitoring enabled
         </p>
       </div>

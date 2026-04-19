@@ -32,6 +32,7 @@ export async function POST(
         name: cloneName,
         projects: { some: { id: project.id } },
       },
+      select: { id: true },
     })
     if (existingClone) {
       return NextResponse.json(
@@ -67,7 +68,13 @@ export async function POST(
         isDeployedOnChain: true,
         projects: { connect: character.projects.map((p) => ({ id: p.id })) },
       },
-      include: { projects: { select: { id: true } } },
+      select: {
+        id: true,
+        name: true,
+        walletAddress: true,
+        createdAt: true,
+        projects: { select: { id: true } },
+      },
     })
 
     await (prisma as any).npcLog.create({
@@ -76,6 +83,7 @@ export async function POST(
         eventType: 'CLONE_CREATED',
         details: { cloneId: clone.id, cloneName },
       },
+      select: { id: true },
     })
 
     return NextResponse.json(

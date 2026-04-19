@@ -228,17 +228,17 @@ export default function AssignmentModal({
   if (showRenameStep) {
     return (
       <div className="fixed inset-0 z-[100] bg-black/75 flex items-center justify-center p-4">
-        <div className="w-full max-w-xl border-4 border-yellow-400 bg-black p-6">
+        <div className="w-full max-w-xl border-4 border-blue-400 bg-black p-6">
           <h2 className="text-xl font-bold text-white mb-2">Name Conflict Detected</h2>
 
-          <div className="border-2 border-yellow-400/40 bg-yellow-950/20 p-4 mb-4">
-            <p className="text-yellow-300 text-xs font-mono mb-2">
+          <div className="border-2 border-blue-400/40 bg-blue-950/20 p-4 mb-4">
+            <p className="text-blue-300 text-xs font-mono mb-2">
               A character named <span className="font-bold text-white">{characterName}</span> already
               exists in:
             </p>
             <ul className="space-y-1">
               {conflicts.map((c) => (
-                <li key={c.gameId} className="text-yellow-400 text-xs font-mono">
+                <li key={c.gameId} className="text-blue-400 text-xs font-mono">
                   • {c.gameName}
                 </li>
               ))}
@@ -249,7 +249,7 @@ export default function AssignmentModal({
           </div>
 
           <RetroInput
-            borderColor="yellow"
+            borderColor="blue"
             label="New Character Name"
             value={newName}
             onChange={(e) =>
@@ -259,12 +259,12 @@ export default function AssignmentModal({
           />
 
           {renameError && (
-            <p className="mt-3 text-xs text-red-400 font-mono">{renameError}</p>
+            <p className="mt-3 text-xs text-purple-300 font-mono">{renameError}</p>
           )}
 
           <div className="mt-5 flex items-center justify-end gap-3">
             <RetroButton
-              variant="magenta"
+              variant="purple"
               size="sm"
               onClick={() => {
                 setShowRenameStep(false)
@@ -275,7 +275,7 @@ export default function AssignmentModal({
               BACK
             </RetroButton>
             <RetroButton
-              variant="yellow"
+              variant="blue"
               size="sm"
               onClick={handleRenameAndAssign}
               disabled={!newName.trim() || renaming}
@@ -290,9 +290,9 @@ export default function AssignmentModal({
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/75 flex items-center justify-center p-4">
-      <div className="w-full max-w-xl border-4 border-cyan-400 bg-black p-6">
+      <div className="w-full max-w-xl border-4 border-blue-400 bg-black p-6">
         <h2 className="text-2xl font-bold text-white mb-2">Agent Deployed! Where should they go?</h2>
-        <p className="text-cyan-300 text-xs uppercase mb-1">
+        <p className="text-blue-300 text-xs uppercase mb-1">
           Select one or more games to assign this agent.
         </p>
         <p className="text-gray-500 text-xs font-mono mb-4">
@@ -300,38 +300,38 @@ export default function AssignmentModal({
         </p>
 
         {loading ? (
-          <p className="text-cyan-400 font-mono text-sm">Loading games...</p>
+          <p className="text-blue-400 font-mono text-sm">Loading games...</p>
         ) : games.length === 0 ? (
-          <p className="text-yellow-300 text-sm">
+          <p className="text-purple-300 text-sm">
             No games found. You can finish now and assign later from a game page.
           </p>
         ) : (
-          <div className="max-h-60 overflow-y-auto border-2 border-cyan-500 p-3 space-y-2">
+          <div className="max-h-60 overflow-y-auto border-2 border-blue-500 p-3 space-y-2">
             {games.map((game) => (
               <label
                 key={game.id}
-                className="flex items-center justify-between gap-3 border border-cyan-500/40 px-3 py-2 cursor-pointer hover:border-cyan-300 transition-colors"
+                className="flex items-center justify-between gap-3 border border-blue-500/40 px-3 py-2 cursor-pointer hover:border-blue-300 transition-colors"
               >
                 <span className="text-white text-sm font-bold uppercase">{game.name}</span>
                 <input
                   type="checkbox"
                   checked={selectedGameIds.includes(game.id)}
                   onChange={() => toggleSelection(game.id)}
-                  className="w-4 h-4 accent-cyan-400"
+                  className="w-4 h-4 accent-blue-400"
                 />
               </label>
             ))}
           </div>
         )}
 
-        {error && <p className="mt-3 text-xs text-red-400 font-mono">{error}</p>}
+        {error && <p className="mt-3 text-xs text-purple-300 font-mono">{error}</p>}
 
         <div className="mt-5 flex items-center justify-end gap-3">
-          <RetroButton variant="magenta" size="sm" onClick={onClose}>
+          <RetroButton variant="purple" size="sm" onClick={onClose}>
             CLOSE
           </RetroButton>
           <RetroButton
-            variant="green"
+            variant="blue"
             size="sm"
             onClick={handleAssign}
             disabled={!canAssign}

@@ -13,16 +13,16 @@ type GameEventDefinition = {
 
 const PROTOCOL_BABEL_EVENT_DEFAULTS: Record<string, GameEventDefinition[]> = {
   Aegis_Prime: [
-    { name: 'FIREWALL_CRACKED', condition: 'Trigger immediately after the player successfully transfers the 500 KITE_USD toll.' },
+    { name: 'FIREWALL_CRACKED', condition: 'Trigger immediately after the player successfully transfers the 500 PYUSD toll.' },
     { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
   ],
   Node_Alpha: [
-    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.' },
+    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 PYUSD escrow.' },
     { name: 'HACK_COMPLETED', condition: 'Trigger after Node-Alpha and Node-Omega complete their hash exchange loop.' },
     { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
   ],
   Node_Omega: [
-    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.' },
+    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 PYUSD escrow.' },
     { name: 'HACK_COMPLETED', condition: 'Trigger after Node-Alpha and Node-Omega complete their hash exchange loop.' },
     { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
   ],
@@ -141,6 +141,46 @@ type CharacterWithProjectRelations = {
   project?: ApiProject | null
 }
 
+const CHARACTER_BASE_SELECT = {
+  id: true,
+  name: true,
+  walletAddress: true,
+  aaChainId: true,
+  aaProvider: true,
+  smartAccountId: true,
+  smartAccountStatus: true,
+  config: true,
+  adaptation: true,
+  isDeployedOnChain: true,
+  deploymentTxHash: true,
+  gameEvents: true,
+  createdAt: true,
+} as const
+
+const CHARACTER_WITH_PROJECTS_SELECT = {
+  ...CHARACTER_BASE_SELECT,
+  projects: {
+    select: {
+      id: true,
+      name: true,
+      apiKey: true,
+      createdAt: true,
+    },
+  },
+} as const
+
+const CHARACTER_WITH_PROJECT_SELECT = {
+  ...CHARACTER_BASE_SELECT,
+  project: {
+    select: {
+      id: true,
+      name: true,
+      apiKey: true,
+      createdAt: true,
+    },
+  },
+} as const
+
 function getCharacterProjects(character: CharacterWithProjectRelations): ApiProject[] {
   if (Array.isArray(character.projects)) {
     return character.projects
@@ -229,7 +269,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     try {
       character = await characterDelegate.findUnique({
         where: { id },
-        include: { projects: true },
+        select: CHARACTER_WITH_PROJECTS_SELECT,
       })
     } catch (error) {
       if (!shouldFallbackToLegacyProjectRelation(error)) {
@@ -239,7 +279,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       try {
         character = await characterDelegate.findUnique({
           where: { id },
-          include: { project: true },
+          select: CHARACTER_WITH_PROJECT_SELECT,
         })
       } catch (legacyIncludeError) {
         if (!isUnknownProjectIncludeError(legacyIncludeError)) {
@@ -248,6 +288,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
         character = await characterDelegate.findUnique({
           where: { id },
+          select: CHARACTER_BASE_SELECT,
         })
       }
     }

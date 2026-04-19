@@ -57,32 +57,32 @@ export default function CharactersPage() {
       <main className="p-8 max-w-7xl mx-auto">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="gradient-text gradient-cyan-magenta text-4xl font-bold mb-2">MY CHARACTERS</h1>
-            <p className="text-cyan-400 text-sm uppercase font-bold">
+            <h1 className="gradient-text gradient-neon text-4xl font-bold mb-2">CHARACTERS</h1>
+            <p className="text-blue-400 text-sm uppercase font-bold">
               Global fleet across all games
             </p>
           </div>
           <Link href="/characters/new">
-            <RetroButton variant="green" size="lg">
+            <RetroButton variant="blue" size="lg">
               DEPLOY NEW AGENT
             </RetroButton>
           </Link>
         </div>
 
         {loading ? (
-          <div className="text-center py-12 text-cyan-400 font-mono">Loading agents...</div>
+          <div className="text-center py-12 text-blue-400 font-mono">Loading agents...</div>
         ) : error ? (
-          <div className="border-4 border-red-500 bg-black p-6 text-center text-red-400 font-mono">
+          <div className="border-4 border-purple-500 bg-black p-6 text-center text-purple-300 font-mono">
             {error}
           </div>
         ) : characters.length === 0 ? (
-          <div className="border-4 border-yellow-400 bg-black p-12 text-center">
-            <p className="text-yellow-400 text-lg font-bold mb-4">NO AGENTS FOUND</p>
+          <div className="border-4 border-blue-400 bg-black p-12 text-center">
+            <p className="text-blue-300 text-lg font-bold mb-4">NO AGENTS FOUND</p>
             <p className="text-gray-400 font-mono mb-6">
               Create your first autonomous character.
             </p>
             <Link href="/characters/new">
-              <RetroButton variant="yellow" size="lg">CREATE AGENT</RetroButton>
+              <RetroButton variant="blue" size="lg">CREATE AGENT</RetroButton>
             </Link>
           </div>
         ) : (
@@ -90,21 +90,21 @@ export default function CharactersPage() {
             {characters.map((character) => (
               <div
                 key={character.id}
-                className="border-4 border-cyan-500 bg-black p-6 hover:border-magenta-500 transition-all flex flex-col"
+                className="border-4 border-blue-500 bg-black p-6 hover:border-purple-500 transition-all flex flex-col"
               >
                 <h3 className="text-xl font-bold text-white uppercase mb-2">{character.name}</h3>
                 <p className="text-xs text-gray-400 font-mono mb-3">
                   {new Date(character.createdAt).toLocaleDateString()}
                 </p>
 
-                <div className="border-t-2 border-cyan-500 pt-3 mb-3">
+                <div className="border-t-2 border-blue-500 pt-3 mb-3">
                   <p className="text-xs text-gray-400 uppercase font-bold mb-1">Wallet</p>
-                  <p className="text-xs font-mono text-cyan-300 break-all">{character.walletAddress}</p>
+                  <p className="text-xs font-mono text-blue-300 break-all">{character.walletAddress}</p>
                 </div>
 
-                <div className="border-t-2 border-cyan-500 pt-3 mb-4">
+                <div className="border-t-2 border-blue-500 pt-3 mb-4">
                   <p className="text-xs text-gray-400 uppercase font-bold mb-1">Assigned Games</p>
-                  <p className="text-sm font-bold text-yellow-300">{character.projectIds?.length ?? 0}</p>
+                  <p className="text-sm font-bold text-purple-300">{character.projectIds?.length ?? 0}</p>
                 </div>
 
                 <div className="mt-auto flex flex-col gap-2">
@@ -118,7 +118,7 @@ export default function CharactersPage() {
                   </button>
 
                   <Link href={`/characters/${character.id}/edit`}>
-                    <RetroButton variant="magenta" size="md" className="w-full text-xs">
+                    <RetroButton variant="purple" size="md" className="w-full text-xs">
                       EDIT CHARACTER
                     </RetroButton>
                   </Link>

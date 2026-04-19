@@ -64,15 +64,15 @@ function CreateGameModal({ onClose, onCreated }: CreateGameModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="w-full max-w-lg border-4 border-cyan-400 bg-black shadow-[8px_8px_0px_0px_rgba(34,211,238,1)]">
+      <div className="w-full max-w-lg border-4 border-blue-400 bg-black shadow-[8px_8px_0px_0px_rgba(59,130,246,1)]">
         {/* Header */}
-        <div className="border-b-4 border-cyan-400 px-6 py-4 flex items-center justify-between">
+        <div className="border-b-4 border-blue-400 px-6 py-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-white uppercase tracking-wider">
             {createdGame ? '✓ Game Created!' : 'Create New Game'}
           </h2>
           <button
             onClick={onClose}
-            className="text-cyan-400 hover:text-white text-xl font-bold transition-colors"
+            className="text-blue-400 hover:text-white text-xl font-bold transition-colors"
           >
             ✕
           </button>
@@ -86,7 +86,7 @@ function CreateGameModal({ onClose, onCreated }: CreateGameModalProps) {
               </p>
 
               <RetroInput
-                borderColor="cyan"
+                borderColor="blue"
                 label="Game Name"
                 placeholder="e.g. Dragon Quest Online"
                 value={name}
@@ -100,11 +100,11 @@ function CreateGameModal({ onClose, onCreated }: CreateGameModalProps) {
               )}
 
               <div className="mt-6 flex gap-3 justify-end">
-                <RetroButton variant="magenta" size="sm" onClick={onClose} disabled={creating}>
+                <RetroButton variant="purple" size="sm" onClick={onClose} disabled={creating}>
                   CANCEL
                 </RetroButton>
                 <RetroButton
-                  variant="green"
+                  variant="blue"
                   size="sm"
                   onClick={handleCreate}
                   disabled={creating || !name.trim()}
@@ -115,28 +115,28 @@ function CreateGameModal({ onClose, onCreated }: CreateGameModalProps) {
             </>
           ) : (
             <>
-              <p className="text-yellow-400 text-xs font-bold uppercase mb-2">
+              <p className="text-blue-300 text-xs font-bold uppercase mb-2">
                 ⚠ Save your API key — it won't be shown again
               </p>
               <p className="text-gray-400 text-xs font-mono mb-4">
                 Game: <span className="text-white font-bold">{createdGame.name}</span>
               </p>
 
-              <div className="bg-gray-950 border-4 border-yellow-400 p-4 mb-4 break-all">
-                <p className="text-yellow-300 font-mono text-xs leading-relaxed">
+              <div className="bg-slate-950 border-4 border-blue-400 p-4 mb-4 break-all">
+                <p className="text-blue-300 font-mono text-xs leading-relaxed">
                   {createdGame.apiKey}
                 </p>
               </div>
 
               <div className="flex gap-3 justify-end">
                 <RetroButton
-                  variant={copied ? 'green' : 'yellow'}
+                  variant={copied ? 'blue' : 'purple'}
                   size="sm"
                   onClick={handleCopy}
                 >
                   {copied ? '✓ COPIED!' : 'COPY API KEY'}
                 </RetroButton>
-                <RetroButton variant="cyan" size="sm" onClick={onClose}>
+                <RetroButton variant="blue" size="sm" onClick={onClose}>
                   DONE
                 </RetroButton>
               </div>
@@ -192,15 +192,15 @@ function RevokeModal({ game, onClose, onRevoked }: RevokeModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="w-full max-w-lg border-4 border-red-500 bg-black shadow-[8px_8px_0px_0px_rgba(239,68,68,1)]">
+      <div className="w-full max-w-lg border-4 border-purple-500 bg-black shadow-[8px_8px_0px_0px_rgba(168,85,247,1)]">
         {/* Header */}
-        <div className="border-b-4 border-red-500 px-6 py-4 flex items-center justify-between">
+        <div className="border-b-4 border-purple-500 px-6 py-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-white uppercase tracking-wider">
             {newKey ? '✓ New API Key Generated' : '⚠ Revoke API Key'}
           </h2>
           <button
             onClick={onClose}
-            className="text-red-400 hover:text-white text-xl font-bold transition-colors"
+            className="text-purple-300 hover:text-white text-xl font-bold transition-colors"
           >
             ✕
           </button>
@@ -212,23 +212,23 @@ function RevokeModal({ game, onClose, onRevoked }: RevokeModalProps) {
               <p className="text-gray-300 text-sm font-mono mb-2">
                 Game: <span className="text-white font-bold">{game.name}</span>
               </p>
-              <div className="border-2 border-red-500/40 bg-red-950/20 p-4 mb-5">
-                <p className="text-red-300 text-xs font-mono leading-relaxed">
+              <div className="border-2 border-purple-500/40 bg-purple-950/20 p-4 mb-5">
+                <p className="text-purple-300 text-xs font-mono leading-relaxed">
                   Are you sure you want to revoke the current API key and generate a new one?
-                  Any integrations using the old key will <span className="text-red-400 font-bold">immediately stop working</span>.
+                  Any integrations using the old key will <span className="text-purple-300 font-bold">immediately stop working</span>.
                 </p>
               </div>
 
               {error && (
-                <p className="mb-4 text-xs text-red-400 font-mono">{error}</p>
+                <p className="mb-4 text-xs text-purple-300 font-mono">{error}</p>
               )}
 
               <div className="flex gap-3 justify-end">
-                <RetroButton variant="cyan" size="sm" onClick={onClose} disabled={revoking}>
+                <RetroButton variant="blue" size="sm" onClick={onClose} disabled={revoking}>
                   CANCEL
                 </RetroButton>
                 <RetroButton
-                  variant="red"
+                  variant="purple"
                   size="sm"
                   onClick={handleRevoke}
                   disabled={revoking}
@@ -239,28 +239,28 @@ function RevokeModal({ game, onClose, onRevoked }: RevokeModalProps) {
             </>
           ) : (
             <>
-              <p className="text-yellow-400 text-xs font-bold uppercase mb-2">
+              <p className="text-blue-300 text-xs font-bold uppercase mb-2">
                 ⚠ Save your new API key — the old one is now invalid
               </p>
               <p className="text-gray-400 text-xs font-mono mb-4">
                 Game: <span className="text-white font-bold">{game.name}</span>
               </p>
 
-              <div className="bg-gray-950 border-4 border-yellow-400 p-4 mb-4 break-all">
-                <p className="text-yellow-300 font-mono text-xs leading-relaxed">
+              <div className="bg-slate-950 border-4 border-blue-400 p-4 mb-4 break-all">
+                <p className="text-blue-300 font-mono text-xs leading-relaxed">
                   {newKey}
                 </p>
               </div>
 
               <div className="flex gap-3 justify-end">
                 <RetroButton
-                  variant={copied ? 'green' : 'yellow'}
+                  variant={copied ? 'blue' : 'purple'}
                   size="sm"
                   onClick={handleCopy}
                 >
                   {copied ? '✓ COPIED!' : 'COPY NEW KEY'}
                 </RetroButton>
-                <RetroButton variant="cyan" size="sm" onClick={onClose}>
+                <RetroButton variant="blue" size="sm" onClick={onClose}>
                   DONE
                 </RetroButton>
               </div>
@@ -337,16 +337,16 @@ export default function GamesPage() {
       <main className="p-8 max-w-7xl mx-auto">
         <div className="mb-12 flex items-center justify-between">
           <div>
-            <h1 className="gradient-text gradient-cyan-magenta text-4xl font-bold mb-2">
-              MY GAMES
+            <h1 className="gradient-text gradient-neon text-4xl font-bold mb-2">
+              GAMES
             </h1>
-            <p className="text-cyan-400 text-sm uppercase font-bold">
+            <p className="text-blue-400 text-sm uppercase font-bold">
               Select a game to manage assigned agents
             </p>
           </div>
 
           <RetroButton
-            variant="green"
+            variant="blue"
             size="md"
             onClick={() => setShowCreate(true)}
           >
@@ -356,19 +356,19 @@ export default function GamesPage() {
 
         {loading ? (
           <div className="text-center py-12">
-            <p className="text-cyan-400 font-mono">Loading games...</p>
+            <p className="text-blue-400 font-mono">Loading games...</p>
           </div>
         ) : error ? (
-          <div className="border-4 border-red-500 bg-black p-6 text-center text-red-400 font-mono">
+          <div className="border-4 border-purple-500 bg-black p-6 text-center text-purple-300 font-mono">
             {error}
           </div>
         ) : games.length === 0 ? (
-          <div className="border-4 border-yellow-400 bg-black p-12 text-center">
-            <p className="text-yellow-400 text-lg font-bold mb-4">NO GAMES FOUND</p>
+          <div className="border-4 border-blue-400 bg-black p-12 text-center">
+            <p className="text-blue-300 text-lg font-bold mb-4">NO GAMES FOUND</p>
             <p className="text-gray-400 font-mono mb-6">
               Create a game to get an API key and assign agents.
             </p>
-            <RetroButton variant="yellow" size="lg" onClick={() => setShowCreate(true)}>
+            <RetroButton variant="blue" size="lg" onClick={() => setShowCreate(true)}>
               CREATE YOUR FIRST GAME
             </RetroButton>
           </div>
@@ -377,7 +377,7 @@ export default function GamesPage() {
             {games.map((game) => (
               <div
                 key={game.id}
-                className="border-4 border-cyan-500 bg-black hover:border-magenta-500 transition-all group relative"
+                className="border-4 border-blue-500 bg-black hover:border-purple-500 transition-all group relative"
               >
                 {/* Key revoke button — top right corner */}
                 <button
@@ -387,7 +387,7 @@ export default function GamesPage() {
                     setRevokeTarget(game)
                   }}
                   title="Revoke & regenerate API key"
-                  className="absolute top-3 right-3 z-10 p-2 border-2 border-gray-700 hover:border-red-500 text-gray-500 hover:text-red-400 transition-all bg-black"
+                  className="absolute top-3 right-3 z-10 p-2 border-2 border-gray-700 hover:border-purple-500 text-gray-500 hover:text-purple-300 transition-all bg-black"
                 >
                   <KeyIcon className="w-4 h-4" />
                 </button>
@@ -397,7 +397,7 @@ export default function GamesPage() {
                   <h3 className="text-xl font-bold text-white uppercase mb-2 pr-8">
                     {game.name}
                   </h3>
-                  <p className="text-sm text-cyan-300 font-bold mb-1">
+                  <p className="text-sm text-blue-300 font-bold mb-1">
                     {game.characterCount}{' '}
                     {game.characterCount === 1 ? 'CHARACTER' : 'CHARACTERS'}
                   </p>
@@ -405,8 +405,8 @@ export default function GamesPage() {
                     {new Date(game.createdAt).toLocaleDateString()}
                   </p>
 
-                  <div className="border-t-2 border-cyan-500 pt-4 mt-4">
-                    <RetroButton variant="cyan" size="md" className="w-full text-xs">
+                  <div className="border-t-2 border-blue-500 pt-4 mt-4">
+                    <RetroButton variant="blue" size="md" className="w-full text-xs">
                       VIEW CHARACTERS
                     </RetroButton>
                   </div>

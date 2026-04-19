@@ -8,7 +8,7 @@ const GAME_EVENTS_BY_NAME: Record<string, Prisma.InputJsonValue> = {
   Aegis_Prime: [
     {
       name: "FIREWALL_CRACKED",
-      condition: "Trigger immediately after the player successfully transfers the 500 KITE_USD toll.",
+      condition: "Trigger immediately after the player successfully transfers the 500 PYUSD toll.",
     },
     {
       name: "COMBAT_INITIATED",
@@ -18,7 +18,7 @@ const GAME_EVENTS_BY_NAME: Record<string, Prisma.InputJsonValue> = {
   Node_Alpha: [
     {
       name: "ESCROW_FUNDED",
-      condition: "Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.",
+      condition: "Trigger when the player agrees to and funds the 5,000 PYUSD escrow.",
     },
     {
       name: "HACK_COMPLETED",
@@ -32,7 +32,7 @@ const GAME_EVENTS_BY_NAME: Record<string, Prisma.InputJsonValue> = {
   Node_Omega: [
     {
       name: "ESCROW_FUNDED",
-      condition: "Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.",
+      condition: "Trigger when the player agrees to and funds the 5,000 PYUSD escrow.",
     },
     {
       name: "HACK_COMPLETED",

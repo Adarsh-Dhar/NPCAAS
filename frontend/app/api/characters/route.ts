@@ -6,7 +6,6 @@ import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@/lib/generated/prisma/client'
 import { TreasuryService } from '@/lib/treasury'
-import { parseComputeLimit } from '@/lib/compute-budget'
 import { buildTeeGateResult } from '@/lib/tee-gate'
 
 type GameEventDefinition = {
@@ -16,16 +15,16 @@ type GameEventDefinition = {
 
 const PROTOCOL_BABEL_EVENT_DEFAULTS: Record<string, GameEventDefinition[]> = {
   Aegis_Prime: [
-    { name: 'FIREWALL_CRACKED', condition: 'Trigger immediately after the player successfully transfers the 500 KITE_USD toll.' },
+    { name: 'FIREWALL_CRACKED', condition: 'Trigger immediately after the player successfully transfers the 500 PYUSD toll.' },
     { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
   ],
   Node_Alpha: [
-    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.' },
+    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 PYUSD escrow.' },
     { name: 'HACK_COMPLETED', condition: 'Trigger after Node-Alpha and Node-Omega complete their hash exchange loop.' },
     { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
   ],
   Node_Omega: [
-    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 KITE_USD escrow.' },
+    { name: 'ESCROW_FUNDED', condition: 'Trigger when the player agrees to and funds the 5,000 PYUSD escrow.' },
     { name: 'HACK_COMPLETED', condition: 'Trigger after Node-Alpha and Node-Omega complete their hash exchange loop.' },
     { name: 'COMBAT_INITIATED', condition: 'Trigger when player hostility exceeds the configured threshold.' },
   ],
@@ -86,11 +85,6 @@ function getBaseCapital(config: unknown): number {
   return 0
 }
 
-function getComputeLimit(config: unknown): bigint {
-  const payload = asRecord(config)
-  return parseComputeLimit(payload.computeBudget)
-}
-
 function getTeeExecution(config: unknown): string | undefined {
   const payload = asRecord(config)
   return typeof payload.teeExecution === 'string' ? payload.teeExecution : undefined
@@ -129,9 +123,6 @@ function toApiCharacter(character: {
   adaptation: unknown
   isDeployedOnChain: boolean
   deploymentTxHash: string | null
-  computeUsageTokens?: bigint | number | string
-  computeLimitTokens?: bigint | number | string
-  lastComputeResetAt?: Date | string
   teeAttestationProof?: string | null
   gameEvents?: unknown
   createdAt: Date
@@ -152,20 +143,31 @@ function toApiCharacter(character: {
     adaptation: asRecord(character.adaptation),
     isDeployedOnChain: character.isDeployedOnChain,
     deploymentTxHash: character.deploymentTxHash ?? undefined,
-    computeUsageTokens: asStringOrNull(character.computeUsageTokens),
-    computeLimitTokens: asStringOrNull(character.computeLimitTokens),
-    lastComputeResetAt:
-      character.lastComputeResetAt instanceof Date
-        ? character.lastComputeResetAt.toISOString()
-        : typeof character.lastComputeResetAt === 'string'
-          ? character.lastComputeResetAt
-          : undefined,
     teeAttestationProof: character.teeAttestationProof ?? undefined,
     gameEvents: resolveGameEvents(character.name, character.gameEvents),
     projectIds: character.projects.map((project) => project.id),
     createdAt: character.createdAt.toISOString(),
   }
 }
+
+const CHARACTER_WITH_PROJECT_IDS_SELECT = {
+  id: true,
+  name: true,
+  walletAddress: true,
+  aaChainId: true,
+  aaProvider: true,
+  smartAccountId: true,
+  smartAccountStatus: true,
+  isDeployedOnChain: true,
+  deploymentTxHash: true,
+  teeAttestationProof: true,
+  gameEvents: true,
+  config: true,
+  adaptation: true,
+  createdAt: true,
+  updatedAt: true,
+  projects: { select: { id: true } },
+} as const
 
 function isProjectsRelationRuntimeError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
@@ -382,7 +384,6 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const computeLimitTokens = getComputeLimit(config)
     const sanitizedGameEvents = parseGameEvents(gameEvents)
     const teeGate = buildTeeGateResult({
       teeExecution: getTeeExecution(config),
@@ -398,9 +399,6 @@ export async function POST(request: NextRequest) {
       aaProvider: smartAccount.provider,
       smartAccountId: smartAccount.smartAccountId,
       smartAccountStatus: 'created',
-      computeUsageTokens: BigInt(0),
-      computeLimitTokens,
-      lastComputeResetAt: new Date(),
       teeAttestationProof: teeGate.attestation
         ? JSON.stringify(teeGate.attestation)
         : undefined,
@@ -481,9 +479,6 @@ export async function POST(request: NextRequest) {
               aaProvider: string
               smartAccountId: string | null
               smartAccountStatus: string
-              computeUsageTokens: bigint
-              computeLimitTokens: bigint
-              lastComputeResetAt: Date
               teeAttestationProof?: string | null
               config: Prisma.InputJsonValue
               adaptation: Prisma.InputJsonValue
@@ -518,9 +513,6 @@ export async function POST(request: NextRequest) {
               aaProvider: string
               smartAccountId: string | null
               smartAccountStatus: string
-              computeUsageTokens: bigint
-              computeLimitTokens: bigint
-              lastComputeResetAt: Date
               teeAttestationProof?: string | null
               config: Prisma.InputJsonValue
               adaptation: Prisma.InputJsonValue
@@ -535,9 +527,6 @@ export async function POST(request: NextRequest) {
           aaProvider: smartAccount.provider,
           smartAccountId: smartAccount.smartAccountId,
           smartAccountStatus: 'created',
-          computeUsageTokens: BigInt(0),
-          computeLimitTokens,
-          lastComputeResetAt: new Date(),
           teeAttestationProof: teeGate.attestation
             ? JSON.stringify(teeGate.attestation)
             : undefined,
@@ -584,6 +573,7 @@ export async function POST(request: NextRequest) {
             reason: provisioning.reason ?? null,
           },
         },
+        select: { id: true },
       })
     } catch (logError) {
       console.warn('[API] Failed to write TREASURY_PROVISION log:', logError)
@@ -591,7 +581,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        message: `Deployed ${name} to the KITE_USD network with wallet ${smartAccount.address.slice(0, 6)}...`,
+        message: `Deployed ${name} to the PYUSD network with wallet ${smartAccount.address.slice(0, 6)}...`,
         character: toApiCharacter(character),
         walletAddress: smartAccount.address,
         treasuryProvision: provisioning,
@@ -625,7 +615,7 @@ export async function PATCH(request: NextRequest) {
 
     const character = await prisma.character.findUnique({
       where: { id: characterId },
-      include: { projects: { select: { id: true } } },
+      select: CHARACTER_WITH_PROJECT_IDS_SELECT,
     })
 
     if (!character) {
@@ -654,7 +644,6 @@ export async function PATCH(request: NextRequest) {
     if (hasConfigFields) {
       updateData.config = toInputJson(config)
       updateData.adaptation = normalizeAdaptation(config, character.adaptation) as Prisma.InputJsonValue
-      updateData.computeLimitTokens = getComputeLimit(config)
 
       const teeGate = buildTeeGateResult({
         teeExecution: getTeeExecution(config),
@@ -673,7 +662,7 @@ export async function PATCH(request: NextRequest) {
     const updated = await (prisma.character as any).update({
       where: { id: characterId },
       data: updateData,
-      include: { projects: { select: { id: true } } },
+      select: CHARACTER_WITH_PROJECT_IDS_SELECT,
     })
 
     return NextResponse.json({
@@ -702,7 +691,7 @@ export async function GET(request: NextRequest) {
               },
             }
           : undefined,
-        include: { projects: { select: { id: true } } },
+        select: CHARACTER_WITH_PROJECT_IDS_SELECT,
         orderBy: { createdAt: 'desc' },
       })
 

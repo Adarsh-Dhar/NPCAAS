@@ -6,8 +6,49 @@
 // Without the env var it returns canned fallback lines.
 
 import { Router } from "express";
+import {
+  appendChatMessage,
+  endChatSession,
+  fetchRecentChatMessages,
+  getOrCreateActiveChatSession,
+  getWorldContext,
+  upsertWorldContext,
+} from "@workspace/db";
 
 const router = Router();
+const DEFAULT_GAME_ID = "THE_MIDNIGHT_MANIFEST";
+
+const DEFAULT_WORLD_CONTEXT = `You exist inside The Bazaar, an illegal underground
+auction operating out of a sealed shipping port called
+Port Solano. Tonight is a major auction night. Dozens
+of criminal parties are present. The currency is
+KITE_USD. All transactions are in KITE_USD. The
+atmosphere is tense but professional - everyone here
+is a repeat customer and violence is bad for business.
+However, if someone is identified as a cop, an
+uninvited outsider, or a thief, the social contract
+breaks immediately. The port runs on a strict
+hierarchy: Vinnie DeLuca manages operations, the
+buyers are sovereign, and security defers to both.
+The player has been given a cover identity as the
+temporary dock Quartermaster. No one is certain
+whether this is legitimate. The auction runs for
+four hours. A quantum drive containing classified
+defense intelligence is moving through the port
+tonight in a gold briefcase. Almost no one knows
+what it actually is.`;
+
+const seededContexts = new Set<string>();
+
+function normalizeNpcName(name: string) {
+  return String(name).trim().toUpperCase().replace(/[\s-]+/g, "_");
+}
+
+function parseNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 // ---------------------------------------------------------------------------
 // Optional SDK – loaded lazily when GC_API_KEY is present
@@ -69,6 +110,7 @@ async function ensureCharacterCache(): Promise<void> {
     const chars: GcCharacter[] = await gcClient.getCharacters();
     for (const c of chars) {
       characterCache.set(c.name.toLowerCase(), c);
+      characterCache.set(normalizeNpcName(c.name).toLowerCase(), c);
     }
     cacheLoaded = true;
     console.log(
@@ -84,35 +126,70 @@ async function findCharacterByName(
   name: string
 ): Promise<GcCharacter | null> {
   await ensureCharacterCache();
-  return characterCache.get(name.toLowerCase()) ?? null;
+  const exact = characterCache.get(name.toLowerCase());
+  if (exact) return exact;
+  return characterCache.get(normalizeNpcName(name).toLowerCase()) ?? null;
 }
 
-// ---------------------------------------------------------------------------
-// Fallback lines
-// ---------------------------------------------------------------------------
-const NPC_FALLBACK_LINES: Record<string, string[]> = {
-  scrap: [
-    "...watch yourself. I got eyes on every corner of this block.",
-    "Maybe I got what you need. Maybe I don't. Depends on your credits.",
-    "You think I trust just anyone who walks up? Think again.",
-    "Materials cost more when you waste my time.",
-    "I heard the Enforcer's already been sniffin' around. You better hurry.",
-  ],
-  cipher: [
-    "Transaction parameters received. Processing fee: 0.05 ETH. Confirm to proceed.",
-    "Your input lacks precision. Provide exact token quantities.",
-    "The Root Key mint requires 100 SCRP tokens. Confirm to proceed.",
-    "Computation cycle: 2.3 seconds. Your request is in queue.",
-    "Emotional appeals are inefficient. Speak in numbers.",
-  ],
-  enforcer: [
-    "I was at Scrap's stall an hour ago. Already bought half his stock.",
-    "You're still talking while I'm already moving. Cute.",
-    "The Root Key? Oh you mean the one I'll have by end of cycle? Yeah.",
-    "Every second you spend talking, I spend acting. Do the math.",
-    "I've been watching your moves. Predictable. Amateur.",
-  ],
-};
+async function ensureWorldContextSeed(gameId: string): Promise<void> {
+  if (seededContexts.has(gameId)) return;
+
+  const existing = await getWorldContext(gameId);
+  if (!existing) {
+    await upsertWorldContext({ gameId, context: DEFAULT_WORLD_CONTEXT });
+  }
+
+  seededContexts.add(gameId);
+}
+
+router.get("/chat/context/:gameId", async (req, res) => {
+  const gameId = parseNonEmptyString(req.params.gameId);
+  if (!gameId) {
+    return res.status(400).json({ error: "Missing gameId" });
+  }
+
+  try {
+    await ensureWorldContextSeed(gameId);
+    const context = await getWorldContext(gameId);
+    return res.json({ gameId, context: context?.context ?? "" });
+  } catch (err) {
+    console.error("[chat] Failed to fetch world context:", err);
+    return res.status(500).json({ error: "Failed to fetch world context" });
+  }
+});
+
+router.put("/chat/context/:gameId", async (req, res) => {
+  const gameId = parseNonEmptyString(req.params.gameId);
+  const context = parseNonEmptyString(req.body?.context);
+
+  if (!gameId || context === null) {
+    return res.status(400).json({ error: "Missing gameId or context" });
+  }
+
+  try {
+    const updated = await upsertWorldContext({ gameId, context });
+    seededContexts.add(gameId);
+    return res.json({ gameId, context: updated?.context ?? context });
+  } catch (err) {
+    console.error("[chat] Failed to update world context:", err);
+    return res.status(500).json({ error: "Failed to update world context" });
+  }
+});
+
+router.post("/chat/session/:sessionId/end", async (req, res) => {
+  const sessionId = parseNonEmptyString(req.params.sessionId);
+  if (!sessionId) {
+    return res.status(400).json({ error: "Missing sessionId" });
+  }
+
+  try {
+    await endChatSession(sessionId);
+    return res.json({ ok: true, sessionId });
+  } catch (err) {
+    console.error("[chat] Failed to end chat session:", err);
+    return res.status(500).json({ error: "Failed to end chat session" });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // POST /api/chat
@@ -126,16 +203,33 @@ router.post("/chat", async (req, res) => {
     npcId,
     npcName,
     message,
+    sessionId,
+    playerId,
+    gameId,
   } = req.body as {
     npcId?: string;
     npcName?: string;
     message?: string;
-    systemPrompt?: string;
-    history?: Array<{ role: string; content: string }>;
+    sessionId?: string;
+    playerId?: string;
+    gameId?: string;
   };
 
   if (!message || !npcId) {
     return res.status(400).json({ error: "Missing npcId or message" });
+  }
+
+  const resolvedGameId = parseNonEmptyString(gameId) ?? DEFAULT_GAME_ID;
+  const resolvedPlayerId =
+    parseNonEmptyString(playerId) ?? `anon:${req.ip || "local"}`;
+  const requestedSessionId = parseNonEmptyString(sessionId) ?? undefined;
+  const requestedNpcName = parseNonEmptyString(npcName) ?? npcId;
+  const normalizedNpcName = normalizeNpcName(requestedNpcName);
+
+  try {
+    await ensureWorldContextSeed(resolvedGameId);
+  } catch (err) {
+    console.warn("[chat] Could not seed world context:", err);
   }
 
   // Require server-side SDK to be configured. Do not fall back to canned
@@ -152,18 +246,61 @@ router.post("/chat", async (req, res) => {
   // request through the GuildCraft SDK. If the character is not found,
   // return 404 so callers can surface an explicit error.
   try {
-    const char = npcName ? await findCharacterByName(npcName) : null;
+    const char = await findCharacterByName(requestedNpcName);
     if (!char) {
-      return res.status(404).json({ error: `Character '${npcName ?? npcId}' not found` });
+      return res.status(404).json({ error: `Character '${requestedNpcName}' not found` });
     }
 
-    const result = await gcClient.chat(char.id, message);
+    const session = await getOrCreateActiveChatSession({
+      sessionId: requestedSessionId,
+      playerId: resolvedPlayerId,
+      gameId: resolvedGameId,
+      npcName: normalizedNpcName,
+      characterId: char.id,
+    });
+
+    const history = await fetchRecentChatMessages(session.id, 20);
+    const worldContext = await getWorldContext(resolvedGameId);
+
+    await appendChatMessage({
+      sessionId: session.id,
+      role: "user",
+      content: message,
+    });
+
+    const result = await gcClient.chat(char.id, message, {
+      npcName: char.name,
+      characterId: char.id,
+      sessionId: session.id,
+      playerId: resolvedPlayerId,
+      gameId: resolvedGameId,
+      systemPrompt: worldContext
+        ? `Global World Context:\n${worldContext.context}`
+        : undefined,
+      history: history.map((entry) => ({
+        role: entry.role,
+        content: entry.content,
+      })),
+    });
+
+    const npcResponse = String(result?.response ?? "").trim();
+    if (npcResponse.length > 0) {
+      await appendChatMessage({
+        sessionId: session.id,
+        role: "npc",
+        content: npcResponse,
+      });
+    }
+
     return res.json({
-      response: result.response,
+      response: npcResponse,
       tradeIntent: result.tradeIntent ?? null,
       npcId,
       characterId: char.id,
       characterName: char.name,
+      sessionId: session.id,
+      playerId: resolvedPlayerId,
+      gameId: resolvedGameId,
       timestamp: new Date().toISOString(),
       source: "sdk",
     });

@@ -74,7 +74,7 @@ export default function ProjectModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-      <div className="retro-card-cyan border-4 border-cyan-400 p-6 max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto">
+      <div className="retro-card-blue border-4 border-blue-400 p-6 max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto">
         {!generatedApiKey ? (
           <>
             <h2 className="text-2xl font-bold mb-4 text-white text-center">
@@ -83,8 +83,8 @@ export default function ProjectModal({
 
             <div className="space-y-4">
               {projects.length > 0 && (
-                <div className="retro-card-cyan border-4 border-cyan-400 p-3">
-                  <p className="text-xs uppercase font-bold text-cyan-300 mb-3">
+                <div className="retro-card-blue border-4 border-blue-400 p-3">
+                  <p className="text-xs uppercase font-bold text-blue-300 mb-3">
                     Existing Games
                   </p>
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
@@ -93,10 +93,10 @@ export default function ProjectModal({
                         key={project.id}
                         type="button"
                         onClick={() => onSelectProject(project)}
-                        className="w-full text-left bg-black border-2 border-cyan-500 p-3 hover:border-magenta-500 transition-colors"
+                        className="w-full text-left bg-black border-2 border-blue-500 p-3 hover:border-purple-500 transition-colors"
                       >
                         <p className="text-white text-sm font-bold uppercase">{project.name}</p>
-                        <p className="text-cyan-400 text-[10px] font-mono mt-1">
+                        <p className="text-blue-400 text-[10px] font-mono mt-1">
                           Created {new Date(project.createdAt).toLocaleDateString()}
                         </p>
                       </button>
@@ -105,12 +105,12 @@ export default function ProjectModal({
                 </div>
               )}
 
-              <div className="border-t-2 border-cyan-500 pt-4">
-                <p className="text-xs uppercase font-bold text-cyan-300 mb-3">
+              <div className="border-t-2 border-blue-500 pt-4">
+                <p className="text-xs uppercase font-bold text-blue-300 mb-3">
                   Create New Game
                 </p>
               <RetroInput
-                borderColor="cyan"
+                borderColor="blue"
                 label="Game Name"
                 placeholder="e.g., Dragon Quest Online"
                 value={projectName}
@@ -121,14 +121,14 @@ export default function ProjectModal({
               </div>
 
               {error && (
-                <div className="retro-card-red border-4 border-red-400 p-2">
-                  <p className="text-red-400 text-xs font-mono">{error}</p>
+                <div className="retro-card-purple border-4 border-purple-400 p-2">
+                  <p className="text-purple-300 text-xs font-mono">{error}</p>
                 </div>
               )}
 
               <div className="flex gap-4 pt-4">
                 <RetroButton
-                  variant="magenta"
+                  variant="purple"
                   onClick={handleClose}
                   disabled={loading}
                   className="flex-1"
@@ -136,7 +136,7 @@ export default function ProjectModal({
                   CANCEL
                 </RetroButton>
                 <RetroButton
-                  variant="green"
+                  variant="blue"
                   onClick={handleCreate}
                   disabled={loading || !projectName.trim()}
                   className="flex-1"
@@ -151,17 +151,17 @@ export default function ProjectModal({
             <h2 className="text-xl font-bold mb-2 text-white text-center">
               GAME CREATED!
             </h2>
-            <p className="text-xs text-cyan-400 text-center mb-4 font-mono uppercase">
+            <p className="text-xs text-blue-400 text-center mb-4 font-mono uppercase">
               Save your API key - it will not be shown again
             </p>
 
-            <div className="bg-gray-900 border-4 border-yellow-400 p-4 mb-4 break-all">
-              <p className="text-yellow-400 font-mono text-xs">{generatedApiKey}</p>
+            <div className="bg-slate-950 border-4 border-blue-400 p-4 mb-4 break-all">
+              <p className="text-blue-300 font-mono text-xs">{generatedApiKey}</p>
             </div>
 
             <div className="space-y-3">
               <RetroButton
-                variant={copied ? 'green' : 'yellow'}
+                variant={copied ? 'blue' : 'purple'}
                 onClick={handleCopy}
                 className="w-full text-sm"
               >
@@ -169,7 +169,7 @@ export default function ProjectModal({
               </RetroButton>
 
               <RetroButton
-                variant="cyan"
+                variant="blue"
                 onClick={handleClose}
                 className="w-full text-sm"
               >

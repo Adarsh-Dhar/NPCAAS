@@ -102,6 +102,7 @@ export async function POST(
     await prisma.character.update({
       where: { id: character.id },
       data: { adaptation: updatedAdaptation as Prisma.InputJsonValue },
+      select: { id: true },
     })
 
     // Log the memory injection
@@ -111,6 +112,7 @@ export async function POST(
         eventType: 'MEMORY_INJECT',
         details: { injectedCount: injectedItems.length, items: injectedItems.slice(0, 5) },
       },
+      select: { id: true },
     })
 
     return NextResponse.json({
@@ -173,6 +175,7 @@ export async function DELETE(
     await prisma.character.update({
       where: { id: character.id },
       data: { adaptation: updatedAdaptation as Prisma.InputJsonValue },
+      select: { id: true },
     })
 
     return NextResponse.json({

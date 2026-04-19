@@ -118,6 +118,8 @@ export function middleware(request: NextRequest): NextResponse {
   // ------------------------------------------------------------------
   if (request.method === 'OPTIONS') return NextResponse.next()
 
+  const pathname = request.nextUrl.pathname
+
   // ------------------------------------------------------------------
   // 1. Authorization header presence + format
   // ------------------------------------------------------------------

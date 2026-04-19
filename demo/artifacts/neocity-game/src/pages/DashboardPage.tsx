@@ -132,7 +132,7 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
 
       const chainId = await window.ethereum.request({ method: 'eth_chainId' })
       if (typeof chainId === 'string' && chainId.toLowerCase() !== '0x940') {
-        throw new Error('Wallet is on the wrong network. Switch to KITE_USD Testnet (2368) and retry.')
+        throw new Error('Wallet is on the wrong network. Switch to PYUSD Testnet (2368) and retry.')
       }
 
       const valueHex = `0x${(BigInt(escrowCost) * 10n ** 18n).toString(16)}`
@@ -382,8 +382,8 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
             </div>
           </section>
 
-          <section className="rounded border border-yellow-400/30 bg-yellow-950/20 p-4">
-            <div className="mb-4 flex items-center gap-2 text-yellow-300 text-sm uppercase tracking-[0.2em]">
+          <section className="rounded border border-purple-300/35 bg-purple-950/20 p-4">
+            <div className="mb-4 flex items-center gap-2 text-purple-200 text-sm uppercase tracking-[0.2em]">
               <Lock size={14} />
               System Health
             </div>

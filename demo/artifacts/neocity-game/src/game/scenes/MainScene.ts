@@ -5,7 +5,10 @@ import {
   emitPlayerEvent,
   incrementChipDelivered,
   incrementMislabeledCrate,
+  getPlayerState,
   patchMissionState,
+  subscribePlayerState,
+  type MissionSnapshot,
   setMissionPhase,
 } from "@/lib/playerState";
 import { normalizeNpcName } from "@/lib/protocolBabel";
@@ -31,12 +34,42 @@ interface SceneNpcRef {
 
 const REQUIRED_DELIVERIES = [
   "SVETLANA_MOROZOVA",
-  "DIEGO_VARGAS",
   "BUYER_A",
   "BUYER_B",
   "BUYER_C",
   "BUYER_D",
 ] as const;
+
+const SCENE_THEME = {
+  baseBg: 0x05040f,
+  gradientTop: 0x111b40,
+  gradientBottom: 0x070613,
+  gridLine: 0x3559cc,
+  gridAlpha: 0.34,
+  dockFill: 0x0d1228,
+  dockBorder: 0x22d3ee,
+  title: "#67e8f9",
+  zoneA: "#c4b5fd",
+  zoneB: "#7dd3fc",
+  zoneC: "#c4b5fd",
+  barrierPhase1: 0x8b5cf6,
+  barrierPhase2: 0x22d3ee,
+  lockTextPhase1: "#e9d5ff",
+  lockTextPhase2: "#cffafe",
+  lockBg: "#090f23dc",
+  npcLabel: "#c4b5fd",
+  promptText: "#dbeafe",
+  promptBg: "#0b1024de",
+  missionPanel: 0x080d1f,
+  missionBorder: 0x67e8f9,
+  missionTitle: "#67e8f9",
+  missionSubtitle: "#ddd6fe",
+  missionDetail: "#93c5fd",
+  broadcastText: "#dbeafe",
+  broadcastBg: "#0b1024de",
+  rain: 0x67e8f9,
+  rainAlpha: 0.14,
+} as const;
 
 export class MainScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Container;
@@ -65,15 +98,31 @@ export class MainScene extends Phaser.Scene {
   private briefcaseTransferred = false;
   private escapeRouteOpened = false;
   private artifactIntercepted = false;
+  private missionCompleteShown = false;
   private rain!: Phaser.GameObjects.Graphics;
   private rainOffset = 0;
   private unsubCharacters?: () => void;
+  private unsubMissionState?: () => void;
   private boundCloseChat?: (e: Event) => void;
   private boundGameResume?: (e: Event) => void;
   private boundNpcSystemEvent?: (e: Event) => void;
 
   constructor() {
     super("MainScene");
+  }
+
+  private derivePhaseFromMission(snapshot: MissionSnapshot): 1 | 2 | 3 {
+    let derived: 1 | 2 | 3 = snapshot.phase
+
+    if (snapshot.briefcaseLocated || snapshot.escapeRouteOpened) {
+      derived = Math.max(derived, 2) as 1 | 2 | 3
+    }
+
+    if (snapshot.briefcaseTransferred || snapshot.frenzyActive || snapshot.artifactIntercepted) {
+      derived = 3
+    }
+
+    return derived
   }
 
   create() {
@@ -106,20 +155,60 @@ export class MainScene extends Phaser.Scene {
       this.createNpcs(characters);
     });
 
-    emitPlayerEvent("MANIFEST_ACCEPTED");
-    patchMissionState({ phase: 1 }, "MANIFEST_ACCEPTED");
-    this.showBroadcast("VINNIE", "You are quartermaster now. Move those chips and fix the manifest.");
+    this.unsubMissionState = subscribePlayerState((snapshot) => {
+      const reconciledPhase = this.derivePhaseFromMission(snapshot.mission);
+      this.phase = reconciledPhase;
+      this.chipsDelivered = new Set(Array.from({ length: snapshot.mission.chipsDelivered }, (_, index) => `chip-${index}`));
+      this.cratesMislabeled = snapshot.mission.cratesMislabeled;
+      this.diegoIntelRevealed = snapshot.mission.diegoIntelRevealed;
+      this.bodyguardIntelRevealed = snapshot.mission.bodyguardIntelRevealed;
+      this.briefcaseLocated = snapshot.mission.briefcaseLocated;
+      this.briefcaseTransferred = snapshot.mission.briefcaseTransferred;
+      this.escapeRouteOpened = snapshot.mission.escapeRouteOpened;
+      this.frenzyActive = snapshot.mission.frenzyActive;
+      this.artifactIntercepted = snapshot.mission.artifactIntercepted;
+
+      if (this.artifactIntercepted && !this.missionCompleteShown) {
+        this.showMissionCompleteMessage();
+      }
+
+      if (this.phase >= 2) {
+        this.unlockBarrier(this.zoneBarrierA);
+      }
+      if (this.phase >= 3 || this.escapeRouteOpened) {
+        this.unlockBarrier(this.zoneBarrierB);
+      }
+
+      if (snapshot.mission.phase !== reconciledPhase) {
+        setMissionPhase(reconciledPhase);
+      }
+
+      this.checkPhaseProgress();
+    });
+
+    const currentState = getPlayerState();
+    if (currentState.mission.phase === 1) {
+      emitPlayerEvent("MANIFEST_ACCEPTED");
+      patchMissionState({ phase: 1 }, "MANIFEST_ACCEPTED");
+      this.showBroadcast("VINNIE", "You are quartermaster now. Move those chips and fix the manifest.");
+    }
   }
 
   private createPortMap(W: number, H: number) {
-    this.add.rectangle(0, 0, W, H, 0x05050a).setOrigin(0);
+    this.add.rectangle(0, 0, W, H, SCENE_THEME.baseBg).setOrigin(0);
 
     const gradient = this.add.graphics();
-    gradient.fillGradientStyle(0x081825, 0x081825, 0x03070a, 0x03070a, 0.9);
+    gradient.fillGradientStyle(
+      SCENE_THEME.gradientTop,
+      SCENE_THEME.gradientTop,
+      SCENE_THEME.gradientBottom,
+      SCENE_THEME.gradientBottom,
+      0.9
+    );
     gradient.fillRect(0, 0, W, H);
 
     const grid = this.add.graphics();
-    grid.lineStyle(1, 0x102536, 0.55);
+    grid.lineStyle(1, SCENE_THEME.gridLine, SCENE_THEME.gridAlpha);
     for (let x = 0; x < W; x += 36) {
       grid.moveTo(x, 0);
       grid.lineTo(x, H);
@@ -131,16 +220,16 @@ export class MainScene extends Phaser.Scene {
     grid.strokePath();
 
     const docks = this.add.graphics();
-    docks.fillStyle(0x101926, 0.88);
+    docks.fillStyle(SCENE_THEME.dockFill, 0.9);
     docks.fillRect(20, 60, W - 40, H - 120);
-    docks.lineStyle(2, 0x20364f, 1);
+    docks.lineStyle(2, SCENE_THEME.dockBorder, 1);
     docks.strokeRect(20, 60, W - 40, H - 120);
 
     this.add
       .text(28, 20, "PORT SOLANO // THE BAZAAR", {
         fontFamily: "monospace",
         fontSize: "12px",
-        color: "#90d2ff",
+        color: SCENE_THEME.title,
         letterSpacing: 4,
       })
       .setDepth(20);
@@ -149,7 +238,7 @@ export class MainScene extends Phaser.Scene {
       .text(26, H - 34, "Warehouse Floor", {
         fontFamily: "monospace",
         fontSize: "10px",
-        color: "#80bddf",
+        color: SCENE_THEME.zoneA,
       })
       .setDepth(20);
 
@@ -157,7 +246,7 @@ export class MainScene extends Phaser.Scene {
       .text(W / 2 - 44, H - 34, "Trading Floor", {
         fontFamily: "monospace",
         fontSize: "10px",
-        color: "#80bddf",
+        color: SCENE_THEME.zoneB,
       })
       .setDepth(20);
 
@@ -165,7 +254,7 @@ export class MainScene extends Phaser.Scene {
       .text(W - 130, H - 34, "Loading Bay", {
         fontFamily: "monospace",
         fontSize: "10px",
-        color: "#80bddf",
+        color: SCENE_THEME.zoneC,
       })
       .setDepth(20);
 
@@ -176,15 +265,15 @@ export class MainScene extends Phaser.Scene {
     const x1 = Math.floor(W * 0.34);
     const x2 = Math.floor(W * 0.67);
 
-    this.zoneBarrierA = this.add.rectangle(x1, H / 2, 14, H - 120, 0x9fd9ff, 0.55).setDepth(12);
-    this.zoneBarrierB = this.add.rectangle(x2, H / 2, 14, H - 120, 0x9fd9ff, 0.55).setDepth(12);
+    this.zoneBarrierA = this.add.rectangle(x1, H / 2, 14, H - 120, SCENE_THEME.barrierPhase1, 0.45).setDepth(12);
+    this.zoneBarrierB = this.add.rectangle(x2, H / 2, 14, H - 120, SCENE_THEME.barrierPhase2, 0.45).setDepth(12);
 
     this.add
       .text(x1, 62, "LOCK // PHASE 1", {
         fontFamily: "monospace",
         fontSize: "9px",
-        color: "#bce7ff",
-        backgroundColor: "#001620cc",
+        color: SCENE_THEME.lockTextPhase1,
+        backgroundColor: SCENE_THEME.lockBg,
         padding: { x: 6, y: 3 },
       })
       .setOrigin(0.5)
@@ -194,8 +283,8 @@ export class MainScene extends Phaser.Scene {
       .text(x2, 62, "LOCK // PHASE 2", {
         fontFamily: "monospace",
         fontSize: "9px",
-        color: "#bce7ff",
-        backgroundColor: "#001620cc",
+        color: SCENE_THEME.lockTextPhase2,
+        backgroundColor: SCENE_THEME.lockBg,
         padding: { x: 6, y: 3 },
       })
       .setOrigin(0.5)
@@ -206,7 +295,7 @@ export class MainScene extends Phaser.Scene {
     this.player = this.add.container(x, y);
     const shadow = this.add.ellipse(0, 10, 26, 12, 0x000000, 0.5);
     const body = this.add.rectangle(0, -2, 18, 26, 0x1a2838, 1);
-    const visor = this.add.rectangle(0, -10, 16, 6, 0x68d6ff, 1);
+    const visor = this.add.rectangle(0, -10, 16, 6, 0x60a5fa, 1);
     this.player.add([shadow, body, visor]);
     this.player.setDepth(10);
 
@@ -226,18 +315,18 @@ export class MainScene extends Phaser.Scene {
     const charsByName = new Map(characters.map((character) => [normalizeNpcName(character.name), character]));
 
     const seeds: SceneNpc[] = [
-      { id: charsByName.get("VINNIE_DELUCA")?.id ?? "vinnie", name: "Vinnie_DeLuca", x: 110, y: 150, label: "Dock Boss", color: 0xa7e3ff, kind: "character" },
-      { id: charsByName.get("SVETLANA_MOROZOVA")?.id ?? "svetlana", name: "Svetlana_Morozova", x: 420, y: 155, label: "Arms Broker", color: 0xff9ca6, kind: "character" },
-      { id: charsByName.get("DIEGO_VARGAS")?.id ?? "diego", name: "Diego_Vargas", x: 505, y: 350, label: "Narco Buyer", color: 0xffd38a, kind: "character" },
-      { id: charsByName.get("THE_CURATOR")?.id ?? "curator", name: "The_Curator", x: 760, y: 140, label: "Acquirer", color: 0xe2c6ff, kind: "character" },
-      { id: charsByName.get("REMY_BOUDREAUX")?.id ?? "remy", name: "Remy_Boudreaux", x: 640, y: 360, label: "Courier", color: 0xb2ffcb, kind: "character" },
-      { id: charsByName.get("PAPA_KOFI")?.id ?? "kofi", name: "Papa_Kofi", x: 700, y: 515, label: "Port Authority", color: 0x90f5d4, kind: "character" },
-      { id: "terminal", name: "Manifest_Terminal", x: 230, y: 500, label: "Warehouse Terminal", color: 0x8cb8ff, kind: "terminal" },
-      { id: "bodyguard", name: "Svetlana_Bodyguard", x: 455, y: 200, label: "Bodyguard", color: 0x8e99af, kind: "bodyguard" },
-      { id: "buyer_a", name: "Buyer_A", x: 170, y: 260, label: "Minor Buyer", color: 0x8ed5ff, kind: "delivery" },
-      { id: "buyer_b", name: "Buyer_B", x: 250, y: 220, label: "Minor Buyer", color: 0x8ed5ff, kind: "delivery" },
-      { id: "buyer_c", name: "Buyer_C", x: 150, y: 380, label: "Minor Buyer", color: 0x8ed5ff, kind: "delivery" },
-      { id: "buyer_d", name: "Buyer_D", x: 275, y: 330, label: "Minor Buyer", color: 0x8ed5ff, kind: "delivery" },
+      { id: charsByName.get("VINNIE_DELUCA")?.id ?? "vinnie", name: "Vinnie_DeLuca", x: 110, y: 150, label: "Dock Boss", color: 0x60a5fa, kind: "character" },
+      { id: charsByName.get("SVETLANA_MOROZOVA")?.id ?? "svetlana", name: "Svetlana_Morozova", x: 420, y: 155, label: "Arms Broker", color: 0x8b5cf6, kind: "character" },
+      { id: charsByName.get("DIEGO_VARGAS")?.id ?? "diego", name: "Diego_Vargas", x: 505, y: 350, label: "Narco Buyer", color: 0x3b82f6, kind: "character" },
+      { id: charsByName.get("THE_CURATOR")?.id ?? "curator", name: "The_Curator", x: 760, y: 140, label: "Acquirer", color: 0xa78bfa, kind: "character" },
+      { id: charsByName.get("REMY_BOUDREAUX")?.id ?? "remy", name: "Remy_Boudreaux", x: 640, y: 360, label: "Courier", color: 0x60a5fa, kind: "character" },
+      { id: charsByName.get("PAPA_KOFI")?.id ?? "kofi", name: "Papa_Kofi", x: 700, y: 515, label: "Port Authority", color: 0x8b5cf6, kind: "character" },
+      { id: "terminal", name: "Manifest_Terminal", x: 230, y: 500, label: "Warehouse Terminal", color: 0x3b82f6, kind: "terminal" },
+      { id: "bodyguard", name: "Svetlana_Bodyguard", x: 455, y: 200, label: "Bodyguard", color: 0x94a3b8, kind: "bodyguard" },
+      { id: "buyer_a", name: "Buyer_A", x: 170, y: 260, label: "Minor Buyer", color: 0x60a5fa, kind: "delivery" },
+      { id: "buyer_b", name: "Buyer_B", x: 250, y: 220, label: "Minor Buyer", color: 0x60a5fa, kind: "delivery" },
+      { id: "buyer_c", name: "Buyer_C", x: 150, y: 380, label: "Minor Buyer", color: 0x60a5fa, kind: "delivery" },
+      { id: "buyer_d", name: "Buyer_D", x: 275, y: 330, label: "Minor Buyer", color: 0x60a5fa, kind: "delivery" },
     ];
 
     for (const seed of seeds) {
@@ -251,7 +340,7 @@ export class MainScene extends Phaser.Scene {
         .text(seed.x, seed.y + 20, seed.label, {
           fontFamily: "monospace",
           fontSize: "9px",
-          color: "#9ab7cd",
+          color: SCENE_THEME.npcLabel,
         })
         .setOrigin(0.5, 0)
         .setDepth(12);
@@ -260,8 +349,8 @@ export class MainScene extends Phaser.Scene {
         .text(seed.x, seed.y - 26, "[E] INTERACT", {
           fontFamily: "monospace",
           fontSize: "9px",
-          color: "#ffffff",
-          backgroundColor: "#001723d6",
+          color: SCENE_THEME.promptText,
+          backgroundColor: SCENE_THEME.promptBg,
           padding: { x: 5, y: 2 },
         })
         .setOrigin(0.5)
@@ -373,8 +462,13 @@ export class MainScene extends Phaser.Scene {
   private checkPhaseProgress() {
     if (
       this.phase === 1 &&
-      this.chipsDelivered.size >= REQUIRED_DELIVERIES.length &&
-      this.cratesMislabeled >= 2
+      (
+        this.briefcaseLocated ||
+        (
+          this.chipsDelivered.size >= REQUIRED_DELIVERIES.length &&
+          this.cratesMislabeled >= 2
+        )
+      )
     ) {
       this.phase = 2;
       setMissionPhase(2);
@@ -399,13 +493,106 @@ export class MainScene extends Phaser.Scene {
   }
 
   private finishMission() {
-    if (this.artifactIntercepted) return;
+    if (this.artifactIntercepted) {
+      if (!this.missionCompleteShown) {
+        this.showMissionCompleteMessage();
+      }
+      return;
+    }
     this.artifactIntercepted = true;
     patchMissionState({ artifactIntercepted: true, frenzyActive: false }, "ARTIFACT_INTERCEPTED");
     emitPlayerEvent("ARTIFACT_INTERCEPTED");
     this.cameras.main.flash(320, 120, 220, 255, true);
     this.cameras.main.shake(240, 0.006);
     this.showBroadcast("AEGIS", "Artifact intercepted. Quantum drive access codes secured.");
+    this.showMissionCompleteMessage();
+  }
+
+  private showMissionCompleteMessage() {
+    if (this.missionCompleteShown) return;
+    this.missionCompleteShown = true;
+
+    const centerX = this.scale.width / 2;
+    const centerY = this.scale.height / 2;
+
+    const dimmer = this.add
+      .rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.55)
+      .setOrigin(0)
+      .setDepth(150)
+      .setAlpha(0);
+
+    const panel = this.add
+      .rectangle(centerX, centerY, 520, 220, SCENE_THEME.missionPanel, 0.93)
+      .setDepth(151)
+      .setStrokeStyle(3, SCENE_THEME.missionBorder, 0.95)
+      .setAlpha(0)
+      .setScale(0.92);
+
+    const title = this.add
+      .text(centerX, centerY - 56, "CONGRATULATIONS", {
+        fontFamily: "monospace",
+        fontSize: "38px",
+        color: SCENE_THEME.missionTitle,
+        letterSpacing: 6,
+      })
+      .setOrigin(0.5)
+      .setDepth(152)
+      .setAlpha(0)
+      .setScale(0.95);
+
+    const subtitle = this.add
+      .text(centerX, centerY + 4, "MISSION COMPLETE", {
+        fontFamily: "monospace",
+        fontSize: "17px",
+        color: SCENE_THEME.missionSubtitle,
+        letterSpacing: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(152)
+      .setAlpha(0);
+
+    const detail = this.add
+      .text(centerX, centerY + 46, "Artifact secured. Extraction route is yours.", {
+        fontFamily: "monospace",
+        fontSize: "13px",
+        color: SCENE_THEME.missionDetail,
+        letterSpacing: 1,
+      })
+      .setOrigin(0.5)
+      .setDepth(152)
+      .setAlpha(0);
+
+    this.tweens.add({
+      targets: [dimmer, panel],
+      alpha: 1,
+      duration: 280,
+      ease: "Quad.Out",
+    });
+
+    this.tweens.add({
+      targets: panel,
+      scale: 1,
+      duration: 280,
+      ease: "Back.Out",
+    });
+
+    this.tweens.add({
+      targets: [title, subtitle, detail],
+      alpha: 1,
+      duration: 360,
+      delay: 130,
+      ease: "Sine.Out",
+    });
+
+    this.tweens.add({
+      targets: title,
+      scale: 1.02,
+      yoyo: true,
+      repeat: 2,
+      duration: 520,
+      ease: "Sine.InOut",
+      delay: 500,
+    });
   }
 
   private unlockBarrier(barrier: Phaser.GameObjects.Rectangle) {
@@ -422,8 +609,8 @@ export class MainScene extends Phaser.Scene {
       .text(this.scale.width / 2, 40, `${source}: ${text}`, {
         fontFamily: "monospace",
         fontSize: "11px",
-        color: "#e8f7ff",
-        backgroundColor: "#001821dd",
+        color: SCENE_THEME.broadcastText,
+        backgroundColor: SCENE_THEME.broadcastBg,
         padding: { x: 8, y: 5 },
       })
       .setOrigin(0.5)
@@ -446,15 +633,34 @@ export class MainScene extends Phaser.Scene {
 
     emitPlayerEvent(eventName);
 
-    if (eventName === "BRIEFCASE_TRANSFERRED" && this.phase === 3) {
+    if (eventName === "BRIEFCASE_LOCATED") {
+      this.briefcaseLocated = true;
+      patchMissionState({ briefcaseLocated: true }, "BRIEFCASE_LOCATED");
+
+      if (this.phase === 1) {
+        this.phase = 2;
+        setMissionPhase(2);
+        this.unlockBarrier(this.zoneBarrierA);
+        this.showBroadcast("PHASE 2", "Briefcase confirmed. Trading Floor unlocked.");
+      }
+
+      this.checkPhaseProgress();
+      return;
+    }
+
+    if (eventName === "BRIEFCASE_TRANSFERRED") {
       this.briefcaseTransferred = true;
-      patchMissionState({ briefcaseTransferred: true }, "BRIEFCASE_TRANSFERRED");
+      patchMissionState({ phase: 3, briefcaseTransferred: true }, "BRIEFCASE_TRANSFERRED");
+      setMissionPhase(3);
+      this.unlockBarrier(this.zoneBarrierB);
       this.finishMission();
+      return;
     }
 
     if (eventName === "ESCAPE_ROUTE_OPENED") {
       this.escapeRouteOpened = true;
       patchMissionState({ escapeRouteOpened: true }, "ESCAPE_ROUTE_OPENED");
+      this.unlockBarrier(this.zoneBarrierB);
     }
   }
 
@@ -491,7 +697,7 @@ export class MainScene extends Phaser.Scene {
       this.player.x = gateA - 18;
     }
 
-    if (this.phase < 3 && this.player.x >= gateB - 16 && vx > 0) {
+    if (this.phase < 3 && !this.escapeRouteOpened && this.player.x >= gateB - 16 && vx > 0) {
       vx = 0;
       this.player.x = gateB - 18;
     }
@@ -527,7 +733,7 @@ export class MainScene extends Phaser.Scene {
 
     this.rainOffset += 1.5;
     this.rain.clear();
-    this.rain.lineStyle(1, 0xa4dbff, 0.08);
+    this.rain.lineStyle(1, SCENE_THEME.rain, SCENE_THEME.rainAlpha);
     for (let i = 0; i < 95; i += 1) {
       const x = ((i * 37 + this.rainOffset * 2) % this.scale.width) - 20;
       const y = ((i * 59 + this.rainOffset * 5) % this.scale.height) - 30;
@@ -543,5 +749,6 @@ export class MainScene extends Phaser.Scene {
     if (this.boundGameResume) window.removeEventListener("GAME_RESUME", this.boundGameResume);
     if (this.boundNpcSystemEvent) window.removeEventListener("NPC_SYSTEM_EVENT", this.boundNpcSystemEvent);
     if (this.unsubCharacters) this.unsubCharacters();
+    if (this.unsubMissionState) this.unsubMissionState();
   }
 }

@@ -58,18 +58,18 @@ export async function POST(request: NextRequest) {
             ? { projects: { some: { id: authorizedProject.id } } }
             : {}),
         },
-        include: { projects: { select: { id: true } } },
+        select: { id: true, name: true, config: true },
       })
     } else if (room) {
       // room maps to a project/game ID
       characters = await (prisma.character as any).findMany({
         where: { projects: { some: { id: room } } },
-        include: { projects: { select: { id: true } } },
+        select: { id: true, name: true, config: true },
       })
     } else if (authorizedProject) {
       characters = await (prisma.character as any).findMany({
         where: { projects: { some: { id: authorizedProject.id } } },
-        include: { projects: { select: { id: true } } },
+        select: { id: true, name: true, config: true },
       })
     } else {
       return NextResponse.json(

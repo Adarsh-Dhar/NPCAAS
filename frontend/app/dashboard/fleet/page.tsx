@@ -21,7 +21,7 @@ const mockNPCs: NPC[] = [
     role: 'Blacksmith',
     status: 'online',
     wallet: '0x2A8f...91c2',
-    balance: '$450.00 KITE_USD',
+    balance: '$450.00 PYUSD',
     trades: 24,
   },
   {
@@ -30,7 +30,7 @@ const mockNPCs: NPC[] = [
     role: 'Merchant',
     status: 'online',
     wallet: '0x5B3d...7e44',
-    balance: '$1,230.00 KITE_USD',
+    balance: '$1,230.00 PYUSD',
     trades: 67,
   },
   {
@@ -39,7 +39,7 @@ const mockNPCs: NPC[] = [
     role: 'Sentinel',
     status: 'sleeping',
     wallet: '0x9c1e...5f88',
-    balance: '$89.50 KITE_USD',
+    balance: '$89.50 PYUSD',
     trades: 12,
   },
   {
@@ -48,7 +48,7 @@ const mockNPCs: NPC[] = [
     role: 'Enchanter',
     status: 'online',
     wallet: '0x4F7a...3b19',
-    balance: '$2,100.00 KITE_USD',
+    balance: '$2,100.00 PYUSD',
     trades: 156,
   },
   {
@@ -57,7 +57,7 @@ const mockNPCs: NPC[] = [
     role: 'Scout',
     status: 'sleeping',
     wallet: '0x8d2c...9a07',
-    balance: '$320.75 KITE_USD',
+    balance: '$320.75 PYUSD',
     trades: 38,
   },
 ]
@@ -84,10 +84,10 @@ export default function FleetPage() {
       <main className="p-8 max-w-7xl mx-auto">
         {/* Page Title */}
         <div className="mb-8">
-          <h1 className="gradient-text gradient-cyan-magenta text-4xl font-bold mb-2">
+          <h1 className="gradient-text gradient-neon text-4xl font-bold mb-2">
             NPC FLEET DASHBOARD
           </h1>
-          <p className="text-cyan-400 text-sm uppercase font-bold">
+          <p className="text-blue-400 text-sm uppercase font-bold">
             Real-time management and monitoring
           </p>
         </div>
@@ -95,8 +95,8 @@ export default function FleetPage() {
         {/* Summary Cards */}
         <div className="grid grid-cols-3 gap-6 mb-8">
           {/* Card 1: Total Active Agents */}
-          <div className="retro-card-cyan border-4 border-cyan-400 p-6">
-            <p className="text-xs text-cyan-400 uppercase font-bold mb-2">
+          <div className="retro-card-blue border-4 border-blue-400 p-6">
+            <p className="text-xs text-blue-400 uppercase font-bold mb-2">
               TOTAL ACTIVE AGENTS
             </p>
             <p className="text-3xl font-bold text-white">{onlineCount}</p>
@@ -106,8 +106,8 @@ export default function FleetPage() {
           </div>
 
           {/* Card 2: Total AI API Calls */}
-          <div className="retro-card-magenta border-4 border-pink-400 p-6">
-            <p className="text-xs text-pink-400 uppercase font-bold mb-2">
+          <div className="retro-card-purple border-4 border-purple-400 p-6">
+            <p className="text-xs text-purple-400 uppercase font-bold mb-2">
               TOTAL AI API CALLS
             </p>
             <p className="text-3xl font-bold text-white">
@@ -119,15 +119,15 @@ export default function FleetPage() {
           </div>
 
           {/* Card 3: Network Volume */}
-          <div className="retro-card-yellow border-4 border-yellow-400 p-6">
-            <p className="text-xs text-yellow-400 uppercase font-bold mb-2">
+          <div className="retro-card-blue border-4 border-blue-400 p-6">
+            <p className="text-xs text-blue-400 uppercase font-bold mb-2">
               NETWORK VOLUME
             </p>
             <p className="text-3xl font-bold text-white">
               ${totalBalance.toFixed(2)}
             </p>
             <p className="text-xs text-gray-400 mt-2">
-              KITE_USD in treasury
+              PYUSD in treasury
             </p>
           </div>
         </div>
@@ -176,17 +176,17 @@ export default function FleetPage() {
                     <span
                       className={
                         npc.status === 'online'
-                          ? 'text-green-400 font-bold animate-pulse'
+                          ? 'text-blue-300 font-bold animate-pulse'
                           : 'text-gray-500'
                       }
                     >
                       {npc.status === 'online' ? '[ ONLINE ]' : '[ SLEEPING ]'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 border-r-2 border-gray-700 text-cyan-400">
+                  <td className="px-4 py-3 border-r-2 border-gray-700 text-blue-300">
                     {npc.wallet}
                   </td>
-                  <td className="px-4 py-3 border-r-2 border-gray-700 text-yellow-400">
+                  <td className="px-4 py-3 border-r-2 border-gray-700 text-purple-300">
                     {npc.balance}
                   </td>
                   <td className="px-4 py-3 border-r-2 border-gray-700 text-white">
@@ -194,7 +194,7 @@ export default function FleetPage() {
                   </td>
                   <td className="px-4 py-3">
                     <RetroButton
-                      variant="red"
+                      variant="purple"
                       size="sm"
                       onClick={() => handleKillSwitch(npc.id)}
                       className="text-xs"

@@ -40,6 +40,7 @@ export async function POST(
     await prisma.character.update({
       where: { id: character.id },
       data: { config: updatedConfig as Prisma.InputJsonValue },
+      select: { id: true },
     })
 
     return NextResponse.json({

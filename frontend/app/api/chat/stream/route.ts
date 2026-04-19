@@ -14,16 +14,8 @@ import { prisma } from '@/lib/prisma'
 import { EconomicEngine } from '@/lib/economic-engine'
 import { ensureNpcSocialSubscription } from '@/lib/npcSocialReactivity'
 import { SocialEngine, normalizeBaseHostility, normalizeDisposition } from '@/lib/social-engine'
-import {
-  evaluateComputeBudget,
-  persistComputeBudgetIfSupported,
-  parseComputeLimit,
-  parseComputeUsage,
-  parseResetAt,
-  serializeBudget,
-  shouldResetBudget,
-} from '@/lib/compute-budget'
 import { buildTeeGateResult } from '@/lib/tee-gate'
+import { appendNpcEventTag, shouldForceBriefcaseLocatedEvent } from '@/lib/npc-event-tags'
 import {
   formatInventoryForPrompt,
   parseOptionalInventory,
@@ -58,11 +50,23 @@ interface CharacterConfig {
   disposition?: 'FRIENDLY' | 'NEUTRAL' | 'HOSTILE'
   baseHostility?: number
   teeExecution?: 'ENABLED' | 'DISABLED'
-  computeBudget?: number
   allowDbFetch?: boolean
   dbEndpoint?: string
   inventory?: InventoryItem[]
 }
+
+const STREAM_CHARACTER_SELECT = {
+  id: true,
+  name: true,
+  walletAddress: true,
+  smartAccountStatus: true,
+  isDeployedOnChain: true,
+  teeAttestationProof: true,
+  gameEvents: true,
+  config: true,
+  adaptation: true,
+  projects: { select: { id: true } },
+} as const
 
 function getCorsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigin =
@@ -110,6 +114,15 @@ function getCombatEventTag(events: GameEventDefinition[]): string {
   return combatEvent ? ` [[EVENT:${combatEvent.name}]]` : ''
 }
 
+function getBriefcaseEventTag(input: {
+  characterName: string
+  userMessage: string
+  responseText: string
+  gameEvents: GameEventDefinition[]
+}): string {
+  return shouldForceBriefcaseLocatedEvent(input) ? ' [[EVENT:BRIEFCASE_LOCATED]]' : ''
+}
+
 function toCharacterConfig(value: unknown): CharacterConfig {
   const config = asRecord(value)
   const rawFaction = config.factionId ?? config.factions
@@ -135,7 +148,6 @@ function toCharacterConfig(value: unknown): CharacterConfig {
       typeof config.teeExecution === 'string' && config.teeExecution.toUpperCase() === 'ENABLED'
         ? 'ENABLED'
         : 'DISABLED',
-    computeBudget: asNumber(config.computeBudget),
     allowDbFetch: typeof config.allowDbFetch === 'boolean' ? config.allowDbFetch : false,
     dbEndpoint: typeof config.dbEndpoint === 'string' ? config.dbEndpoint : undefined,
     inventory: parseOptionalInventory(config.inventory),
@@ -148,8 +160,6 @@ function toNpcPublicProfile(character: {
   walletAddress: string
   smartAccountStatus: string
   isDeployedOnChain: boolean
-  computeUsageTokens: bigint | number | string
-  computeLimitTokens: bigint | number | string
   teeAttestationProof: string | null
   config: unknown
   adaptation: unknown
@@ -167,8 +177,6 @@ function toNpcPublicProfile(character: {
     interGameTransactionsEnabled: config.interGameTransactionsEnabled !== false,
     smartAccountStatus: character.smartAccountStatus,
     isDeployedOnChain: character.isDeployedOnChain,
-    computeUsageTokens: character.computeUsageTokens.toString(),
-    computeLimitTokens: character.computeLimitTokens.toString(),
     teeAttestationProof: character.teeAttestationProof,
     config: asRecord(character.config),
     adaptation,
@@ -186,7 +194,7 @@ async function fetchCurrentMarketRate(symbol?: string): Promise<number | undefin
 
   try {
     let fetchUrl = endpoint
-    if (symbol && symbol.toUpperCase() !== 'KITE_USD') {
+    if (symbol && symbol.toUpperCase() !== 'PYUSD') {
       const tickerSymbol = `${symbol.toUpperCase()}USDT`
       fetchUrl = `${endpoint}?symbol=${tickerSymbol}`
     }
@@ -270,7 +278,7 @@ function detectTradeCurrency(messages: string[], allowedTokens: string[]): strin
   if (allowedTokens.length === 0) return undefined
   
   const tokenKeywords = allowedTokens
-    .filter(token => token !== 'KITE_USD')
+    .filter(token => token !== 'PYUSD')
     .join('|')
   
   if (!tokenKeywords) return undefined
@@ -294,13 +302,13 @@ async function resolveCharacter(
         name: normalisedName,
         projects: { some: { id: projectId } },
       },
-      include: { projects: { select: { id: true } } },
+      select: STREAM_CHARACTER_SELECT,
     })
   }
   if (characterId) {
     return (prisma.character as any).findUnique({
       where: { id: characterId },
-      include: { projects: { select: { id: true } } },
+      select: STREAM_CHARACTER_SELECT,
     })
   }
   return null
@@ -425,43 +433,6 @@ export async function POST(request: NextRequest) {
   })
   const teeTrustScore = getTeeTrustScore(tee.enabled)
 
-  let usageTokens = parseComputeUsage(character.computeUsageTokens)
-  const limitTokens = parseComputeLimit(character.computeLimitTokens ?? config.computeBudget)
-  let lastComputeResetAt = parseResetAt(character.lastComputeResetAt)
-
-  if (shouldResetBudget(lastComputeResetAt)) {
-    usageTokens = BigInt(0)
-    lastComputeResetAt = new Date()
-    await persistComputeBudgetIfSupported(prisma as unknown as any, {
-      characterId: character.id,
-      usageTokens,
-      limitTokens,
-      lastComputeResetAt,
-      logPrefix: '[chat/stream]',
-    })
-  }
-
-  const computeDecision = evaluateComputeBudget({
-    usageTokens,
-    limitTokens,
-    lastResetAt: lastComputeResetAt,
-  })
-
-  if (!computeDecision.allowed) {
-    return NextResponse.json(
-      {
-        error: 'Compute budget exceeded for this NPC.',
-        rechargeRequired: true,
-        rechargeInstruction: 'Recharge this NPC from the character edit page using KITE_USD before continuing.',
-        characterId: character.id,
-        npcName: character.name,
-        compute: serializeBudget(computeDecision),
-        tee,
-      },
-      { status: 429, headers: corsHeaders }
-    )
-  }
-
 
   worldState.register({
     id: character.id,
@@ -474,8 +445,6 @@ export async function POST(request: NextRequest) {
     interGameTransactionsEnabled: config.interGameTransactionsEnabled !== false,
     smartAccountStatus: character.smartAccountStatus,
     isDeployedOnChain: character.isDeployedOnChain,
-    computeUsageTokens: character.computeUsageTokens.toString(),
-    computeLimitTokens: character.computeLimitTokens.toString(),
     teeAttestationProof: character.teeAttestationProof,
     config: asRecord(character.config),
     adaptation,
@@ -545,7 +514,7 @@ export async function POST(request: NextRequest) {
           projects: { some: { id: activeProjectId } },
           id: { not: character.id },
         },
-        include: { projects: { select: { id: true } } },
+        select: STREAM_CHARACTER_SELECT,
         orderBy: { createdAt: 'asc' },
       })
 
@@ -555,8 +524,6 @@ export async function POST(request: NextRequest) {
         walletAddress: string
         smartAccountStatus: string
         isDeployedOnChain: boolean
-        computeUsageTokens: bigint | number | string
-        computeLimitTokens: bigint | number | string
         teeAttestationProof: string | null
         config: unknown
         adaptation: unknown
@@ -695,73 +662,52 @@ export async function POST(request: NextRequest) {
 
   const rawStream = kiteAgentClient.chatStream(message, ctx)
   let sseBuffer = ''
-  let usageDeducted = false
 
   const encodedStream = rawStream.pipeThrough(
     new TransformStream<string, Uint8Array>({
       async transform(chunk, controller) {
-        controller.enqueue(encoder.encode(chunk))
-
         sseBuffer += chunk
         const frames = sseBuffer.split('\n\n')
         sseBuffer = frames.pop() ?? ''
 
         for (const frame of frames) {
-          if (usageDeducted) break
           const line = frame.trim()
           if (!line.startsWith('data:')) continue
           let parsed: any
           try {
             parsed = JSON.parse(line.slice(5).trim())
           } catch {
+            controller.enqueue(encoder.encode(`${frame}\n\n`))
             continue
           }
+
+          if (parsed.type === 'done' && parsed.final?.text) {
+            const briefcaseEventTag = getBriefcaseEventTag({
+              characterName: character.name,
+              userMessage: message,
+              responseText: String(parsed.final.text),
+              gameEvents,
+            })
+
+            if (briefcaseEventTag) {
+              parsed.final.text = appendNpcEventTag(String(parsed.final.text), {
+                characterName: character.name,
+                userMessage: message,
+                responseText: String(parsed.final.text),
+                gameEvents,
+              })
+              parsed.final.worldEvent = 'BRIEFCASE_LOCATED'
+            }
+          }
+
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`))
 
           if (parsed.type !== 'done') continue
-          const totalTokens = parsed?.final?.usage?.totalTokens
-          if (typeof totalTokens !== 'number' || !Number.isFinite(totalTokens) || totalTokens <= 0) {
-            continue
-          }
-
-          const usedTokens = BigInt(Math.floor(totalTokens))
-          usageTokens += usedTokens
-          usageDeducted = true
-
-          // Calculate USD cost (approx $0.00000015 per token)
-          const estUsdCost = totalTokens * 0.00000015
-          const balanceAfter = limitTokens - usageTokens
-
-          try {
-            await persistComputeBudgetIfSupported(prisma as unknown as any, {
-              characterId: character.id,
-              usageTokens,
-              limitTokens,
-              lastComputeResetAt,
-              logPrefix: '[chat/stream]',
-            })
-
-            await (prisma as any).npcLog.create({
-              data: {
-                characterId: character.id,
-                eventType: 'COMPUTE_SPEND',
-                tokensUsed: usedTokens,
-                estUsdCost: parseFloat(estUsdCost.toFixed(8)),
-                balanceAfter,
-                details: {
-                  usedTokens: usedTokens.toString(),
-                  usageAfter: usageTokens.toString(),
-                  limitTokens: limitTokens.toString(),
-                  balanceAfter: balanceAfter.toString(),
-                  estUsdCost: estUsdCost.toFixed(8),
-                  message,
-                  stream: true,
-                  teeEnabled: tee.enabled,
-                },
-              },
-            })
-          } catch (persistError) {
-            console.warn('[chat/stream] Failed to persist compute spend details:', persistError)
-          }
+        }
+      },
+      flush(controller) {
+        if (sseBuffer.trim().length > 0) {
+          controller.enqueue(encoder.encode(sseBuffer))
         }
       },
     })

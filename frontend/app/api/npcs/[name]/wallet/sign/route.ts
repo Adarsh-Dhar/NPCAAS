@@ -54,7 +54,12 @@ export async function POST(
 
     const character = await (prisma.character as any).findUnique({
       where: { id },
-      include: { projects: { select: { id: true } } },
+      select: {
+        id: true,
+        smartAccountId: true,
+        config: true,
+        projects: { select: { id: true } },
+      },
     })
 
     if (!character) {

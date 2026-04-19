@@ -90,7 +90,7 @@ export async function GET(
       npcName: character.name,
       walletAddress,
       chainId: character.aaChainId,
-      native: { symbol: 'KITE_USD', balance: nativeBalance, balanceFormatted: nativeBalanceFormatted },
+      native: { symbol: 'PYUSD', balance: nativeBalance, balanceFormatted: nativeBalanceFormatted },
       tokens: tokenBalances,
       fetchedAt: new Date().toISOString(),
     })
