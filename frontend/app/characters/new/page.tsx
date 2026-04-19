@@ -46,7 +46,7 @@ export default function NewCharacterPage() {
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link href="/characters">Characters</Link>
+                <Link href="/games">Agents</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
@@ -91,7 +91,7 @@ export default function NewCharacterPage() {
         characterName={characterName}
         initialSelectedGameId={initialGameId}
         onClose={() => setShowAssignment(false)}
-        onFinished={() => router.push('/characters')}
+        onFinished={() => router.push('/games')}
       />
     </main>
   )

@@ -452,7 +452,7 @@ export default function EditCharacterPage() {
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link href="/characters">Characters</Link>
+                <Link href="/games">Agents</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />

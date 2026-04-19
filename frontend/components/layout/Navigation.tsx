@@ -16,22 +16,18 @@ export default function Navigation() {
 
         {/* Links */}
         <div className="flex items-center gap-4">
-          <a
-            href="https://docs.kite.network"
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            href="/quickstart"
             className="text-white text-xs font-bold uppercase hover:text-blue-400 transition-colors"
           >
-            DOCS
-          </a>
-          <a
-            href="https://kite.network"
-            target="_blank"
-            rel="noopener noreferrer"
+            QUICKSTART
+          </Link>
+          <Link
+            href="/about"
             className="text-white text-xs font-bold uppercase hover:text-purple-400 transition-colors"
           >
-            KITE
-          </a>
+            ABOUT
+          </Link>
         </div>
 
         {/* CTA Button */}

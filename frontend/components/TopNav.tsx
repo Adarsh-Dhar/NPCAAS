@@ -46,10 +46,13 @@ export default function TopNav() {
         </Link>
         <div className="flex items-center gap-4 text-xs uppercase font-bold">
           <Link href="/games" className="text-blue-300 hover:text-blue-100 transition-colors">
-            Games
+            GAMES
           </Link>
-          <Link href="/characters" className="text-purple-300 hover:text-purple-100 transition-colors">
-            Characters
+          <Link href="/quickstart" className="text-cyan-300 hover:text-cyan-100 transition-colors">
+            QUICKSTART
+          </Link>
+          <Link href="/about" className="text-purple-300 hover:text-purple-100 transition-colors">
+            ABOUT
           </Link>
         </div>
       </div>
