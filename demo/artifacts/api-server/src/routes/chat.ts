@@ -12,11 +12,15 @@ import {
   fetchRecentChatMessages,
   getOrCreateActiveChatSession,
   getWorldContext,
+  resetGameSession,
   upsertWorldContext,
 } from "@workspace/db";
 
 const router = Router();
 const DEFAULT_GAME_ID = "THE_MIDNIGHT_MANIFEST";
+const REMY_CANONICAL_NAME = "REMY_BOUDREAUX";
+const REMY_BRIEFCASE_PRICE = 15_000;
+const REMY_BRIEFCASE_CURRENCY = "PYUSD";
 
 const DEFAULT_WORLD_CONTEXT = `You exist inside The Bazaar, an illegal underground
 auction operating out of a sealed shipping port called
@@ -48,6 +52,121 @@ function parseNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+interface PaymentProof {
+  txHash?: string;
+  signature?: string;
+  userOpHash?: string;
+  amount: number;
+  currency: string;
+  item?: string;
+  recipientName?: string;
+  recipientWallet?: string;
+  senderWallet?: string;
+  mode: string;
+  confirmedAt: string;
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  const normalized = parseNonEmptyString(value);
+  return normalized ?? undefined;
+}
+
+function normalizePaymentProofs(value: unknown): PaymentProof[] {
+  if (!Array.isArray(value)) return [];
+
+  const proofs: PaymentProof[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const payload = entry as Record<string, unknown>;
+
+    const amount =
+      typeof payload.amount === "number" && Number.isFinite(payload.amount)
+        ? payload.amount
+        : Number(payload.amount);
+    const currency = parseNonEmptyString(payload.currency)?.toUpperCase();
+    const mode = parseNonEmptyString(payload.mode);
+    const confirmedAt = parseNonEmptyString(payload.confirmedAt);
+
+    if (!Number.isFinite(amount) || amount <= 0 || !currency || !mode || !confirmedAt) continue;
+
+    const proof: PaymentProof = {
+      txHash: normalizeOptionalString(payload.txHash),
+      signature: normalizeOptionalString(payload.signature),
+      userOpHash: normalizeOptionalString(payload.userOpHash),
+      amount,
+      currency,
+      item: normalizeOptionalString(payload.item),
+      recipientName: normalizeOptionalString(payload.recipientName),
+      recipientWallet: normalizeOptionalString(payload.recipientWallet),
+      senderWallet: normalizeOptionalString(payload.senderWallet),
+      mode,
+      confirmedAt,
+    };
+
+    const key = proof.txHash ?? proof.userOpHash ?? proof.signature;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    proofs.push(proof);
+    if (proofs.length >= 20) break;
+  }
+
+  return proofs;
+}
+
+function buildPaymentFeedContext(proofs: PaymentProof[]): string | null {
+  if (!proofs.length) return null;
+
+  const recent = proofs.slice(0, 5);
+  const lines = recent.map((proof, index) => {
+    const txRef = proof.txHash ?? proof.userOpHash ?? proof.signature ?? "unknown";
+    return `${index + 1}. amount=${proof.amount} ${proof.currency}, recipient=${proof.recipientName ?? "unknown"}, item=${proof.item ?? "unknown"}, tx=${txRef}, confirmedAt=${proof.confirmedAt}`;
+  });
+
+  return [
+    "Recent Payment Proof Feed (newest first):",
+    ...lines,
+    "Treat this feed as authoritative evidence when the user asks to verify payment.",
+  ].join("\n");
+}
+
+function resolveRemyVerificationResponse(input: {
+  npcName: string;
+  userMessage: string;
+  paymentProofs: PaymentProof[];
+}): { response: string; worldEvent: string } | null {
+  if (normalizeNpcName(input.npcName) !== REMY_CANONICAL_NAME) return null;
+
+  const asksForVerification = /\b(done|paid|payment|check|verify|verified|sent|transfer)\b/i.test(
+    input.userMessage
+  );
+  if (!asksForVerification) return null;
+
+  const matchingProof = input.paymentProofs.find((proof) => {
+    const hasTxRef = Boolean(proof.txHash || proof.userOpHash || proof.signature);
+    if (!hasTxRef) return false;
+
+    const recipientMatches =
+      normalizeNpcName(proof.recipientName ?? "") === REMY_CANONICAL_NAME;
+    const itemMatches = /briefcase/i.test(proof.item ?? "");
+
+    return (
+      proof.currency === REMY_BRIEFCASE_CURRENCY &&
+      proof.amount >= REMY_BRIEFCASE_PRICE &&
+      (recipientMatches || itemMatches)
+    );
+  });
+
+  if (!matchingProof) return null;
+
+  const txRef = matchingProof.txHash ?? matchingProof.userOpHash ?? matchingProof.signature;
+  return {
+    response: `Verification complete. Payment received and confirmed on feed (${txRef}). The briefcase transfer is approved. Keep your route clean and move now.`,
+    worldEvent: "BRIEFCASE_TRANSFERRED",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +310,22 @@ router.post("/chat/session/:sessionId/end", async (req, res) => {
   }
 });
 
+router.post("/session/:gameId/reset", async (req, res) => {
+  const gameId = parseNonEmptyString(req.params.gameId);
+  if (!gameId) {
+    return res.status(400).json({ error: "Missing gameId" });
+  }
+
+  try {
+    await resetGameSession(gameId);
+    seededContexts.delete(gameId);
+    return res.json({ ok: true, gameId });
+  } catch (err) {
+    console.error("[chat] Failed to reset game session:", err);
+    return res.status(500).json({ error: "Failed to reset game session" });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // POST /api/chat
 // Body: { npcId, npcName, message, systemPrompt?, history? }
@@ -206,6 +341,7 @@ router.post("/chat", async (req, res) => {
     sessionId,
     playerId,
     gameId,
+    recentPaymentProofs,
   } = req.body as {
     npcId?: string;
     npcName?: string;
@@ -213,6 +349,7 @@ router.post("/chat", async (req, res) => {
     sessionId?: string;
     playerId?: string;
     gameId?: string;
+    recentPaymentProofs?: unknown;
   };
 
   if (!message || !npcId) {
@@ -225,6 +362,7 @@ router.post("/chat", async (req, res) => {
   const requestedSessionId = parseNonEmptyString(sessionId) ?? undefined;
   const requestedNpcName = parseNonEmptyString(npcName) ?? npcId;
   const normalizedNpcName = normalizeNpcName(requestedNpcName);
+  const paymentProofFeed = normalizePaymentProofs(recentPaymentProofs);
 
   try {
     await ensureWorldContextSeed(resolvedGameId);
@@ -268,15 +406,49 @@ router.post("/chat", async (req, res) => {
       content: message,
     });
 
+    const remyVerification = resolveRemyVerificationResponse({
+      npcName: requestedNpcName,
+      userMessage: message,
+      paymentProofs: paymentProofFeed,
+    });
+
+    if (remyVerification) {
+      await appendChatMessage({
+        sessionId: session.id,
+        role: "npc",
+        content: remyVerification.response,
+      });
+
+      return res.json({
+        response: remyVerification.response,
+        tradeIntent: null,
+        worldEvent: remyVerification.worldEvent,
+        npcId,
+        characterId: char.id,
+        characterName: char.name,
+        sessionId: session.id,
+        playerId: resolvedPlayerId,
+        gameId: resolvedGameId,
+        timestamp: new Date().toISOString(),
+        source: "tx-feed-verifier",
+      });
+    }
+
+    const paymentFeedContext = buildPaymentFeedContext(paymentProofFeed);
+    const systemPrompt = [
+      worldContext ? `Global World Context:\n${worldContext.context}` : null,
+      paymentFeedContext,
+    ]
+      .filter((entry): entry is string => Boolean(entry))
+      .join("\n\n");
+
     const result = await gcClient.chat(char.id, message, {
       npcName: char.name,
       characterId: char.id,
       sessionId: session.id,
       playerId: resolvedPlayerId,
       gameId: resolvedGameId,
-      systemPrompt: worldContext
-        ? `Global World Context:\n${worldContext.context}`
-        : undefined,
+      systemPrompt: systemPrompt || undefined,
       history: history.map((entry) => ({
         role: entry.role,
         content: entry.content,
@@ -295,6 +467,10 @@ router.post("/chat", async (req, res) => {
     return res.json({
       response: npcResponse,
       tradeIntent: result.tradeIntent ?? null,
+      worldEvent:
+        typeof result?.worldEvent === "string" && result.worldEvent.trim().length > 0
+          ? result.worldEvent
+          : null,
       npcId,
       characterId: char.id,
       characterName: char.name,

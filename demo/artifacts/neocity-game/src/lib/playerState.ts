@@ -230,6 +230,27 @@ export function emitPlayerEvent(eventType: string) {
   notify()
 }
 
+export function resetPlayerState() {
+  state = getDefaultState()
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY)
+    } catch {
+      // Ignore storage failures; the in-memory state has already been reset.
+    }
+  }
+
+  const snapshot = getPlayerState()
+  for (const listener of listeners) {
+    try {
+      listener(snapshot)
+    } catch {
+      // Ignore individual listener failures.
+    }
+  }
+}
+
 export function recordPaymentProof(input: PaymentProof) {
   const proof = parsePaymentProof(input)
   if (!proof) return

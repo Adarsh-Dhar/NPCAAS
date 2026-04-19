@@ -189,14 +189,21 @@ function inferRemyBriefcaseTradeIntent(input: {
   const user = input.userText.toLowerCase()
   const npc = input.npcText.toLowerCase()
 
-  const wantsTransfer = /\b(briefcase|transfer|handoff|buy|deal|price|route)\b/.test(user)
+  const wantsTransfer = /\b(briefcase|transfer|handoff|handover|buy|deal|price|route|pay|payment|send|wire|offer)\b/.test(user)
+  const userCommitsToPrice =
+    (/\b15,?000\b/.test(user) && /\b(pyusd|kite\s*usd|usd)\b/.test(user)) ||
+    (/\bpay\b/.test(user) && /\bnow\b/.test(user))
 
   const mentionsRemyOffer =
     (/\b15000\b/.test(npc) || /\b15,000\b/.test(npc)) &&
       (/\bpyusd\b/.test(npc) || /\bcredits\b/.test(npc) || /\bfee\b/.test(npc))
 
-  if (!mentionsRemyOffer) return null
-  if (!wantsTransfer) return null
+  const asksForSettlementProof =
+    (/wallet\s+address/.test(npc) || /transaction\s+hash/.test(npc)) &&
+    (/sent\s+the\s+payment/.test(npc) || /finalize\s+the\s+transaction/.test(npc) || /once\s+you\'ve\s+sent/.test(npc))
+
+  if (!(mentionsRemyOffer || asksForSettlementProof)) return null
+  if (!(wantsTransfer || userCommitsToPrice)) return null
 
   return {
     item: REMY_BRIEFCASE_ITEM,

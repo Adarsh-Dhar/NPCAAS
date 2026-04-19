@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import TopNav from '@/components/TopNav'
 import RetroButton from '@/components/ui/RetroButton'
@@ -40,6 +40,7 @@ interface ProjectDetailResponse {
 
 export default function GameCharactersPage() {
   const params = useParams()
+  const router = useRouter()
   const gameId = String(params.gameId)
 
   const [gameName, setGameName] = useState('Game')
@@ -51,6 +52,8 @@ export default function GameCharactersPage() {
   const [contextSaved, setContextSaved] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [isRestarting, setIsRestarting] = useState(false)
+  const [restartError, setRestartError] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -138,6 +141,39 @@ export default function GameCharactersPage() {
     }
   }
 
+  const restartGame = async () => {
+    const confirmed = window.confirm(
+      'Restart this game and delete the current session? This cannot be undone.'
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    setIsRestarting(true)
+    setRestartError('')
+
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(gameId)}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string }
+        throw new Error(payload.error ?? 'Failed to restart game')
+      }
+
+      router.replace('/games')
+      router.refresh()
+    } catch (restartFailure) {
+      const message =
+        restartFailure instanceof Error ? restartFailure.message : 'Failed to restart game'
+      setRestartError(message)
+    } finally {
+      setIsRestarting(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-black text-white">
       <TopNav />
@@ -157,7 +193,7 @@ export default function GameCharactersPage() {
           </BreadcrumbList>
         </Breadcrumb>
 
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="gradient-text gradient-neon text-4xl font-bold mb-2">
               {gameName.toUpperCase()}
@@ -167,9 +203,20 @@ export default function GameCharactersPage() {
             </p>
           </div>
 
-          <Link href={`/characters/new?gameId=${gameId}`}>
-            <RetroButton variant="blue" size="md">ADD AGENT</RetroButton>
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <RetroButton
+              variant="red"
+              size="md"
+              onClick={() => void restartGame()}
+              disabled={isSavingContext || isRestarting}
+            >
+              {isRestarting ? 'RESTARTING...' : 'RESTART GAME'}
+            </RetroButton>
+
+            <Link href={`/characters/new?gameId=${gameId}`}>
+              <RetroButton variant="blue" size="md">ADD AGENT</RetroButton>
+            </Link>
+          </div>
         </div>
 
         <section className="mb-8 border-4 border-blue-400 bg-black p-6">
@@ -201,6 +248,7 @@ export default function GameCharactersPage() {
             </RetroButton>
             {contextSaved ? <p className="text-blue-300 text-sm font-mono">{contextSaved}</p> : null}
             {contextError ? <p className="text-purple-300 text-sm font-mono">{contextError}</p> : null}
+            {restartError ? <p className="text-purple-300 text-sm font-mono">{restartError}</p> : null}
           </div>
         </section>
 

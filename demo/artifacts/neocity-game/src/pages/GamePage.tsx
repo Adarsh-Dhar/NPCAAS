@@ -9,6 +9,7 @@ import { worldLoop } from "../lib/npcWorldLoop";
 import { getClient, isSdkReady, loadCharacters } from "../lib/sdk";
 import type { Character } from "../lib/sdk";
 import { ensureMidnightManifestSetup } from "@/lib/midnightSetup";
+import { resetDemoSession } from "@/lib/sessionReset";
 import { isMidnightCharacter } from "@/lib/midnightManifest";
 
 interface ActiveNpc {
@@ -101,6 +102,18 @@ export default function GamePage() {
     setTimeout(() => setPendingTrade(null), 6000);
   }, []);
 
+  const handleRestartSession = useCallback(async () => {
+    const confirmed = window.confirm("Restart the demo and clear the entire session?");
+    if (!confirmed) return;
+
+    worldLoop.stop();
+    try {
+      await resetDemoSession();
+    } finally {
+      window.location.reload();
+    }
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Tab') return;
@@ -133,6 +146,7 @@ export default function GamePage() {
         activeNpc={activeNpc?.id ?? null}
         activeNpcName={activeNpc?.name ?? null}
         pendingTrade={pendingTrade}
+        onRestartSession={handleRestartSession}
         onTradeExecuted={handleTradeExecuted}
       />
 

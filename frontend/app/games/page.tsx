@@ -377,7 +377,7 @@ export default function GamesPage() {
             {games.map((game) => (
               <div
                 key={game.id}
-                className="border-4 border-blue-500 bg-black hover:border-purple-500 transition-all group relative"
+                className="border-4 border-blue-500 bg-black hover:border-purple-500 transition-all group relative flex flex-col"
               >
                 {/* Key revoke button — top right corner */}
                 <button
@@ -393,19 +393,21 @@ export default function GamesPage() {
                 </button>
 
                 {/* Clickable card area */}
-                <Link href={`/games/${game.id}`} className="block p-6">
-                  <h3 className="text-xl font-bold text-white uppercase mb-2 pr-8">
-                    {game.name}
-                  </h3>
-                  <p className="text-sm text-blue-300 font-bold mb-1">
-                    {game.characterCount}{' '}
-                    {game.characterCount === 1 ? 'CHARACTER' : 'CHARACTERS'}
-                  </p>
-                  <p className="text-xs text-gray-400 font-mono mb-4">
-                    {new Date(game.createdAt).toLocaleDateString()}
-                  </p>
+                <Link href={`/games/${game.id}`} className="flex h-full flex-1 flex-col p-6">
+                  <div>
+                    <h3 className="text-xl font-bold text-white uppercase mb-2 pr-8">
+                      {game.name}
+                    </h3>
+                    <p className="text-sm text-blue-300 font-bold mb-1">
+                      {game.characterCount}{' '}
+                      {game.characterCount === 1 ? 'CHARACTER' : 'CHARACTERS'}
+                    </p>
+                    <p className="text-xs text-gray-400 font-mono">
+                      {new Date(game.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
 
-                  <div className="border-t-2 border-blue-500 pt-4 mt-4">
+                  <div className="mt-auto border-t-2 border-blue-500 pt-4">
                     <RetroButton variant="blue" size="md" className="w-full text-xs">
                       VIEW CHARACTERS
                     </RetroButton>

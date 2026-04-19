@@ -66,6 +66,7 @@ export interface HUDProps {
   /** Canonical NPC name used for GuildCraft character lookup */
   activeNpcName: string | null;
   pendingTrade: TradeIntent | null;
+  onRestartSession?: () => void | Promise<void>;
   onTradeExecuted?: (details: {
     txHash?: string;
     signature?: string;
@@ -122,6 +123,7 @@ export function HUD({
   activeNpc,
   activeNpcName,
   pendingTrade,
+  onRestartSession,
   onTradeExecuted,
 }: HUDProps) {
   const [walletState, setWalletState] = useState<WalletState | null>(null);
@@ -405,6 +407,21 @@ export function HUD({
         <div style={{ color: mission.frenzyActive ? "#f472b6" : "#c4b5fd" }}>
           FRENZY: {mission.frenzyActive ? "ACTIVE" : "STANDBY"}
         </div>
+        <button
+          type="button"
+          onClick={() => void onRestartSession?.()}
+          disabled={!onRestartSession}
+          className="mt-3 inline-flex items-center gap-2 rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.22em] transition"
+          style={{
+            borderColor: "rgba(103,232,249,0.28)",
+            background: onRestartSession ? "rgba(9,12,28,0.92)" : "rgba(9,12,28,0.5)",
+            color: onRestartSession ? "#c4b5fd" : "#64748b",
+            cursor: onRestartSession ? "pointer" : "not-allowed",
+          }}
+        >
+          <RefreshCw size={10} />
+          Restart Session
+        </button>
         <div className="mt-3 rounded border border-cyan-300/25 px-2 py-2" style={{ background: "rgba(7,14,30,0.72)" }}>
           <div style={{ color: "#67e8f9", letterSpacing: 2 }}>INVENTORY LEDGER</div>
           <div style={{ color: "#a9ced8" }}>chips delivered: {mission.chipsDelivered}/5</div>

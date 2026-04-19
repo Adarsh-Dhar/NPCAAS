@@ -412,6 +412,7 @@ export class MainScene extends Phaser.Scene {
       this.escapeRouteOpened = true;
       patchMissionState({ escapeRouteOpened: true }, "ESCAPE_ROUTE_OPENED");
       emitPlayerEvent("ESCAPE_ROUTE_OPENED");
+      this.tryCompleteMission();
     }
 
     if (this.phase === 3 && normalized === "REMY_BOUDREAUX" && !this.briefcaseTransferred) {
@@ -419,7 +420,7 @@ export class MainScene extends Phaser.Scene {
       patchMissionState({ briefcaseTransferred: true }, "BRIEFCASE_TRANSFERRED");
       emitPlayerEvent("BRIEFCASE_TRANSFERRED");
       this.showBroadcast("REMY", "Transfer window closed. Package ownership changed.");
-      this.finishMission();
+      this.tryCompleteMission();
     }
 
     this.checkPhaseProgress();
@@ -506,6 +507,12 @@ export class MainScene extends Phaser.Scene {
     this.cameras.main.shake(240, 0.006);
     this.showBroadcast("AEGIS", "Artifact intercepted. Quantum drive access codes secured.");
     this.showMissionCompleteMessage();
+  }
+
+  private tryCompleteMission() {
+    if (!this.briefcaseTransferred || this.artifactIntercepted) return;
+    if (!this.escapeRouteOpened) return;
+    this.finishMission();
   }
 
   private showMissionCompleteMessage() {
@@ -653,7 +660,7 @@ export class MainScene extends Phaser.Scene {
       patchMissionState({ phase: 3, briefcaseTransferred: true }, "BRIEFCASE_TRANSFERRED");
       setMissionPhase(3);
       this.unlockBarrier(this.zoneBarrierB);
-      this.finishMission();
+      this.tryCompleteMission();
       return;
     }
 
@@ -661,6 +668,7 @@ export class MainScene extends Phaser.Scene {
       this.escapeRouteOpened = true;
       patchMissionState({ escapeRouteOpened: true }, "ESCAPE_ROUTE_OPENED");
       this.unlockBarrier(this.zoneBarrierB);
+      this.tryCompleteMission();
     }
   }
 

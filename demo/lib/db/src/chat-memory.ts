@@ -172,3 +172,9 @@ export async function fetchRecentWorldEvents(gameId: string, limit = 50) {
     .orderBy(desc(worldEvents.createdAt))
     .limit(safeLimit);
 }
+
+export async function resetGameSession(gameId: string) {
+  await db.delete(worldEvents).where(eq(worldEvents.gameId, gameId));
+  await db.delete(worldContexts).where(eq(worldContexts.gameId, gameId));
+  await db.delete(chatSessions).where(eq(chatSessions.gameId, gameId));
+}
