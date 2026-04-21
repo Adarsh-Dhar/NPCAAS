@@ -359,7 +359,7 @@ class HttpGuildCraftClient {
         this.baseUrl = '/api'
         console.warn(`[GuildCraft] Network error against configured base URL. Falling back to ${this.baseUrl}.`, err)
         res = await fetchOnce(this.baseUrl)
-      }
+      } else {
         clearTimeout(timeoutId)
         if (err instanceof Error && err.name === 'AbortError') {
           throw new GuildCraftError(
@@ -369,6 +369,7 @@ class HttpGuildCraftClient {
           )
         }
         throw err
+      }
     }
 
     if (!res.ok) {

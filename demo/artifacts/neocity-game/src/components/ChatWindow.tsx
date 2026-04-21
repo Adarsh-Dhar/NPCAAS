@@ -201,7 +201,7 @@ function inferBrokerBriefcaseTradeIntent(input: {
 
   const asksForSettlementProof =
     (/wallet\s+address/.test(npc) || /transaction\s+hash/.test(npc)) &&
-    (/sent\s+the\s+payment/.test(npc) || /finalize\s+the\s+transaction/.test(npc) || /once\s+you\'ve\s+sent/.test(npc))
+    (/sent\s+the\s+payment/.test(npc) || /finalize\s+the\s+transaction/.test(npc) || /once\s+you've\s+sent/.test(npc))
 
   if (!(mentionsBrokerOffer || asksForSettlementProof)) return null
   if (!(wantsTransfer || userCommitsToPrice)) return null

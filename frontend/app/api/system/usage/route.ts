@@ -58,12 +58,12 @@ export async function GET(request: NextRequest) {
         ? adaptation.preferences.length
         : 0
 
-      if (Boolean(adaptation.specializationActive)) {
+      if (adaptation.specializationActive) {
         specializationActiveCount++
       }
 
       const loop = asRecord(config.autonomousLoop)
-      if (Boolean(loop.active)) activeLoops++
+      if (loop.active) activeLoops++
 
       const queue = Array.isArray(config.actionQueue) ? config.actionQueue : []
       pendingActions += queue.length

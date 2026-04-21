@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { Suspense, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 function resolveCharacterId(searchParams: ReturnType<typeof useSearchParams>) {
@@ -18,7 +18,7 @@ function resolveCharacterId(searchParams: ReturnType<typeof useSearchParams>) {
   return null
 }
 
-export default function CreatorPage() {
+function CreatorPageRedirect() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -36,4 +36,12 @@ export default function CreatorPage() {
   }, [router, searchParams])
 
   return null
+}
+
+export default function CreatorPage() {
+  return (
+    <Suspense fallback={null}>
+      <CreatorPageRedirect />
+    </Suspense>
+  )
 }

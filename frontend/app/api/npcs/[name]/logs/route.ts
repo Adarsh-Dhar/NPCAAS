@@ -66,7 +66,7 @@ export async function GET(
       })
 
       // Specialization activation
-      if (Boolean(adaptation.specializationActive)) {
+      if (adaptation.specializationActive) {
         syntheticLogs.push({
           id: `log_spec_${character.id}`,
           type: 'specialization',

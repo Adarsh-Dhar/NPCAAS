@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import TopNav from '@/components/TopNav'
 import LeftPanel from '@/components/creator/LeftPanel'
@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/breadcrumb'
 import Link from 'next/link'
 
-export default function NewCharacterPage() {
+function NewCharacterPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialGameId = searchParams.get('gameId') ?? undefined
@@ -94,5 +94,13 @@ export default function NewCharacterPage() {
         onFinished={() => router.push('/games')}
       />
     </main>
+  )
+}
+
+export default function NewCharacterPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewCharacterPageContent />
+    </Suspense>
   )
 }
