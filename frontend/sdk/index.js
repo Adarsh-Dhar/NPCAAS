@@ -9,6 +9,11 @@
  *   - chatStream()        — EventSource-compatible streaming chat
  *   - getCharacter(id)    — fetch a single character by ID
  *   - All methods now throw a GuildCraftError with status + body attached
+ *
+ * Mode 3 additions:
+ *   - Optional Kite AA bootstrap via GokiteAASDK
+ *   - Deterministic master-signer signing for AA user operations
+ *   - x402 payment interception for merchant services
  */
 
 // ---------------------------------------------------------------------------
@@ -45,6 +50,34 @@ const WORLD_EVENT_COLOR_BY_TYPE = {
 
 const WORLD_EVENT_TYPES = Object.freeze(Object.keys(WORLD_EVENT_COLOR_BY_TYPE))
 
+function loadAALibraries() {
+  try {
+    // Lazily load AA dependencies so legacy API-only consumers keep working.
+    // eslint-disable-next-line global-require
+    const aaSdk = require('gokite-aa-sdk')
+    // eslint-disable-next-line global-require
+    const ethers = require('ethers')
+
+    return {
+      GokiteAASDK: aaSdk.GokiteAASDK ?? aaSdk.default?.GokiteAASDK ?? aaSdk.default,
+      ethers,
+    }
+  } catch (error) {
+    throw new GuildCraftError(
+      'Mode 3 AA support requires gokite-aa-sdk and ethers to be installed',
+      500,
+      { cause: error instanceof Error ? error.message : String(error) }
+    )
+  }
+}
+
+function toOptions(backendPrivateKeyOrOptions) {
+  if (typeof backendPrivateKeyOrOptions === 'string') {
+    return { backendPrivateKey: backendPrivateKeyOrOptions }
+  }
+  return backendPrivateKeyOrOptions ?? {}
+}
+
 // ---------------------------------------------------------------------------
 // GuildCraftClient
 // ---------------------------------------------------------------------------
@@ -54,7 +87,9 @@ class GuildCraftClient {
    * @param {string} apiKey   - Must start with "gc_live_"
    * @param {string} baseUrl  - Default: http://localhost:3000/api
    */
-  constructor(apiKey, baseUrl = 'http://localhost:3000/api') {
+  constructor(apiKey, baseUrl = 'http://localhost:3000/api', backendPrivateKeyOrOptions) {
+    const mode3Options = toOptions(backendPrivateKeyOrOptions)
+
     if (!apiKey || typeof apiKey !== 'string') {
       throw new GuildCraftError('apiKey is required', 400, null)
     }
@@ -67,6 +102,17 @@ class GuildCraftClient {
     }
     this.apiKey  = apiKey
     this.baseUrl = baseUrl.replace(/\/$/, '') // strip trailing slash
+
+    this.mode3Options = mode3Options
+    this.kiteSdk = null
+    this.masterSigner = null
+    this.masterEoaAddress = null
+    this.signFunction = null
+    this._aaLibs = null
+
+    if (mode3Options.backendPrivateKey) {
+      this._initializeMode3(mode3Options)
+    }
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────
@@ -93,6 +139,44 @@ class GuildCraftClient {
       )
     }
     return body
+  }
+
+  _loadAALibraries() {
+    if (!this._aaLibs) {
+      this._aaLibs = loadAALibraries()
+    }
+    return this._aaLibs
+  }
+
+  _initializeMode3(options = {}) {
+    const { GokiteAASDK, ethers } = this._loadAALibraries()
+    const network = options.network ?? 'kite_testnet'
+    const rpcUrl = options.rpcUrl ?? 'https://rpc-testnet.gokite.ai'
+    const bundlerUrl = options.bundlerUrl ?? 'https://bundler-service.staging.gokite.ai/rpc/'
+
+    this.kiteSdk = new GokiteAASDK(network, rpcUrl, bundlerUrl)
+    this.masterSigner = new ethers.Wallet(options.backendPrivateKey)
+    this.masterEoaAddress = this.masterSigner.address
+    this.signFunction = async (userOpHash) => {
+      return this.masterSigner.signMessage(ethers.getBytes(userOpHash))
+    }
+  }
+
+  _requireMode3() {
+    if (!this.kiteSdk || !this.masterSigner || !this.masterEoaAddress || !this.signFunction) {
+      throw new GuildCraftError(
+        'Mode 3 AA configuration is required for this operation',
+        400,
+        { hasMode3Config: Boolean(this.mode3Options?.backendPrivateKey) }
+      )
+    }
+    return {
+      kiteSdk: this.kiteSdk,
+      masterSigner: this.masterSigner,
+      masterEoaAddress: this.masterEoaAddress,
+      signFunction: this.signFunction,
+      ...this._loadAALibraries(),
+    }
   }
 
   // ── Characters ───────────────────────────────────────────────────────────
@@ -123,10 +207,77 @@ class GuildCraftClient {
     const { name, config, gameIds } = params ?? {}
     if (!name)   throw new GuildCraftError('name is required',   400, null)
     if (!config) throw new GuildCraftError('config is required', 400, null)
-    return this._request('/characters', {
+    const response = await this._request('/characters', {
       method: 'POST',
       body: JSON.stringify({ name, config, gameIds }),
     })
+
+    const hasMode3Config = Boolean(
+      config.encodedPerformCreateCallData ||
+      config.encodedConfigureSpendingRules ||
+      config.proxyAddress
+    )
+
+    if (!hasMode3Config) {
+      return response
+    }
+
+    const { kiteSdk, masterEoaAddress, signFunction } = this._requireMode3()
+
+    if (!config.encodedPerformCreateCallData) {
+      throw new GuildCraftError(
+        'config.encodedPerformCreateCallData is required for Mode 3 deployCharacter',
+        400,
+        { configKeys: Object.keys(config) }
+      )
+    }
+    if (config.encodedConfigureSpendingRules && !config.proxyAddress) {
+      throw new GuildCraftError(
+        'config.proxyAddress is required when config.encodedConfigureSpendingRules is provided',
+        400,
+        { configKeys: Object.keys(config) }
+      )
+    }
+
+    const npcWalletAddress = kiteSdk.getAccountAddress(masterEoaAddress)
+    const deployOp = await kiteSdk.sendUserOperationAndWait(
+      masterEoaAddress,
+      {
+        target: npcWalletAddress,
+        value: 0n,
+        callData: config.encodedPerformCreateCallData,
+      },
+      signFunction
+    )
+
+    let configureOp = null
+    if (config.encodedConfigureSpendingRules && config.proxyAddress) {
+      configureOp = await kiteSdk.sendUserOperationAndWait(
+        masterEoaAddress,
+        {
+          target: config.proxyAddress,
+          value: 0n,
+          callData: config.encodedConfigureSpendingRules,
+        },
+        signFunction
+      )
+    }
+
+    const deployTxHash = deployOp?.status?.transactionHash ?? deployOp?.txHash ?? null
+    const configureTxHash = configureOp?.status?.transactionHash ?? configureOp?.txHash ?? null
+
+    return {
+      ...response,
+      aa: {
+        enabled: true,
+        network: this.mode3Options.network ?? 'kite_testnet',
+        walletAddress: npcWalletAddress,
+        masterEoaAddress,
+        deployTxHash,
+        configureTxHash,
+        proxyAddress: config.proxyAddress ?? null,
+      },
+    }
   }
 
   /**
@@ -274,14 +425,102 @@ class GuildCraftClient {
   /**
    * Execute a trade transaction.
    * @param {string} characterId
-   * @param {{item: string, price: number, currency: string}} tradeIntent
+   * @param {{item: string, price: number, currency: string, serviceUrl?: string, details?: object}} tradeIntent
    */
   async executeTransaction(characterId, tradeIntent) {
     if (!characterId) throw new GuildCraftError('characterId is required', 400, null)
     if (!tradeIntent) throw new GuildCraftError('tradeIntent is required', 400, null)
+
+    if (tradeIntent.serviceUrl) {
+      return this._executeMode3Transaction(characterId, tradeIntent)
+    }
+
     return this._request('/transactions', {
       method: 'POST',
       body: JSON.stringify({ characterId, tradeIntent }),
+    })
+  }
+
+  async _executeMode3Transaction(characterId, tradeIntent) {
+    const { kiteSdk, masterEoaAddress, signFunction } = this._requireMode3()
+    const { ethers } = this._loadAALibraries()
+
+    const payload = tradeIntent.details ?? { characterId, tradeIntent }
+    let response = await fetch(tradeIntent.serviceUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (response.status !== 402) {
+      return response.json().catch(async () => {
+        const text = await response.text().catch(() => '')
+        return { success: response.ok, status: response.status, message: text }
+      })
+    }
+
+    const paymentInfo = await response.json().catch(() => ({}))
+    const accepts = Array.isArray(paymentInfo.accepts) ? paymentInfo.accepts[0] : paymentInfo.accepts
+
+    if (!accepts || !accepts.asset || !accepts.payTo || accepts.maxAmountRequired == null) {
+      throw new GuildCraftError('x402 payment payload is missing required accepts fields', 402, paymentInfo)
+    }
+
+    if (!ethers.isAddress(accepts.asset) || !ethers.isAddress(accepts.payTo)) {
+      throw new GuildCraftError('x402 payment payload contains invalid addresses', 402, paymentInfo)
+    }
+
+    const transferAmount = typeof accepts.maxAmountRequired === 'bigint'
+      ? accepts.maxAmountRequired
+      : BigInt(String(accepts.maxAmountRequired))
+
+    const batchRequest = {
+      targets: [accepts.asset],
+      values: [0n],
+      callDatas: [
+        new ethers.Interface(['function transfer(address to, uint256 amount)']).encodeFunctionData('transfer', [
+          accepts.payTo,
+          transferAmount,
+        ]),
+      ],
+    }
+
+    const paymentOp = await kiteSdk.sendUserOperationAndWait(
+      masterEoaAddress,
+      batchRequest,
+      signFunction
+    )
+
+    const paymentHash =
+      paymentOp?.status?.transactionHash ??
+      paymentOp?.txHash ??
+      paymentOp?.userOpHash ??
+      null
+
+    const paymentReceiptHeader = Buffer.from(JSON.stringify({
+      authorization: paymentHash,
+      network: this.mode3Options.network ?? 'kite_testnet',
+    })).toString('base64')
+
+    response = await fetch(tradeIntent.serviceUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Payment': paymentReceiptHeader,
+      },
+      body: JSON.stringify(payload),
+    })
+
+    return response.json().catch(async () => {
+      const text = await response.text().catch(() => '')
+      return {
+        success: response.ok,
+        status: response.status,
+        message: text,
+        paymentHash,
+      }
     })
   }
 

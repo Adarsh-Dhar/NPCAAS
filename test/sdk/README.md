@@ -41,6 +41,21 @@ Creates a new client instance.
 - `apiKey` (string): Your GuildCraft API key (must start with `gc_live_`)
 - `baseUrl` (string, optional): Base URL of your GuildCraft API. Defaults to `http://localhost:3000/api`
 
+### `new GuildCraftClient(apiKey, baseUrl?, backendPrivateKeyOrOptions?)`
+
+You can also pass a third argument for Mode 3 AA settings.
+
+```javascript
+const gc = new GuildCraftClient('gc_live_abc123xyz...', 'https://your-deployed-guildcraft.com/api', {
+  backendPrivateKey: process.env.KITE_BACKEND_PRIVATE_KEY,
+  network: 'kite_testnet',
+  rpcUrl: 'https://rpc-testnet.gokite.ai',
+  bundlerUrl: 'https://bundler-service.staging.gokite.ai/rpc/',
+})
+```
+
+Use this only when you need AA wallet deployment or x402 payment settlement. Existing tests should keep using the two-argument constructor unless they are specifically exercising Mode 3.
+
 ### `getCharacters(): Promise<Character[]>`
 
 Fetches all characters for your project.
@@ -81,6 +96,8 @@ interface TradeIntent {
   item: string
   price: number
   currency: string
+  serviceUrl?: string
+  details?: Record<string, any>
 }
 
 interface ChatResponse {
@@ -91,6 +108,12 @@ interface ChatResponse {
   timestamp: string
 }
 ```
+
+## Mode 3 Notes
+
+If `tradeIntent.serviceUrl` is set, the SDK can call that merchant directly, intercept a `402 Payment Required` response, pay through Kite AA, and retry the request with an `X-Payment` header.
+
+The SDK will throw a descriptive error if the backend private key is missing, the AA deployment calldata is incomplete, or the merchant's 402 payload is malformed.
 
 ## Error Handling
 

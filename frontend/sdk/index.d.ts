@@ -8,6 +8,37 @@ export interface TradeIntent {
   item: string
   price: number
   currency: string
+  serviceUrl?: string
+  details?: Record<string, unknown>
+}
+
+export interface Mode3AASDKOptions {
+  backendPrivateKey: string
+  network?: string
+  rpcUrl?: string
+  bundlerUrl?: string
+}
+
+export interface Mode3DeployConfig {
+  encodedPerformCreateCallData?: string
+  encodedConfigureSpendingRules?: string
+  proxyAddress?: string
+  spendingRules?: Array<{
+    timeWindow: bigint | number
+    budget: string | bigint
+    initialWindowStartTime: number
+    targetProviders: string[]
+  }>
+}
+
+export interface Mode3DeploymentMetadata {
+  enabled: boolean
+  network: string
+  walletAddress: string
+  masterEoaAddress: string
+  deployTxHash: string | null
+  configureTxHash: string | null
+  proxyAddress: string | null
 }
 
 export interface Character {
@@ -87,6 +118,17 @@ export interface ExecuteTransactionResponse {
   status: 'pending' | 'success'
   message: string
   sponsorError?: string
+  paymentHash?: string
+  paymentReceiptHeader?: string
+  paymentRetryResponse?: Record<string, unknown>
+}
+
+export interface Mode3ExecuteTransactionResponse {
+  success: boolean
+  status?: number
+  paymentHash?: string
+  message?: string
+  [key: string]: unknown
 }
 
 export interface PaymentProof {
@@ -170,16 +212,16 @@ export declare const WORLD_EVENT_TYPES: readonly string[]
 // ---------------------------------------------------------------------------
 
 export declare class GuildCraftClient {
-  constructor(apiKey: string, baseUrl?: string)
+  constructor(apiKey: string, baseUrl?: string, backendPrivateKeyOrOptions?: string | Mode3AASDKOptions)
 
   // Characters
   getCharacters(): Promise<Character[]>
   getCharacter(characterId: string): Promise<{ character: Character; projects: Project[] }>
   deployCharacter(params: {
     name: string
-    config: Record<string, unknown>
+    config: Record<string, unknown> & Mode3DeployConfig
     gameIds?: string[]
-  }): Promise<{ message: string; character: Character; walletAddress: string }>
+  }): Promise<{ message: string; character: Character; walletAddress: string; aa?: Mode3DeploymentMetadata }>
   updateCharacter(params: {
     characterId: string
     name?: string
@@ -223,7 +265,7 @@ export declare class GuildCraftClient {
   executeTransaction(
     characterId: string,
     tradeIntent: TradeIntent
-  ): Promise<ExecuteTransactionResponse>
+  ): Promise<ExecuteTransactionResponse | Mode3ExecuteTransactionResponse>
 
   npcInteract(
     initiatorId: string,

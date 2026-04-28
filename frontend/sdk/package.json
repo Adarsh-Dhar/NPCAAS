@@ -5,6 +5,10 @@
   "main": "index.js",
   "module": "index.mjs",
   "types": "index.d.ts",
+  "dependencies": {
+    "ethers": "^6.16.0",
+    "gokite-aa-sdk": "^1.0.15"
+  },
   "license": "MIT",
   "keywords": [
     "guildcraft",

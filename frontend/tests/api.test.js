@@ -1448,6 +1448,19 @@ describe('18 · SDK Integration (GuildCraftClient)', () => {
     assert.throws(() => new GuildCraftClient(null))
   })
 
+  test('GuildCraftClient — Mode 3 options constructor initializes AA context', () => {
+    const client = new GuildCraftClient(state.apiKey, API, {
+      backendPrivateKey: `0x${'1'.repeat(64)}`,
+      network: 'kite_testnet',
+      rpcUrl: 'https://rpc-testnet.gokite.ai',
+      bundlerUrl: 'https://bundler-service.staging.gokite.ai/rpc/',
+    })
+
+    assert.ok(client.kiteSdk, 'Mode 3 constructor should initialize the AA SDK')
+    assert.ok(client.masterSigner, 'Mode 3 constructor should initialize the master signer')
+    assert.ok(client.masterEoaAddress, 'Mode 3 constructor should expose the master EOA address')
+  })
+
   test('gc.getCharacters() → returns array', async () => {
     const characters = await state.gc.getCharacters()
     assert.ok(Array.isArray(characters), 'Should return an array')

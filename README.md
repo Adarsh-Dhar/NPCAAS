@@ -12,6 +12,16 @@ Built for the Kite AI Hackathon (Novel Track), GuildCraft leverages Kite AI—th
 - **⛽ Gasless Transactions**: Utilizes Kite's Stablecoin Gasless Transfer service via EIP-3009 signed messages so game developers can sponsor transaction fees, removing friction for players.
 - **🔗 Verifiable Actions**: All premium NPC interactions (like API calls or trading in-game assets) settle directly on the Kite Testnet for full auditability.
 
+## Mode 3 Deep Integration
+
+GuildCraft now supports an opt-in Mode 3 path that lets the published SDK manage Kite AA smart accounts directly.
+
+- Developers initialize `GuildCraftClient` with a backend master private key.
+- `deployCharacter()` can deploy a ClientAgentVault and configure spending rules on-chain.
+- `executeTransaction()` can intercept `402 Payment Required` responses from merchant services and settle the quoted ERC-20 payment through Kite AA before retrying the request.
+
+Legacy API-only integrations still work without any changes.
+
 ## 📦 Installation
 
 ```bash
@@ -66,6 +76,15 @@ This project was built to explore unexpected integrations between gaming, AI, an
 - **Agent Autonomy**: The NPC operates with minimal human involvement once spawned, adhering to cryptographic spending bounds.
 - **Real-World Applicability**: Solves the friction of integrating complex Web3 tokenomics and LLM logic into games using Kite's pre-built AA wallets.
 - **Developer Experience**: Clean, NPM-installable SDK with clear TypeScript definitions.
+
+## SDK Change Summary
+
+The SDK now has two supported paths:
+
+- Legacy API mode: the current chat, deploy, and transaction flow remains unchanged.
+- Mode 3 AA mode: add a backend master private key plus encoded deploy/config calldata to enable agent passports, spending rules, and x402 settlement.
+
+See [frontend/sdk/README.md](frontend/sdk/README.md) for the exact constructor options and payload shapes.
 
 ## © Copyright
 
