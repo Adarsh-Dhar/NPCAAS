@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { z } from 'zod'
+import { ethers } from 'ethers'
 import { kiteAAProvider } from '@/lib/aa-sdk'
 import { validateApiKey } from '@/lib/api-key-store'
 import { prisma } from '@/lib/prisma'
@@ -562,6 +563,87 @@ export async function POST(request: NextRequest) {
       })
     } catch (logError) {
       console.warn('[API] Failed to write TREASURY_PROVISION log:', logError)
+    }
+
+    // ==========================================
+    // AUTOMATIC PASSPORT CONFIGURATION (non-blocking)
+    // ==========================================
+    try {
+      // Only attempt if treasury provisioning succeeded and env is configured
+      if (provisioning.status === 'success') {
+        const PASSPORT_REGISTRY_ADDRESS = process.env.KITE_PASSPORT_REGISTRY_ADDRESS
+        if (PASSPORT_REGISTRY_ADDRESS && ethers.isAddress(PASSPORT_REGISTRY_ADDRESS)) {
+          const tokenDecimals = Number(process.env.KITE_PASSPORT_TOKEN_DECIMALS ?? '6')
+          const defaultBudgetUnits = process.env.DEFAULT_PASSPORT_BUDGET ?? '100'
+          const defaultSessionSeconds = Number(process.env.DEFAULT_PASSPORT_DURATION_SECONDS ?? String(24 * 60 * 60))
+
+          const passportInterface = new ethers.Interface([
+            'function configureAgentSession(address agentWallet, uint256 maxBudget, uint256 sessionDuration)'
+          ])
+
+          const defaultBudget = ethers.parseUnits(defaultBudgetUnits, tokenDecimals)
+
+          const encodedSpendingRules = passportInterface.encodeFunctionData('configureAgentSession', [
+            smartAccount.address,
+            defaultBudget,
+            BigInt(defaultSessionSeconds),
+          ])
+
+          const passportOp = await kiteAAProvider.sponsorTransaction({
+            to: PASSPORT_REGISTRY_ADDRESS,
+            data: encodedSpendingRules,
+            ownerId: ownerId,
+            value: '0',
+          })
+
+          try {
+            await (prisma as any).npcLog.create({
+              data: {
+                characterId: character.id,
+                eventType: 'PASSPORT_CONFIGURED',
+                details: {
+                  txHash: passportOp.txHash ?? null,
+                  userOpHash: passportOp.userOpHash ?? null,
+                  status: passportOp.status ?? null,
+                },
+              },
+            })
+          } catch (logError) {
+            console.warn('[API] Failed to write PASSPORT_CONFIGURED log:', logError)
+          }
+
+          // Mark character status as passport configured
+          try {
+            await updateWithUnknownArgStripping(
+              (data) =>
+                (prisma.character as any).update({ where: { id: character.id }, data }),
+              { smartAccountStatus: 'passport_configured' }
+            )
+          } catch (updErr) {
+            console.warn('[API] Failed to update character smartAccountStatus:', updErr)
+          }
+        } else {
+          console.info('[API] Passport registry address not configured; skipping passport configuration')
+        }
+      } else {
+        console.info('[API] Treasury provisioning did not succeed; skipping passport configuration')
+      }
+    } catch (passportError) {
+      console.error('[API] Failed to configure default Passport rules:', passportError)
+
+      try {
+        await (prisma as any).npcLog.create({
+          data: {
+            characterId: character.id,
+            eventType: 'PASSPORT_CONFIG_FAILED',
+            details: {
+              reason: passportError instanceof Error ? passportError.message : String(passportError),
+            },
+          },
+        })
+      } catch (logError) {
+        console.warn('[API] Failed to write PASSPORT_CONFIG_FAILED log:', logError)
+      }
     }
 
     return NextResponse.json(
