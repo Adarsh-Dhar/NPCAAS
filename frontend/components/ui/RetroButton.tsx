@@ -4,7 +4,7 @@ import React from 'react'
 
 interface RetroButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'green' | 'magenta' | 'cyan' | 'yellow' | 'orange' | 'red' | 'blue'
+  variant?: 'purple' | 'blue'
   size?: 'sm' | 'md' | 'lg'
 }
 
@@ -37,7 +37,7 @@ const RetroButton = React.forwardRef<HTMLButtonElement, RetroButtonProps>(
           transition-all duration-75 
           active:shadow-none active:translate-y-1 active:translate-x-1
           disabled:opacity-50 disabled:cursor-not-allowed
-          ${variantClasses[variant]}
+          ${variantClasses[variant as keyof typeof variantClasses]}
           ${sizeClasses[size]}
           ${className}
         `}
