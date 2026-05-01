@@ -4,7 +4,6 @@ import { getClient } from '@/lib/sdk'
 import { emitPlayerEvent, setEscrowFunded as setEscrowFundedEvent, setPlayerInventory } from '@/lib/playerState'
 import {
   formatNpcDisplayName,
-  PROTOCOL_BABEL_NODE_NAMES,
   toCanonicalNpcName,
 } from '@/lib/protocolBabel'
 import { usePlayerState } from '@/context/PlayerStateContext'
@@ -77,7 +76,7 @@ export default function DashboardPage({ characters = [], onClose }: DashboardPag
 
   const activeNames = useMemo(() => {
     const discovered = characters.map((character) => toCanonicalNpcName(character.name))
-    return discovered.length ? discovered : [...PROTOCOL_BABEL_NODE_NAMES]
+    return discovered
   }, [characters])
 
   const dispatchFirewallCracked = useCallback(() => {

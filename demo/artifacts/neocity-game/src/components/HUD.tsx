@@ -66,6 +66,8 @@ export interface HUDProps {
   /** Canonical NPC name used for GuildCraft character lookup */
   activeNpcName: string | null;
   pendingTrade: TradeIntent | null;
+  /** DB-backed characters currently loaded by the game */
+  characters?: Array<{ id: string; name: string }>;
   onRestartSession?: () => void | Promise<void>;
   onTradeExecuted?: (details: {
     txHash?: string;
@@ -76,6 +78,9 @@ export interface HUDProps {
     npcName: string | null;
   }) => void;
 }
+
+const REQUIRED_DELIVERIES_TARGET = 3;
+const CRATES_MISLABELED_TARGET = 0;
 
 const AEGIS_PRIME_CANONICAL_NAME = "AEGIS_PRIME";
 const AEGIS_GATE_TOLL_PRICE = 500;
@@ -123,6 +128,7 @@ export function HUD({
   activeNpc,
   activeNpcName,
   pendingTrade,
+  characters = [],
   onRestartSession,
   onTradeExecuted,
 }: HUDProps) {
@@ -198,6 +204,11 @@ export function HUD({
     });
     return unsubscribe;
   }, []);
+
+  const activeChannelNames = (() => {
+    const present = new Set(characters.map((c) => normalizeNpcNameForMatch(c.name)));
+    return PROTOCOL_BABEL_NODE_NAMES.filter((name) => present.has(normalizeNpcNameForMatch(name)));
+  })();
 
   // ── Trade execution ───────────────────────────────────────────────────
   const executeTrade = useCallback(async () => {
@@ -424,8 +435,14 @@ export function HUD({
         </button>
         <div className="mt-3 rounded border border-cyan-300/25 px-2 py-2" style={{ background: "rgba(7,14,30,0.72)" }}>
           <div style={{ color: "#67e8f9", letterSpacing: 2 }}>INVENTORY LEDGER</div>
-          <div style={{ color: "#a9ced8" }}>chips delivered: {mission.chipsDelivered}/5</div>
-          <div style={{ color: "#a9ced8" }}>crates mislabeled: {mission.cratesMislabeled}/2</div>
+          <div style={{ color: "#a9ced8" }}>
+            chips delivered: {Math.min(mission.chipsDelivered, REQUIRED_DELIVERIES_TARGET)}/{REQUIRED_DELIVERIES_TARGET}
+          </div>
+          {CRATES_MISLABELED_TARGET > 0 && (
+            <div style={{ color: "#a9ced8" }}>
+              crates mislabeled: {Math.min(mission.cratesMislabeled, CRATES_MISLABELED_TARGET)}/{CRATES_MISLABELED_TARGET}
+            </div>
+          )}
           <div style={{ color: mission.briefcaseLocated ? "#c4b5fd" : "#6e7d8e" }}>
             briefcase located: {mission.briefcaseLocated ? "YES" : "NO"}
           </div>
@@ -469,7 +486,7 @@ export function HUD({
           </div>
           <div style={{ color: "#445566" }}>
             <div className="mb-1">ACTIVE CHANNELS</div>
-            <div className="text-cyan-300">{PROTOCOL_BABEL_NODE_NAMES.map((name) => formatNpcDisplayName(name)).join(" · ")}</div>
+            <div className="text-cyan-300">{activeChannelNames.map((name) => formatNpcDisplayName(name)).join(" · ")}</div>
             <div className="mt-2 text-white/60">TAB — macro dashboard</div>
           </div>
         </div>

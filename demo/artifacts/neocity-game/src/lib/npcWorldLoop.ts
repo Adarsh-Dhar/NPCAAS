@@ -19,7 +19,11 @@ type WorldEventHandler = (event: WorldEvent) => void
 class NpcWorldLoop {
   private handlers: WorldEventHandler[] = []
   private intervalId: ReturnType<typeof setInterval> | null = null
-  private readonly loopNpcNames = [...PROTOCOL_BABEL_NODE_NAMES]
+  private loopNpcNames: string[] = [...PROTOCOL_BABEL_NODE_NAMES]
+
+  setLoopNpcNames(names: string[]) {
+    this.loopNpcNames = [...names]
+  }
 
   subscribe(handler: WorldEventHandler) {
     this.handlers.push(handler)

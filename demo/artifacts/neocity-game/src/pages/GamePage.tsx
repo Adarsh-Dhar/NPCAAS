@@ -66,9 +66,11 @@ export default function GamePage() {
           ? allChars.filter((character) => isMidnightCharacter(character.name))
           : [];
         setCharacters(midnightChars);
+        worldLoop.setLoopNpcNames(midnightChars.map((character) => character.name));
       } catch {
         if (!cancelled) {
           setCharacters([]);
+          worldLoop.setLoopNpcNames([]);
         }
       }
 
@@ -146,6 +148,7 @@ export default function GamePage() {
         activeNpc={activeNpc?.id ?? null}
         activeNpcName={activeNpc?.name ?? null}
         pendingTrade={pendingTrade}
+        characters={characters}
         onRestartSession={handleRestartSession}
         onTradeExecuted={handleTradeExecuted}
       />

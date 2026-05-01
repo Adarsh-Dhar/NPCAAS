@@ -20,6 +20,16 @@ type CharacterRecord = {
 };
 
 let setupPromise: Promise<{ gameId: string; apiKey: string }> | null = null;
+
+function getActiveApiKey() {
+  return (window as Window & { __VITE_GC_API_KEY?: string }).__VITE_GC_API_KEY ?? "";
+}
+
+function toErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "Unknown error";
+}
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function requireSetupClient(): any {
   if (!isSdkReady()) {
@@ -101,7 +111,16 @@ export async function ensureMidnightManifestSetup() {
     assertMidnightEventRegistryIsValid();
 
     const bootstrapClient = requireSetupClient();
-    const game = await findOrCreateGame(bootstrapClient);
+
+    let game: ProjectRecord;
+    try {
+      game = await findOrCreateGame(bootstrapClient);
+    } catch (error) {
+      // Local dev fallback: if the API/database isn't running, don't block the Phaser scene.
+      // The scene can still render with seeded NPC ids; chat + dashboard features may be degraded.
+      console.warn("[MidnightSetup] Failed to create/load game. Falling back to local-only mode.", error);
+      return { gameId: "local-demo", apiKey: getActiveApiKey() };
+    }
 
     if (game.apiKey) {
       (window as Window & { __VITE_GC_API_KEY?: string }).__VITE_GC_API_KEY = game.apiKey;
@@ -110,35 +129,53 @@ export async function ensureMidnightManifestSetup() {
 
     const client = requireSetupClient();
 
-    const existing = await loadCharacters(client);
+    let existing: CharacterRecord[] = [];
+    try {
+      existing = await loadCharacters(client);
+    } catch (error) {
+      console.warn("[MidnightSetup] Failed to load characters. Continuing without remote characters.", error);
+      const activeKey = getActiveApiKey();
+      return { gameId: game.id, apiKey: activeKey };
+    }
+
     const existingByName = new Map(existing.map((character) => [normalizeName(character.name), character]));
 
     const characterIds: string[] = [];
 
-    for (const seed of MIDNIGHT_CHARACTER_SEEDS) {
-      const matched = existingByName.get(normalizeName(seed.name));
+    try {
+      for (const seed of MIDNIGHT_CHARACTER_SEEDS) {
+        const matched = existingByName.get(normalizeName(seed.name));
 
-      if (matched) {
-        await updateCharacter(client, {
-          characterId: matched.id,
+        if (matched) {
+          await updateCharacter(client, {
+            characterId: matched.id,
+            name: seed.name,
+            config: seed.config,
+            gameEvents: seed.gameEvents,
+          });
+          characterIds.push(matched.id);
+          continue;
+        }
+
+        const created = await createCharacter(client, {
           name: seed.name,
           config: seed.config,
           gameEvents: seed.gameEvents,
+          gameIds: [game.id],
         });
-        characterIds.push(matched.id);
-        continue;
+        characterIds.push(created.character.id);
       }
 
-      const created = await createCharacter(client, {
-        name: seed.name,
-        config: seed.config,
-        gameEvents: seed.gameEvents,
-        gameIds: [game.id],
-      });
-      characterIds.push(created.character.id);
+      await assignCharacters(client, game.id, characterIds);
+    } catch (error) {
+      // If character provisioning fails (e.g. DB down), still allow the UI to load.
+      console.warn(
+        `[MidnightSetup] Character provisioning failed: ${toErrorMessage(error)}. Continuing without provisioning.`,
+        error
+      );
+      const activeKey = getActiveApiKey();
+      return { gameId: game.id, apiKey: activeKey };
     }
-
-    await assignCharacters(client, game.id, characterIds);
 
     clearCharacterCache();
 

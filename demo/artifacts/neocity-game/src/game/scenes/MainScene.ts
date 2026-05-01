@@ -13,7 +13,7 @@ import {
 } from "@/lib/playerState";
 import { normalizeNpcName } from "@/lib/protocolBabel";
 
-type NpcKind = "character" | "delivery" | "terminal" | "bodyguard";
+type NpcKind = "character";
 
 interface SceneNpc {
   id: string;
@@ -33,11 +33,9 @@ interface SceneNpcRef {
 }
 
 const REQUIRED_DELIVERIES = [
+  "VINNIE_DELUCA",
   "SVETLANA_MOROZOVA",
-  "BUYER_A",
-  "BUYER_B",
-  "BUYER_C",
-  "BUYER_D",
+  "DIEGO_VARGAS",
 ] as const;
 
 const SCENE_THEME = {
@@ -314,21 +312,22 @@ export class MainScene extends Phaser.Scene {
 
     const charsByName = new Map(characters.map((character) => [normalizeNpcName(character.name), character]));
 
-    const seeds: SceneNpc[] = [
-      { id: charsByName.get("VINNIE_DELUCA")?.id ?? "vinnie", name: "Vinnie_DeLuca", x: 110, y: 150, label: "Dock Boss", color: 0x60a5fa, kind: "character" },
-      { id: charsByName.get("SVETLANA_MOROZOVA")?.id ?? "svetlana", name: "Svetlana_Morozova", x: 250, y: 155, label: "Arms Broker", color: 0x8b5cf6, kind: "character" },
-      { id: charsByName.get("DIEGO_VARGAS")?.id ?? "diego", name: "Diego_Vargas", x: 285, y: 350, label: "Narco Buyer", color: 0x3b82f6, kind: "character" },
-      { id: charsByName.get("THE_CURATOR")?.id ?? "curator", name: "The_Curator", x: 760, y: 140, label: "Acquirer", color: 0xa78bfa, kind: "character" },
-      { id: charsByName.get("REMY_BOUDREAUX")?.id ?? "remy", name: "Remy_Boudreaux", x: 640, y: 360, label: "Courier", color: 0x60a5fa, kind: "character" },
-      { id: charsByName.get("DON_CARLO")?.id ?? "don", name: "Don_Carlo", x: 585, y: 282, label: "Settlement Broker", color: 0x22d3ee, kind: "character" },
-      { id: charsByName.get("PAPA_KOFI")?.id ?? "kofi", name: "Papa_Kofi", x: 700, y: 515, label: "Port Authority", color: 0x8b5cf6, kind: "character" },
-      { id: "terminal", name: "Manifest_Terminal", x: 230, y: 500, label: "Warehouse Terminal", color: 0x3b82f6, kind: "terminal" },
-      { id: "bodyguard", name: "Svetlana_Bodyguard", x: 455, y: 200, label: "Bodyguard", color: 0x94a3b8, kind: "bodyguard" },
-      { id: "buyer_a", name: "Buyer_A", x: 170, y: 260, label: "Minor Buyer", color: 0x60a5fa, kind: "delivery" },
-      { id: "buyer_b", name: "Buyer_B", x: 250, y: 220, label: "Minor Buyer", color: 0x60a5fa, kind: "delivery" },
-      { id: "buyer_c", name: "Buyer_C", x: 150, y: 380, label: "Minor Buyer", color: 0x60a5fa, kind: "delivery" },
-      { id: "buyer_d", name: "Buyer_D", x: 275, y: 330, label: "Minor Buyer", color: 0x60a5fa, kind: "delivery" },
-    ];
+    const seeds: SceneNpc[] = [];
+
+    const maybeAdd = (normalizedName: string, seed: Omit<SceneNpc, 'id'>) => {
+      const character = charsByName.get(normalizedName);
+      if (!character) return;
+      seeds.push({ ...seed, id: character.id });
+    };
+
+    // Only spawn DB-backed characters. No local-only NPCs (buyers/terminal/bodyguard).
+    maybeAdd("VINNIE_DELUCA", { name: "Vinnie_DeLuca", x: 110, y: 150, label: "Dock Boss", color: 0x60a5fa, kind: "character" });
+    maybeAdd("SVETLANA_MOROZOVA", { name: "Svetlana_Morozova", x: 250, y: 155, label: "Arms Broker", color: 0x8b5cf6, kind: "character" });
+    maybeAdd("DIEGO_VARGAS", { name: "Diego_Vargas", x: 285, y: 350, label: "Narco Buyer", color: 0x3b82f6, kind: "character" });
+    maybeAdd("THE_CURATOR", { name: "The_Curator", x: 760, y: 140, label: "Acquirer", color: 0xa78bfa, kind: "character" });
+    maybeAdd("REMY_BOUDREAUX", { name: "Remy_Boudreaux", x: 640, y: 360, label: "Courier", color: 0x60a5fa, kind: "character" });
+    maybeAdd("DON_CARLO", { name: "Don_Carlo", x: 585, y: 282, label: "Settlement Broker", color: 0x22d3ee, kind: "character" });
+    maybeAdd("PAPA_KOFI", { name: "Papa_Kofi", x: 700, y: 515, label: "Port Authority", color: 0x8b5cf6, kind: "character" });
 
     for (const seed of seeds) {
       const container = this.add.container(seed.x, seed.y).setDepth(11);
@@ -402,6 +401,13 @@ export class MainScene extends Phaser.Scene {
       this.showBroadcast("DIEGO", "Svetlana will not let that gold case out of her sight.");
     }
 
+    if (this.phase === 2 && normalized === "THE_CURATOR" && this.diegoIntelRevealed && !this.bodyguardIntelRevealed) {
+      this.bodyguardIntelRevealed = true;
+      patchMissionState({ bodyguardIntelRevealed: true }, "LORE_REVEALED");
+      emitPlayerEvent("LORE_REVEALED");
+      this.showBroadcast("CURATOR", "Remy arrived earlier. Transit starts at the bell.");
+    }
+
     if (this.phase === 2 && normalized === "SVETLANA_MOROZOVA" && this.diegoIntelRevealed && !this.briefcaseLocated) {
       this.briefcaseLocated = true;
       patchMissionState({ briefcaseLocated: true }, "BRIEFCASE_LOCATED");
@@ -427,34 +433,8 @@ export class MainScene extends Phaser.Scene {
     this.checkPhaseProgress();
   }
 
-  private handleLocalInteraction(npc: SceneNpcRef) {
-    if (npc.data.kind === "terminal" && this.phase === 1 && this.cratesMislabeled < 2) {
-      this.cratesMislabeled += 1;
-      incrementMislabeledCrate();
-      this.showBroadcast("TERMINAL", `Routing code overwritten (${this.cratesMislabeled}/2).`);
-      if (this.cratesMislabeled === 2) {
-        emitPlayerEvent("INVENTORY_COMPROMISED");
-      }
-      this.checkPhaseProgress();
-      return;
-    }
-
-    if (npc.data.kind === "delivery" && this.phase === 1) {
-      this.handleChipDelivery(normalizeNpcName(npc.data.name));
-      this.checkPhaseProgress();
-      return;
-    }
-
-    if (npc.data.kind === "bodyguard" && this.phase === 2 && this.diegoIntelRevealed && !this.bodyguardIntelRevealed) {
-      this.bodyguardIntelRevealed = true;
-      patchMissionState({ bodyguardIntelRevealed: true }, "LORE_REVEALED");
-      emitPlayerEvent("LORE_REVEALED");
-      this.showBroadcast("BODYGUARD", "Remy arrived twenty minutes ago. Transit starts at the bell.");
-      this.checkPhaseProgress();
-    }
-  }
-
   private handleChipDelivery(npcName: string) {
+    if (this.chipsDelivered.size >= REQUIRED_DELIVERIES.length) return;
     if (this.chipsDelivered.has(npcName)) return;
     this.chipsDelivered.add(npcName);
     incrementChipDelivered();
@@ -467,8 +447,7 @@ export class MainScene extends Phaser.Scene {
       (
         this.briefcaseLocated ||
         (
-          this.chipsDelivered.size >= REQUIRED_DELIVERIES.length &&
-          this.cratesMislabeled >= 2
+          this.chipsDelivered.size >= REQUIRED_DELIVERIES.length
         )
       )
     ) {
@@ -722,8 +701,6 @@ export class MainScene extends Phaser.Scene {
 
       if (npc.data.kind === "character") {
         this.openChat(npc.data.id, npc.data.name);
-      } else {
-        this.handleLocalInteraction(npc);
       }
     }
 
