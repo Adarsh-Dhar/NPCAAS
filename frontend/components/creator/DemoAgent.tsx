@@ -115,25 +115,25 @@ export default function DemoAgent({ currentAction, characterName, baseCapital }:
           width="140"
           height="165"
           xmlns="http://www.w3.org/2000/svg"
-          style={{ overflow: 'visible', filter: 'drop-shadow(0 4px 8px rgba(59,130,246,0.3))' }}
+          style={{ overflow: 'visible', filter: 'drop-shadow(0 4px 8px rgba(216,49,91,0.3))' }}
         >
           {/* Shadow */}
-          <ellipse cx="60" cy="160" rx="28" ry="5" fill="#000" opacity="0.25" />
+          <ellipse cx="60" cy="160" rx="28" ry="5" fill="#1E1B18" opacity="0.25" />
 
           {/* ── LEGS ── */}
           <g>
             {/* Left leg */}
-            <line x1="42" y1="120" x2="22" y2="148" stroke="#2563eb" strokeWidth="9" strokeLinecap="round"/>
-            <ellipse cx="17" cy="150" rx="10" ry="5" fill="#2563eb"/>
+            <line x1="42" y1="120" x2="22" y2="148" stroke="#D8315B" strokeWidth="9" strokeLinecap="round"/>
+            <ellipse cx="17" cy="150" rx="10" ry="5" fill="#D8315B"/>
             {/* Right leg */}
-            <line x1="78" y1="120" x2="98" y2="148" stroke="#2563eb" strokeWidth="9" strokeLinecap="round"/>
-            <ellipse cx="103" cy="150" rx="10" ry="5" fill="#2563eb"/>
+            <line x1="78" y1="120" x2="98" y2="148" stroke="#D8315B" strokeWidth="9" strokeLinecap="round"/>
+            <ellipse cx="103" cy="150" rx="10" ry="5" fill="#D8315B"/>
           </g>
 
           {/* ── BODY ── */}
-          <ellipse cx="60" cy="100" rx="34" ry="28" fill="#2563eb"/>
+          <ellipse cx="60" cy="100" rx="34" ry="28" fill="#D8315B"/>
           {/* Belly */}
-          <ellipse cx="60" cy="103" rx="23" ry="18" fill="#86efac"/>
+          <ellipse cx="60" cy="103" rx="23" ry="18" fill="#FFFFFF" opacity="0.12"/>
 
           {/* ── ARMS ── */}
           {/* Left arm */}
@@ -142,8 +142,8 @@ export default function DemoAgent({ currentAction, characterName, baseCapital }:
             animState === 'rub_hands' ? styles.armRubLeft :
             animState === 'think' ? styles.armThinkLeft : ''
           }>
-            <line x1="28" y1="86" x2="8" y2="106" stroke="#16a34a" strokeWidth="8" strokeLinecap="round"/>
-            <circle cx="6" cy="108" r="5" fill="#15803d"/>
+            <line x1="28" y1="86" x2="8" y2="106" stroke="#D8315B" strokeWidth="8" strokeLinecap="round"/>
+            <circle cx="6" cy="108" r="5" fill="#1E1B18"/>
           </g>
           {/* Right arm */}
           <g className={
@@ -151,16 +151,16 @@ export default function DemoAgent({ currentAction, characterName, baseCapital }:
             animState === 'shrug' ? styles.armRightShrug :
             animState === 'rub_hands' ? styles.armRubRight : ''
           }>
-            <line x1="92" y1="86" x2="112" y2="106" stroke="#16a34a" strokeWidth="8" strokeLinecap="round"/>
-            <circle cx="114" cy="108" r="5" fill="#15803d"/>
+            <line x1="92" y1="86" x2="112" y2="106" stroke="#D8315B" strokeWidth="8" strokeLinecap="round"/>
+            <circle cx="114" cy="108" r="5" fill="#1E1B18"/>
           </g>
 
           {/* ── HEAD ── */}
-          <ellipse cx="60" cy="55" rx="30" ry="27" fill="#16a34a"/>
+          <ellipse cx="60" cy="55" rx="30" ry="27" fill="#D8315B"/>
 
           {/* Eye bumps */}
-          <ellipse cx="38" cy="34" rx="13" ry="10" fill="#16a34a"/>
-          <ellipse cx="82" cy="34" rx="13" ry="10" fill="#16a34a"/>
+          <ellipse cx="38" cy="34" rx="13" ry="10" fill="#D8315B"/>
+          <ellipse cx="82" cy="34" rx="13" ry="10" fill="#D8315B"/>
 
           {/* Eye whites */}
           <ellipse
@@ -179,11 +179,11 @@ export default function DemoAgent({ currentAction, characterName, baseCapital }:
           />
 
           {/* Pupils */}
-          <ellipse cx="40" cy="32" rx="4.5" ry="5" fill="#1a1a1a"
+          <ellipse cx="40" cy="32" rx="4.5" ry="5" fill="#1E1B18"
             style={{ transformOrigin: '38px 31px' }}
             className={isBlinking ? styles.eyeBlink : ''}
           />
-          <ellipse cx="80" cy="32" rx="4.5" ry="5" fill="#1a1a1a"
+          <ellipse cx="80" cy="32" rx="4.5" ry="5" fill="#1E1B18"
             style={{ transformOrigin: '82px 31px' }}
             className={isBlinking ? styles.eyeBlink : ''}
           />
@@ -193,44 +193,44 @@ export default function DemoAgent({ currentAction, characterName, baseCapital }:
           <circle cx="81" cy="29" r="2" fill="white" opacity="0.8"/>
 
           {/* Nostril bumps */}
-          <circle cx="54" cy="58" r="3" fill="#15803d"/>
-          <circle cx="66" cy="58" r="3" fill="#15803d"/>
+          <circle cx="54" cy="58" r="3" fill="#1E1B18"/>
+          <circle cx="66" cy="58" r="3" fill="#1E1B18"/>
 
           {/* Smile — changes with state */}
           {(animState === 'happy' || animState === 'excited' || animState === 'wave') ? (
             // Big grin
-            <path d="M42 66 Q60 80 78 66" stroke="#15803d" strokeWidth="2.5" fill="#15803d" opacity="0.6"/>
+            <path d="M42 66 Q60 80 78 66" stroke="#1E1B18" strokeWidth="2.5" fill="#1E1B18" opacity="0.6"/>
           ) : animState === 'think' || animState === 'shrug' ? (
             // Neutral/flat
-            <path d="M46 68 Q60 68 74 68" stroke="#15803d" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+            <path d="M46 68 Q60 68 74 68" stroke="#1E1B18" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
           ) : (
             // Normal smile
-            <path d="M44 67 Q60 76 76 67" stroke="#15803d" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+            <path d="M44 67 Q60 76 76 67" stroke="#1E1B18" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
           )}
 
           {/* Think bubble dots */}
           {animState === 'think' && (
             <g opacity="0.8">
-              <circle cx="92" cy="25" r="3" fill="#a855f7"/>
-              <circle cx="100" cy="17" r="4" fill="#a855f7"/>
-              <circle cx="110" cy="9" r="5" fill="#a855f7"/>
+              <circle cx="92" cy="25" r="3" fill="#D8315B"/>
+              <circle cx="100" cy="17" r="4" fill="#FFFFFF"/>
+              <circle cx="110" cy="9" r="5" fill="#D8315B"/>
             </g>
           )}
 
           {/* Wave sparkles */}
           {animState === 'wave' && (
             <g opacity="0.9">
-              <text x="100" y="75" fontSize="12" fill="#fbbf24">✨</text>
-              <text x="95" y="55" fontSize="9" fill="#fbbf24">★</text>
+              <text x="100" y="75" fontSize="12" fill="#FFFFFF">✨</text>
+              <text x="95" y="55" fontSize="9" fill="#FFFFFF">★</text>
             </g>
           )}
 
           {/* Excited stars */}
           {animState === 'excited' && (
             <g>
-              <text x="5" y="60" fontSize="12" fill="#f472b6">★</text>
-              <text x="100" y="50" fontSize="14" fill="#f472b6">✦</text>
-              <text x="8" y="30" fontSize="9" fill="#fb923c">✦</text>
+              <text x="5" y="60" fontSize="12" fill="#D8315B">★</text>
+              <text x="100" y="50" fontSize="14" fill="#FFFFFF">✦</text>
+              <text x="8" y="30" fontSize="9" fill="#D8315B">✦</text>
             </g>
           )}
         </svg>

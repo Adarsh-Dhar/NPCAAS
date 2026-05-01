@@ -65,10 +65,17 @@ function NewCharacterPageContent() {
         <div className="w-2/3 overflow-y-auto">
           <div className="p-8 bg-black">
             <div className="mb-8">
-              <h1 className="gradient-text gradient-neon text-4xl font-bold mb-2">
+              <h1
+                className="gradient-text gradient-neon text-4xl mb-2"
+                style={{
+                  fontFamily:
+                    "'bitcount-prop-double-square', 'bitcount-prop-double-circle', 'bitcount-prop-double-plus', 'bitcount-prop-double-line-sq', 'bitcount-prop-double-line-ci', 'acumin-pro', sans-serif",
+                  fontWeight: 400,
+                }}
+              >
                 CREATE YOUR AGENT
               </h1>
-              <p className="text-blue-400 text-sm uppercase font-bold">
+              <p className="font-condensed text-blue-400 text-sm uppercase font-bold">
                 Configure all five layers and deploy. Assignment to games happens next.
               </p>
             </div>

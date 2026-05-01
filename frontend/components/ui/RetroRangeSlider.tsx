@@ -9,14 +9,14 @@ interface RetroRangeSliderProps
 }
 
 const borderClasses = {
-  cyan: 'border-blue-400',
-  orange: 'border-blue-700',
-  purple: 'border-purple-400',
-  yellow: 'border-blue-500',
-  red: 'border-purple-500',
-  green: 'border-blue-600',
-  magenta: 'border-purple-300',
-  blue: 'border-blue-300',
+  cyan: 'border-white/20',
+  orange: 'border-white/20',
+  purple: 'border-crimson',
+  yellow: 'border-white/20',
+  red: 'border-crimson',
+  green: 'border-white/20',
+  magenta: 'border-crimson',
+  blue: 'border-white/20',
 }
 
 const RetroRangeSlider = React.forwardRef<
@@ -31,22 +31,22 @@ const RetroRangeSlider = React.forwardRef<
             <label className="text-xs font-bold uppercase text-white">
               {label}
             </label>
-            <span className="text-xs font-bold text-blue-400">{value}</span>
+            <span className="text-xs font-bold text-crimson">{value}</span>
           </div>
         )}
-        <div className={`border-4 rounded-none p-3 bg-black ${borderClasses[borderColor]}`}>
+        <div className={`border-2 rounded-none p-3 bg-black ${borderClasses[borderColor]}`}>
           <input
             ref={ref}
             type="range"
             value={value}
             onChange={onChange}
             className={`
-              w-full h-3 bg-slate-900 rounded-none cursor-pointer
+              w-full h-3 bg-neutral-900 rounded-none cursor-pointer
               appearance-none
               ${className}
             `}
             style={{
-              accentColor: '#3b82f6',
+              accentColor: '#D8315B',
             }}
             {...props}
           />

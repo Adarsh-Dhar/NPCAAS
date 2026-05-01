@@ -1,24 +1,11 @@
 import type { Metadata } from 'next'
-import { Press_Start_2P, VT323 } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { WalletProvider } from '@/components/WalletContext'
 import './globals.css'
 
-const pressStart2P = Press_Start_2P({ 
-  weight: '400',
-  subsets: ['latin'],
-  variable: '--font-press-start-2p'
-});
-
-const vt323 = VT323({ 
-  weight: '400',
-  subsets: ['latin'],
-  variable: '--font-vt323'
-});
-
 export const metadata: Metadata = {
-  title: 'GuildCraft | Retro 8-Bit NPC Creator',
-  description: 'Create autonomous AI NPCs for the PYUSD network with a retro 8-bit aesthetic',
+  title: 'GuildCraft | Autonomous NPC Platform',
+  description: 'Create autonomous AI NPCs for the PYUSD network',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -47,13 +34,28 @@ export default function RootLayout({
   const currentYear = new Date().getFullYear()
 
   return (
-    <html lang="en" className={`${pressStart2P.variable} ${vt323.variable}`}>
-      <body className="font-press-start-2p bg-black text-white antialiased">
+    <html lang="en">
+      <head>
+        <link rel="stylesheet" href="https://use.typekit.net/syc1pzu.css" />
+      </head>
+      <body className="font-body">
         <WalletProvider>
           {children}
         </WalletProvider>
-        <footer className="border-t border-zinc-800 bg-black px-4 py-3 text-center font-vt323 text-sm text-zinc-400">
-          {`Copyright (c) ${currentYear} Adarsh. Licensed under MIT.`}
+        <footer
+          className="font-condensed"
+          style={{
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+            backgroundColor: '#1a1715',
+            padding: '1rem 1.5rem',
+            textAlign: 'center',
+            fontSize: '0.75rem',
+            letterSpacing: '0.06em',
+            color: 'rgba(255,255,255,0.3)',
+            textTransform: 'uppercase',
+          }}
+        >
+          {`© ${currentYear} Adarsh — MIT License`}
         </footer>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
