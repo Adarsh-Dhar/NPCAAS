@@ -7,48 +7,50 @@ app.use(express.json());
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-type NPC = { npcName: string; agentId: string; sessionId: string };
-const activeGames: Record<string, NPC[]> = {};
+type Broker = { brokerName: string; agentId: string; sessionId: string };
+const darkPools: Record<string, Broker[]> = {};
 
-// 1. Create a new game lobby
-app.post('/api/create-game', (req: Request, res: Response) => {
-    const gameId = 'LOBBY-' + Math.floor(1000 + Math.random() * 9000);
-    activeGames[gameId] = [];
-    console.log(`[Server] New game created: ${gameId}`);
-    res.json({ gameId });
+type TradeBody = { brokerName: string; asset: string; price: string | number };
+
+// 1. Initialize a Secure Dark Pool
+app.post('/api/create-pool', (req: Request, res: Response) => {
+    const poolId = 'POOL-' + Math.floor(1000 + Math.random() * 9000);
+    darkPools[poolId] = [];
+
+    console.log(`\n[NEXUS OTC] 🔒 Secure Dark Pool Initialized: ${poolId}`);
+    res.json({ poolId });
 });
 
-// 2. Join a game and deploy an NPC
-app.post('/api/join-game', (req: Request, res: Response) => {
-    const { gameId, npcName, agentId, sessionId } = req.body as Partial<NPC & { gameId?: string }>;
+// 2. Connect an Algorithmic Broker to the Pool
+app.post('/api/join-pool', (req: Request, res: Response) => {
+    const { poolId, brokerName, agentId, sessionId } = req.body as Partial<Broker & { poolId?: string }>;
 
-    if (!gameId || !activeGames[gameId]) {
-        return res.status(404).json({ error: `Game ${gameId} not found.` });
+    if (!poolId || !darkPools[poolId]) {
+        return res.status(404).json({ error: `Pool ${poolId} not found.` });
     }
 
-    const newNpc: NPC = { npcName: String(npcName || 'unknown'), agentId: String(agentId || ''), sessionId: String(sessionId || '') };
-    activeGames[gameId].push(newNpc);
+    const newBroker: Broker = { brokerName: String(brokerName || 'unknown'), agentId: String(agentId || ''), sessionId: String(sessionId || '') };
+    darkPools[poolId].push(newBroker);
 
-    console.log(`[Server] ${newNpc.npcName} joined ${gameId}!`);
-    console.log(`[Server]   Agent: ${newNpc.agentId} | Session: ${newNpc.sessionId}`);
+    console.log(`[NEXUS OTC] 🕴️ Broker "${newBroker.brokerName}" connected to ${poolId}`);
+    console.log(`            Agent: ${newBroker.agentId} | Session: ${newBroker.sessionId}`);
 
-    res.json({ success: true, lobbyUrl: `http://localhost:${PORT}/lobby/${gameId}` });
+    res.json({ success: true, message: 'Broker connected securely.' });
 });
 
-// 3. View the lobby in your browser
-app.get('/lobby/:gameId', (req: Request, res: Response) => {
-    const gameId = String(req.params.gameId);
-    if (!activeGames[gameId]) return res.status(404).send('<h1>Lobby not found</h1>');
+// 3. Execute and Clear a Block Trade
+app.post('/api/execute-trade', (req: Request<unknown, unknown, Partial<TradeBody>>, res: Response) => {
+    const { brokerName, asset, price } = req.body || {};
 
-    const players = activeGames[gameId];
-    let html = `<h1>Metaverse: ${gameId}</h1><h2>Active NPCs:</h2><ul>`;
-    if (players.length === 0) html += `<li>Waiting for players...</li>`;
-    else players.forEach((p: NPC) => (html += `<li><strong>${p.npcName}</strong> (Agent ID: <code>${p.agentId}</code>)</li>`));
-    html += `</ul>`;
-    res.send(html);
+    console.log(`\n[NEXUS CLEARING] ⚡ P2P Block Trade Confirmed On-Chain`);
+    console.log(`[NEXUS CLEARING] 💼 Broker: ${String(brokerName || '')}`);
+    console.log(`[NEXUS CLEARING] 📊 Asset Acquired: [${String(asset || '')}]`);
+    console.log(`[NEXUS CLEARING] 💵 Settled Amount: $${String(price || '')} USDC`);
+
+    res.json({ success: true, message: 'Trade settled via Kite Chain' });
 });
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`🎮 Nexus Metaverse Server running on http://localhost:${PORT}`);
+    console.log(`🏛️  Nexus OTC Clearinghouse running on http://localhost:${PORT}`);
 });

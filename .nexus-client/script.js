@@ -12,7 +12,9 @@ const DEFAULT_MAX_PER_TX = process.env.NEXUS_MAX_PER_TX  || '0.50';
 const DEFAULT_MAX_TOTAL  = process.env.NEXUS_MAX_TOTAL   || '5.00';
 const DEFAULT_TTL        = process.env.NEXUS_SESSION_TTL || '1h';    // kpass expects "1h", "24h", etc.
 const DEFAULT_ASSETS     = process.env.NEXUS_ASSETS      || 'USDC';
-const DEFAULT_PAYMENT    = process.env.NEXUS_PAYMENT     || 'x402_http';
+const DEFAULT_PAYMENT    = process.env.NEXUS_PAYMENT     || 'x402';
+const DEFAULT_KPASS_TIMEOUT_MS = Number(process.env.NEXUS_KPASS_TIMEOUT_MS || (5 * 60 * 1000));
+const WAIT_KPASS_TIMEOUT_MS    = Number(process.env.NEXUS_KPASS_WAIT_TIMEOUT_MS || (30 * 60 * 1000));
 
 // ─── LOGGING ─────────────────────────────────────────────────────────────────
 
@@ -65,17 +67,50 @@ async function apiFetch(path, options = {}) {
  * Inherits stdin so interactive prompts (passkey) reach the terminal.
  * Throws with a clean message on non-zero exit.
  */
-function shell(cmd) {
+function shell(cmd, { timeoutMs = DEFAULT_KPASS_TIMEOUT_MS } = {}) {
   log.debug(`$ ${cmd}`);
   try {
     return execSync(cmd, {
       stdio: ['inherit', 'pipe', 'pipe'],
-      timeout: 5 * 60 * 1000,   // 5-minute timeout for passkey approval waits
+      timeout: timeoutMs,
+      shell: '/bin/bash',       // Bypass user zsh startup files that can break non-interactive child shells
     }).toString().trim();
   } catch (err) {
     const stderr = err.stderr?.toString().trim() || '';
-    throw new Error(`kpass command failed:\n  $ ${cmd}\n  ${stderr || err.message}`);
+    const stdout = err.stdout?.toString().trim() || '';
+    const detail = stderr || stdout || err.message;
+    throw new Error(`kpass command failed:\n  $ ${cmd}\n  ${detail}`);
   }
+}
+
+/**
+ * Open a URL in the user's browser if possible.
+ * Best-effort only; failures are logged but do not stop the flow.
+ */
+function openUrl(url) {
+  if (!url) return false;
+
+  const encoded = JSON.stringify(String(url));
+  const candidates = process.platform === 'darwin'
+    ? [`open ${encoded}`]
+    : process.platform === 'win32'
+      ? [`start "" ${encoded}`]
+      : [`xdg-open ${encoded}`];
+
+  for (const cmd of candidates) {
+    try {
+      execSync(cmd, {
+        stdio: 'ignore',
+        timeout: 5000,
+        shell: '/bin/bash',
+      });
+      return true;
+    } catch {
+      // Keep trying fallback commands for the platform.
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -121,15 +156,15 @@ function parseArgs(argv) {
 
 function printUsage() {
   console.log(`
-nexus.js — Kite Agent Passport × Metaverse bridge
+nexus.js — Kite Agent Passport × OTC Clearinghouse bridge
 
 COMMANDS
-  create-game
-      Open a new lobby on the game server.
+  create-pool
+    Initialize a secure dark pool.
 
-  join-game --game-id <id> --npc-name <name> [options]
-      Register an NPC on Kite, get passkey approval for a budget
-      session, then connect the NPC to the lobby.
+  deploy-broker --pool-id <id> --broker-name <name> [options]
+    Register a broker on Kite, get passkey approval for a budget
+    session, then connect the broker to the pool.
 
   list-sessions --agent-id <id>
       List all active Kite sessions for a given agent.
@@ -137,9 +172,9 @@ COMMANDS
   revoke-session --session-id <id>
       Revoke an active Kite session immediately.
 
-OPTIONS (join-game)
-  --game-id      <id>      Lobby ID to join              (required)
-  --npc-name     <name>    Display name for the NPC      (required)
+OPTIONS (deploy-broker)
+  --pool-id      <id>      Pool ID to join               (required)
+  --broker-name  <name>    Display name for the broker   (required)
   --max-per-tx   <amount>  Max USDC spend per tx         (default: ${DEFAULT_MAX_PER_TX})
   --max-total    <amount>  Max USDC spend for session    (default: ${DEFAULT_MAX_TOTAL})
   --ttl          <time>    Session lifetime e.g. 1h, 24h (default: ${DEFAULT_TTL})
@@ -157,9 +192,8 @@ ENVIRONMENT VARIABLES
   NEXUS_LOG_LEVEL     debug|info|warn|error (default: info)
 
 MACHINE-PARSEABLE OUTPUT (for Codex)
-  GAME_CREATED: <gameId>
-  NPC_JOINED: {"gameId":…,"npcName":…,"agentId":…,"sessionId":…}
-  LOBBY_URL: <url>
+  POOL_CREATED: <poolId>
+  BROKER_JOINED: {"poolId":…,"brokerName":…,"agentId":…,"sessionId":…}
   SESSION_REVOKED: <sessionId>
 `);
 }
@@ -167,37 +201,37 @@ MACHINE-PARSEABLE OUTPUT (for Codex)
 // ─── COMMANDS ─────────────────────────────────────────────────────────────────
 
 /**
- * create-game
- * Opens a new lobby on the game server and emits the Game ID.
+ * create-pool
+ * Initializes a secure dark pool and emits the Pool ID.
  */
-async function createGame(flags) {
-  log.info('Creating new game lobby…');
+async function createPool(flags) {
+  log.info('Initializing secure dark pool…');
 
   if (flags.dryRun) {
-    log.warn('--dry-run: would POST /api/create-game');
-    log.emit('GAME_CREATED', 'DRY-RUN-LOBBY');
+    log.warn('--dry-run: would POST /api/create-pool');
+    log.emit('POOL_CREATED', 'DRY-RUN-POOL');
     return;
   }
 
-  const data   = await apiFetch('/api/create-game', { method: 'POST' });
-  const gameId = requireField(data, ['gameId', 'game_id', 'id'], 'create-game response');
+  const data   = await apiFetch('/api/create-pool', { method: 'POST' });
+  const poolId = requireField(data, ['poolId', 'pool_id', 'id'], 'create-pool response');
 
-  log.emit('GAME_CREATED', gameId);
-  log.info(`Lobby is live → ${gameId}`);
-  return gameId;
+  log.emit('POOL_CREATED', poolId);
+  log.info(`Pool is live → ${poolId}`);
+  return poolId;
 }
 
 /**
- * join-game
+ * deploy-broker
  * Full 3-step flow:
- *   1. Register NPC identity on Kite
+ *   1. Register broker identity on Kite
  *   2. Submit budget session request → wait for passkey approval
- *   3. Connect NPC to the game lobby
+ *   3. Connect broker to the dark pool
  */
-async function joinGame(flags) {
+async function deployBroker(flags) {
   const {
-    gameId,
-    npcName,
+    poolId,
+    brokerName,
     maxPerTx = DEFAULT_MAX_PER_TX,
     maxTotal  = DEFAULT_MAX_TOTAL,
     ttl       = DEFAULT_TTL,
@@ -206,15 +240,15 @@ async function joinGame(flags) {
     dryRun    = false,
   } = flags;
 
-  if (!gameId)  throw new Error('--game-id is required');
-  if (!npcName) throw new Error('--npc-name is required');
+  if (!poolId) throw new Error('--pool-id is required');
+  if (!brokerName) throw new Error('--broker-name is required');
 
-  // ── Step 1: Register NPC identity ─────────────────────────────────────────
-  log.info(`Registering NPC "${npcName}" on Kite…`);
+  // ── Step 1: Register broker identity ──────────────────────────────────────
+  log.info(`Registering broker "${brokerName}" on Kite…`);
 
   const registerCmd = [
     'kpass agent:register',
-    '--type "nexus-npc"',
+    '--type "nexus-broker"',
     '--output json',
     '--no-interactive',
   ].join(' ');
@@ -227,7 +261,7 @@ async function joinGame(flags) {
     const registerData = parseKpassJSON(shell(registerCmd), 'kpass agent:register');
     agentId = requireField(registerData, ['agent_id', 'agentId', 'id'], 'register response');
   }
-  log.info(`NPC registered → Agent ID: ${agentId}`);
+  log.info(`Broker registered → Agent ID: ${agentId}`);
 
   // ── Step 2: Submit budget session request ──────────────────────────────────
   log.info('Requesting budget session…');
@@ -238,8 +272,7 @@ async function joinGame(flags) {
 
   const sessionCmd = [
     'kpass agent:session create',
-    `--agent-id ${agentId}`,
-    `--task-summary "Nexus Metaverse Trading for ${npcName}"`,
+    `--task-summary "Nexus OTC Block Trading for ${brokerName}"`,
     `--max-amount-per-tx ${maxPerTx}`,
     `--max-total-amount  ${maxTotal}`,
     `--ttl ${ttl}`,
@@ -250,6 +283,7 @@ async function joinGame(flags) {
   ].join(' ');
 
   let requestId;
+  let approvalUrl = '';
   if (dryRun) {
     log.warn(`--dry-run: would run:\n  $ ${sessionCmd}`);
     requestId = 'DRY-RUN-REQUEST-ID';
@@ -262,6 +296,19 @@ async function joinGame(flags) {
       ['request_id', 'requestId', 'id'],
       'session create response'
     );
+
+    approvalUrl = sessionReqData.approval_url || sessionReqData.approvalUrl || '';
+    const createStatus = sessionReqData.status || '';
+    if (approvalUrl) {
+      log.emit('APPROVAL_URL', approvalUrl);
+      log.warn(`Approval URL: ${approvalUrl}`);
+      const opened = openUrl(approvalUrl);
+      if (opened) {
+        log.info('Opened approval URL in your default browser. Complete passkey approval there.');
+      } else if (createStatus === 'human_action_required') {
+        log.warn('Could not auto-open browser. Open the approval URL manually to continue.');
+      }
+    }
   }
   log.info(`Session request submitted → Request ID: ${requestId}`);
 
@@ -282,7 +329,10 @@ async function joinGame(flags) {
     sessionId = 'DRY-RUN-SESSION-ID';
   } else {
     // This call blocks until the user physically approves or the TTL lapses.
-    const approvedData = parseKpassJSON(shell(waitCmd), 'kpass agent:session status');
+    const approvedData = parseKpassJSON(
+      shell(waitCmd, { timeoutMs: WAIT_KPASS_TIMEOUT_MS }),
+      'kpass agent:session status'
+    );
     sessionId = requireField(
       approvedData,
       ['session_id', 'sessionId', 'id'],
@@ -291,28 +341,25 @@ async function joinGame(flags) {
   }
   log.info(`✅ Budget session approved → Session ID: ${sessionId}`);
 
-  // ── Step 3: Connect NPC to the game lobby ─────────────────────────────────
-  log.info(`Sending "${npcName}" to lobby ${gameId}…`);
+  // ── Step 3: Connect broker to the dark pool ───────────────────────────────
+  log.info(`Sending "${brokerName}" to pool ${poolId}…`);
 
-  const payload  = { gameId, npcName, agentId, sessionId };
-  let   lobbyUrl = '';
+  const payload  = { poolId, brokerName, agentId, sessionId };
 
   if (dryRun) {
-    log.warn(`--dry-run: would POST /api/join-game with ${JSON.stringify(payload)}`);
+    log.warn(`--dry-run: would POST /api/join-pool with ${JSON.stringify(payload)}`);
   } else {
-    const joinData = await apiFetch('/api/join-game', {
+    await apiFetch('/api/join-pool', {
       method : 'POST',
       body   : JSON.stringify(payload),
     });
-    lobbyUrl = joinData.lobbyUrl || joinData.lobby_url || '';
   }
 
   // Machine-parseable lines for Codex
-  log.emit('NPC_JOINED', { gameId, npcName, agentId, sessionId });
-  if (lobbyUrl) log.emit('LOBBY_URL', lobbyUrl);
-  log.info(`🎮 "${npcName}" is live in ${gameId}`);
+  log.emit('BROKER_JOINED', { poolId, brokerName, agentId, sessionId });
+  log.info(`🕴️ "${brokerName}" is live in ${poolId}`);
 
-  return { agentId, requestId, sessionId, gameId };
+  return { agentId, requestId, sessionId, poolId };
 }
 
 /**
@@ -365,8 +412,8 @@ function revokeSession(flags) {
 
   try {
     switch (command) {
-      case 'create-game':    await createGame(flags);  break;
-      case 'join-game':      await joinGame(flags);    break;
+      case 'create-pool':    await createPool(flags);  break;
+      case 'deploy-broker':  await deployBroker(flags); break;
       case 'list-sessions':  listSessions(flags);      break;
       case 'revoke-session': revokeSession(flags);     break;
       default:
