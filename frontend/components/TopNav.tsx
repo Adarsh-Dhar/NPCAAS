@@ -1,19 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import RetroButton from '@/components/ui/RetroButton'
 import { useWallet } from '@/components/WalletContext'
 
 export default function TopNav() {
   const { address, connecting, onKiteNetwork, connect, disconnect, switchToKite } = useWallet()
 
   const shortAddress = address
-    ? `${address.slice(0, 6)}...${address.slice(-4)}`
+    ? `${address.slice(0, 6)}···${address.slice(-4)}`
     : null
 
   const handleClick = async () => {
     if (address) {
-      // If connected but wrong network, switch
       if (!onKiteNetwork) {
         await switchToKite()
       } else {
@@ -25,54 +23,108 @@ export default function TopNav() {
   }
 
   const buttonLabel = () => {
-    if (connecting) return '[ CONNECTING... ]'
-    if (!address) return '[ CONNECT WALLET ]'
-    if (!onKiteNetwork) return '[ SWITCH TO PYUSD ]'
-    return `[ ${shortAddress} ]`
-  }
-
-  const buttonVariant = () => {
-    if (!address) return 'blue' as const
-    if (!onKiteNetwork) return 'purple' as const
-    return 'blue' as const
+    if (connecting) return 'Connecting…'
+    if (!address) return 'Connect Wallet'
+    if (!onKiteNetwork) return 'Switch Network'
+    return shortAddress
   }
 
   return (
-    <nav className="w-full bg-black/95 border-b-4 border-blue-500 px-8 py-4 flex items-center justify-between sticky top-0 z-50 backdrop-blur-sm">
+    <nav style={{
+      width: '100%',
+      backgroundColor: 'rgba(30, 27, 24, 0.96)',
+      borderBottom: '1px solid rgba(255,255,255,0.08)',
+      padding: '0 2rem',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      position: 'sticky',
+      top: 0,
+      zIndex: 50,
+      backdropFilter: 'blur(20px)',
+      WebkitBackdropFilter: 'blur(20px)',
+      height: '60px',
+    }}>
       {/* Left: Logo + Nav */}
-      <div className="text-2xl font-bold flex items-center gap-8">
-        <Link href="/" className="gradient-text gradient-neon">
-          GUILDCRAFT
+      <div style={{ display: 'flex', alignItems: 'center', gap: '2.5rem' }}>
+        <Link href="/" style={{ textDecoration: 'none' }}>
+          <span className="font-display" style={{
+            fontSize: '1.35rem',
+            fontWeight: 400,
+            color: '#ffffff',
+            letterSpacing: '-0.01em',
+          }}>
+            Guild<span style={{ color: '#D8315B' }}>Craft</span>
+          </span>
         </Link>
-        <div className="flex items-center gap-4 text-xs uppercase font-bold">
-          <Link href="/games" className="text-blue-300 hover:text-blue-100 transition-colors">
-            GAMES
-          </Link>
-          <Link href="/quickstart" className="text-cyan-300 hover:text-cyan-100 transition-colors">
-            QUICKSTART
-          </Link>
-          <Link href="/about" className="text-purple-300 hover:text-purple-100 transition-colors">
-            ABOUT
-          </Link>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.75rem' }}>
+          {[
+            { href: '/games', label: 'Games' },
+            { href: '/quickstart', label: 'Quickstart' },
+            { href: '/about', label: 'About' },
+          ].map(({ href, label }) => (
+            <Link key={href} href={href} style={{
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'rgba(255,255,255,0.55)',
+              textDecoration: 'none',
+              transition: 'color 0.15s ease',
+            }}
+              className="font-condensed"
+              onMouseEnter={e => (e.currentTarget.style.color = '#ffffff')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.55)')}
+            >
+              {label}
+            </Link>
+          ))}
         </div>
       </div>
 
       {/* Right: Wallet */}
-      <div className="flex items-center gap-3">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
         {address && onKiteNetwork && (
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-            <span className="text-blue-400 text-xs font-mono">Kite Testnet</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <div style={{
+              width: '6px', height: '6px',
+              borderRadius: '50%',
+              backgroundColor: '#D8315B',
+              animation: 'pulse-crimson 2s ease-in-out infinite',
+            }} />
+            <span style={{
+              fontSize: '0.65rem',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: 'rgba(255,255,255,0.4)',
+            }} className="font-condensed">
+              Kite Testnet
+            </span>
           </div>
         )}
-        <RetroButton
-          variant={buttonVariant()}
-          size="md"
+
+        <button
           onClick={handleClick}
           disabled={connecting}
+          className="font-display"
+          style={{
+            fontSize: '0.7rem',
+            fontWeight: 400,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            padding: '0.4rem 1rem',
+            border: '1px solid',
+            borderColor: address && onKiteNetwork ? 'rgba(216,49,91,0.4)' : 'rgba(255,255,255,0.2)',
+            backgroundColor: address && onKiteNetwork ? 'rgba(216,49,91,0.1)' : 'transparent',
+            color: address && onKiteNetwork ? '#ffffff' : 'rgba(255,255,255,0.75)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+            borderRadius: 0,
+          }}
         >
           {buttonLabel()}
-        </RetroButton>
+        </button>
       </div>
     </nav>
   )

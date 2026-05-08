@@ -3,8 +3,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import TopNav from '@/components/TopNav'
-import RetroButton from '@/components/ui/RetroButton'
-import RetroInput from '@/components/ui/RetroInput'
 
 interface Game {
   id: string
@@ -14,11 +12,20 @@ interface Game {
   createdAt: string
 }
 
-// ── Create New Game Modal ──────────────────────────────────────────────────
-
 interface CreateGameModalProps {
   onClose: () => void
   onCreated: (game: Game) => void
+}
+
+const INPUT_STYLE: React.CSSProperties = {
+  width: '100%',
+  backgroundColor: 'rgba(255,255,255,0.05)',
+  color: '#ffffff',
+  border: '1px solid rgba(255,255,255,0.15)',
+  borderRadius: 0,
+  padding: '0.65rem 0.875rem',
+  fontSize: '0.875rem',
+  outline: 'none',
 }
 
 function CreateGameModal({ onClose, onCreated }: CreateGameModalProps) {
@@ -29,12 +36,8 @@ function CreateGameModal({ onClose, onCreated }: CreateGameModalProps) {
   const [copied, setCopied] = useState(false)
 
   const handleCreate = async () => {
-    if (!name.trim()) {
-      setError('Game name is required')
-      return
-    }
-    setCreating(true)
-    setError('')
+    if (!name.trim()) { setError('Game name is required'); return }
+    setCreating(true); setError('')
     try {
       const response = await fetch('/api/games', {
         method: 'POST',
@@ -63,82 +66,105 @@ function CreateGameModal({ onClose, onCreated }: CreateGameModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="w-full max-w-lg border-4 border-blue-400 bg-black shadow-[8px_8px_0px_0px_rgba(59,130,246,1)]">
-        {/* Header */}
-        <div className="border-b-4 border-blue-400 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white uppercase tracking-wider">
-            {createdGame ? '✓ Game Created!' : 'Create New Game'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-blue-400 hover:text-white text-xl font-bold transition-colors"
-          >
-            ✕
-          </button>
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 50,
+      backgroundColor: 'rgba(0,0,0,0.75)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
+    }}>
+      <div style={{
+        width: '100%', maxWidth: '500px',
+        backgroundColor: '#252220',
+        border: '1px solid rgba(255,255,255,0.1)',
+      }}>
+        <div style={{
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          padding: '1.25rem 1.5rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span className="font-condensed" style={{
+            fontSize: '0.8rem', fontWeight: 700,
+            letterSpacing: '0.1em', textTransform: 'uppercase',
+            color: '#ffffff',
+          }}>
+            {createdGame ? '✓ Game Created' : 'Create New Game'}
+          </span>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none',
+            color: 'rgba(255,255,255,0.4)', cursor: 'pointer',
+            fontSize: '1.1rem', lineHeight: 1,
+          }}>✕</button>
         </div>
 
-        <div className="p-6">
+        <div style={{ padding: '1.5rem' }}>
           {!createdGame ? (
             <>
-              <p className="text-gray-400 text-xs font-mono mb-6 uppercase">
-                Name your game to get an API key for NPC integration.
+              <p style={{
+                fontSize: '0.8rem', color: 'rgba(255,255,255,0.45)',
+                marginBottom: '1.25rem',
+              }} className="font-body">
+                Name your game to receive an API key for NPC integration.
               </p>
 
-              <RetroInput
-                borderColor="blue"
-                label="Game Name"
-                placeholder="e.g. Dragon Quest Online"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !creating && handleCreate()}
-                disabled={creating}
-              />
+              <div style={{ marginBottom: '1rem' }}>
+                <label className="font-condensed" style={{
+                  fontSize: '0.65rem', fontWeight: 700,
+                  letterSpacing: '0.1em', textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '0.375rem',
+                }}>Game Name</label>
+                <input
+                  style={INPUT_STYLE}
+                  placeholder="e.g. Dragon Quest Online"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !creating && handleCreate()}
+                  disabled={creating}
+                />
+              </div>
 
               {error && (
-                <p className="mt-3 text-xs text-red-400 font-mono">{error}</p>
+                <p className="font-body" style={{
+                  fontSize: '0.8rem', color: 'rgba(255,255,255,0.85)',
+                  marginBottom: '1rem',
+                }}>{error}</p>
               )}
 
-              <div className="mt-6 flex gap-3 justify-end">
-                <RetroButton variant="purple" size="sm" onClick={onClose} disabled={creating}>
-                  CANCEL
-                </RetroButton>
-                <RetroButton
-                  variant="blue"
-                  size="sm"
-                  onClick={handleCreate}
-                  disabled={creating || !name.trim()}
-                >
-                  {creating ? 'CREATING...' : 'CREATE GAME'}
-                </RetroButton>
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <GcButton variant="ghost" onClick={onClose} disabled={creating}>Cancel</GcButton>
+                <GcButton variant="primary" onClick={handleCreate} disabled={creating || !name.trim()}>
+                  {creating ? 'Creating…' : 'Create Game'}
+                </GcButton>
               </div>
             </>
           ) : (
             <>
-              <p className="text-blue-300 text-xs font-bold uppercase mb-2">
-                ⚠ Save your API key — it won't be shown again
+              <p style={{
+                fontSize: '0.65rem', fontWeight: 700,
+                letterSpacing: '0.1em', textTransform: 'uppercase',
+                color: '#D8315B', marginBottom: '0.5rem',
+              }}>
+                ⚠ Save this key — it won't be shown again
               </p>
-              <p className="text-gray-400 text-xs font-mono mb-4">
-                Game: <span className="text-white font-bold">{createdGame.name}</span>
+              <p style={{
+                fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)',
+                marginBottom: '1rem',
+              }}>
+                Game: <strong style={{ color: '#ffffff' }}>{createdGame.name}</strong>
               </p>
-
-              <div className="bg-slate-950 border-4 border-blue-400 p-4 mb-4 break-all">
-                <p className="text-blue-300 font-mono text-xs leading-relaxed">
-                  {createdGame.apiKey}
-                </p>
+              <div style={{
+                backgroundColor: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                padding: '1rem', marginBottom: '1.25rem',
+                wordBreak: 'break-all',
+              }}>
+                <p className="font-mono" style={{
+                  fontSize: '0.75rem', color: 'rgba(216,49,91,0.9)',
+                }}>{createdGame.apiKey}</p>
               </div>
-
-              <div className="flex gap-3 justify-end">
-                <RetroButton
-                  variant={copied ? 'blue' : 'purple'}
-                  size="sm"
-                  onClick={handleCopy}
-                >
-                  {copied ? '✓ COPIED!' : 'COPY API KEY'}
-                </RetroButton>
-                <RetroButton variant="blue" size="sm" onClick={onClose}>
-                  DONE
-                </RetroButton>
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <GcButton variant={copied ? 'primary' : 'outline'} onClick={handleCopy}>
+                  {copied ? '✓ Copied' : 'Copy Key'}
+                </GcButton>
+                <GcButton variant="primary" onClick={onClose}>Done</GcButton>
               </div>
             </>
           )}
@@ -148,27 +174,16 @@ function CreateGameModal({ onClose, onCreated }: CreateGameModalProps) {
   )
 }
 
-// ── Revoke API Key Modal ───────────────────────────────────────────────────
-
-interface RevokeModalProps {
-  game: Game
-  onClose: () => void
-  onRevoked: (updatedGame: Game) => void
-}
-
-function RevokeModal({ game, onClose, onRevoked }: RevokeModalProps) {
+function RevokeModal({ game, onClose, onRevoked }: { game: Game; onClose: () => void; onRevoked: (g: Game) => void }) {
   const [revoking, setRevoking] = useState(false)
   const [error, setError] = useState('')
   const [newKey, setNewKey] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   const handleRevoke = async () => {
-    setRevoking(true)
-    setError('')
+    setRevoking(true); setError('')
     try {
-      const response = await fetch(`/api/games/${encodeURIComponent(game.id)}/regenerate-key`, {
-        method: 'POST',
-      })
+      const response = await fetch(`/api/games/${encodeURIComponent(game.id)}/regenerate-key`, { method: 'POST' })
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}))
         throw new Error(payload.error ?? 'Failed to regenerate API key')
@@ -177,92 +192,86 @@ function RevokeModal({ game, onClose, onRevoked }: RevokeModalProps) {
       setNewKey(updated.apiKey)
       onRevoked({ ...game, apiKey: updated.apiKey })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to regenerate API key')
+      setError(err instanceof Error ? err.message : 'Failed')
     } finally {
       setRevoking(false)
     }
   }
 
-  const handleCopy = () => {
-    if (!newKey) return
-    navigator.clipboard.writeText(newKey)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="w-full max-w-lg border-4 border-purple-500 bg-black shadow-[8px_8px_0px_0px_rgba(168,85,247,1)]">
-        {/* Header */}
-        <div className="border-b-4 border-purple-500 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white uppercase tracking-wider">
-            {newKey ? '✓ New API Key Generated' : '⚠ Revoke API Key'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-purple-300 hover:text-white text-xl font-bold transition-colors"
-          >
-            ✕
-          </button>
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 50,
+      backgroundColor: 'rgba(0,0,0,0.75)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
+    }}>
+      <div style={{
+        width: '100%', maxWidth: '500px',
+        backgroundColor: '#252220',
+        border: '1px solid rgba(216,49,91,0.25)',
+      }}>
+        <div style={{
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          padding: '1.25rem 1.5rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span className="font-condensed" style={{
+            fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.1em',
+            textTransform: 'uppercase', color: '#ffffff',
+          }}>
+            {newKey ? '✓ New Key Generated' : '⚠ Revoke API Key'}
+          </span>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none',
+            color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: '1.1rem',
+          }}>✕</button>
         </div>
 
-        <div className="p-6">
+        <div style={{ padding: '1.5rem' }}>
           {!newKey ? (
             <>
-              <p className="text-gray-300 text-sm font-mono mb-2">
-                Game: <span className="text-white font-bold">{game.name}</span>
+              <p className="font-body" style={{
+                fontSize: '0.875rem', color: 'rgba(255,255,255,0.6)',
+                marginBottom: '1rem',
+              }}>
+                Game: <strong style={{ color: '#ffffff' }}>{game.name}</strong>
               </p>
-              <div className="border-2 border-purple-500/40 bg-purple-950/20 p-4 mb-5">
-                <p className="text-purple-300 text-xs font-mono leading-relaxed">
-                  Are you sure you want to revoke the current API key and generate a new one?
-                  Any integrations using the old key will <span className="text-purple-300 font-bold">immediately stop working</span>.
+              <div style={{
+                backgroundColor: 'rgba(216,49,91,0.06)',
+                border: '1px solid rgba(216,49,91,0.2)',
+                padding: '0.875rem', marginBottom: '1.25rem',
+              }}>
+                <p className="font-body" style={{
+                  fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', lineHeight: 1.6,
+                }}>
+                  Revoking the current key will <strong style={{ color: '#ffffff' }}>immediately break</strong> any integrations using it.
                 </p>
               </div>
-
-              {error && (
-                <p className="mb-4 text-xs text-purple-300 font-mono">{error}</p>
-              )}
-
-              <div className="flex gap-3 justify-end">
-                <RetroButton variant="blue" size="sm" onClick={onClose} disabled={revoking}>
-                  CANCEL
-                </RetroButton>
-                <RetroButton
-                  variant="purple"
-                  size="sm"
-                  onClick={handleRevoke}
-                  disabled={revoking}
-                >
-                  {revoking ? 'REVOKING...' : 'YES, REVOKE & REGENERATE'}
-                </RetroButton>
+              {error && <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.8rem', marginBottom: '1rem' }}>{error}</p>}
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <GcButton variant="ghost" onClick={onClose} disabled={revoking}>Cancel</GcButton>
+                <GcButton variant="danger" onClick={handleRevoke} disabled={revoking}>
+                  {revoking ? 'Revoking…' : 'Revoke & Regenerate'}
+                </GcButton>
               </div>
             </>
           ) : (
             <>
-              <p className="text-blue-300 text-xs font-bold uppercase mb-2">
-                ⚠ Save your new API key — the old one is now invalid
-              </p>
-              <p className="text-gray-400 text-xs font-mono mb-4">
-                Game: <span className="text-white font-bold">{game.name}</span>
-              </p>
-
-              <div className="bg-slate-950 border-4 border-blue-400 p-4 mb-4 break-all">
-                <p className="text-blue-300 font-mono text-xs leading-relaxed">
-                  {newKey}
-                </p>
+              <p style={{
+                fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em',
+                textTransform: 'uppercase', color: '#D8315B', marginBottom: '1rem',
+              }}>⚠ Old key is now invalid</p>
+              <div style={{
+                backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)',
+                padding: '1rem', marginBottom: '1.25rem', wordBreak: 'break-all',
+              }}>
+                <p className="font-mono" style={{ fontSize: '0.75rem', color: 'rgba(216,49,91,0.9)' }}>{newKey}</p>
               </div>
-
-              <div className="flex gap-3 justify-end">
-                <RetroButton
-                  variant={copied ? 'blue' : 'purple'}
-                  size="sm"
-                  onClick={handleCopy}
-                >
-                  {copied ? '✓ COPIED!' : 'COPY NEW KEY'}
-                </RetroButton>
-                <RetroButton variant="blue" size="sm" onClick={onClose}>
-                  DONE
-                </RetroButton>
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <GcButton variant={copied ? 'primary' : 'outline'} onClick={() => {
+                  navigator.clipboard.writeText(newKey)
+                  setCopied(true); setTimeout(() => setCopied(false), 2000)
+                }}>{copied ? '✓ Copied' : 'Copy Key'}</GcButton>
+                <GcButton variant="primary" onClick={onClose}>Done</GcButton>
               </div>
             </>
           )}
@@ -272,27 +281,38 @@ function RevokeModal({ game, onClose, onRevoked }: RevokeModalProps) {
   )
 }
 
-// ── Key Icon SVG ───────────────────────────────────────────────────────────
+// Minimal button component inline
+type BtnVariant = 'primary' | 'outline' | 'ghost' | 'danger'
+function GcButton({ variant = 'outline', onClick, disabled, children }: {
+  variant?: BtnVariant; onClick?: () => void; disabled?: boolean; children: React.ReactNode
+}) {
+  const styles: Record<BtnVariant, React.CSSProperties> = {
+    primary: { backgroundColor: '#D8315B', borderColor: '#D8315B', color: '#ffffff' },
+    outline: { backgroundColor: 'transparent', borderColor: 'rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.8)' },
+    ghost: { backgroundColor: 'transparent', borderColor: 'transparent', color: 'rgba(255,255,255,0.5)' },
+    danger: { backgroundColor: 'rgba(216,49,91,0.15)', borderColor: 'rgba(216,49,91,0.5)', color: '#ffffff' },
+  }
+  return (
+    <button onClick={onClick} disabled={disabled} className="font-condensed" style={{
+      fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+      padding: '0.45rem 1rem', border: '2px solid', borderRadius: 0, cursor: 'pointer',
+      transition: 'all 0.15s ease', opacity: disabled ? 0.4 : 1,
+      ...styles[variant],
+    }}>
+      {children}
+    </button>
+  )
+}
 
 function KeyIcon({ className }: { className?: string }) {
   return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="7.5" cy="15.5" r="5.5" />
       <path d="m21 2-9.6 9.6" />
       <path d="m15.5 7.5 3 3L22 7l-3-3" />
     </svg>
   )
 }
-
-// ── Main Games Page ────────────────────────────────────────────────────────
 
 export default function GamesPage() {
   const [games, setGames] = useState<Game[]>([])
@@ -302,8 +322,7 @@ export default function GamesPage() {
   const [revokeTarget, setRevokeTarget] = useState<Game | null>(null)
 
   const loadGames = useCallback(async () => {
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
     try {
       const response = await fetch('/api/games')
       if (!response.ok) throw new Error('Failed to fetch games')
@@ -316,101 +335,161 @@ export default function GamesPage() {
     }
   }, [])
 
-  useEffect(() => {
-    loadGames()
-  }, [loadGames])
-
-  const handleGameCreated = (newGame: Game) => {
-    setGames((prev) => [{ ...newGame, characterCount: 0 }, ...prev])
-  }
-
-  const handleKeyRevoked = (updatedGame: Game) => {
-    setGames((prev) =>
-      prev.map((g) => (g.id === updatedGame.id ? { ...g, apiKey: updatedGame.apiKey } : g))
-    )
-  }
+  useEffect(() => { loadGames() }, [loadGames])
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div style={{ minHeight: '100vh', backgroundColor: '#1E1B18', color: '#ffffff' }}>
       <TopNav />
 
-      <main className="p-8 max-w-7xl mx-auto">
-        <div className="mb-12 flex items-center justify-between">
+      <main style={{ padding: '3rem 2rem', maxWidth: '1200px', margin: '0 auto' }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
+          marginBottom: '3rem', paddingBottom: '1.5rem',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+        }}>
           <div>
-            <h1 className="gradient-text gradient-neon text-4xl font-bold mb-2">
-              GAMES
-            </h1>
-            <p className="text-blue-400 text-sm uppercase font-bold">
-              Select a game to manage assigned agents
+            <p className="font-condensed" style={{
+              fontSize: '0.65rem', letterSpacing: '0.15em', textTransform: 'uppercase',
+              color: '#D8315B', marginBottom: '0.5rem',
+            }}>Management Console</p>
+            <h1 className="font-display" style={{
+              fontSize: 'clamp(2rem, 4vw, 3rem)',
+              fontWeight: 400, letterSpacing: '-0.02em', color: '#ffffff',
+            }}>Games</h1>
+            <p className="font-body" style={{
+              fontSize: '0.875rem', color: 'rgba(255,255,255,0.4)',
+              marginTop: '0.25rem',
+            }}>
+              {games.length} game{games.length !== 1 ? 's' : ''} · Select to manage agents
             </p>
           </div>
 
-          <RetroButton
-            variant="blue"
-            size="md"
+            <button
             onClick={() => setShowCreate(true)}
+              className="font-condensed"
+            style={{
+              fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em',
+              textTransform: 'uppercase', padding: '0.6rem 1.5rem',
+              backgroundColor: '#D8315B', border: '2px solid #D8315B',
+              color: '#ffffff', cursor: 'pointer', borderRadius: 0,
+              boxShadow: '0 0 20px rgba(216,49,91,0.3)',
+              transition: 'all 0.15s ease',
+            }}
           >
-            + CREATE NEW
-          </RetroButton>
+            + New Game
+          </button>
         </div>
 
         {loading ? (
-          <div className="text-center py-12">
-            <p className="text-blue-400 font-mono">Loading games...</p>
+          <div style={{
+            textAlign: 'center', padding: '5rem 0',
+            color: 'rgba(255,255,255,0.3)', fontSize: '0.875rem',
+          }} className="font-body">
+            Loading…
           </div>
         ) : error ? (
-          <div className="border-4 border-purple-500 bg-black p-6 text-center text-purple-300 font-mono">
-            {error}
-          </div>
+          <div style={{
+            padding: '1.5rem',
+            backgroundColor: 'rgba(216,49,91,0.08)',
+            border: '1px solid rgba(216,49,91,0.25)',
+            color: 'rgba(255,255,255,0.85)',
+            fontSize: '0.875rem',
+          }} className="font-body">{error}</div>
         ) : games.length === 0 ? (
-          <div className="border-4 border-blue-400 bg-black p-12 text-center">
-            <p className="text-blue-300 text-lg font-bold mb-4">NO GAMES FOUND</p>
-            <p className="text-gray-400 font-mono mb-6">
-              Create a game to get an API key and assign agents.
-            </p>
-            <RetroButton variant="blue" size="lg" onClick={() => setShowCreate(true)}>
-              CREATE YOUR FIRST GAME
-            </RetroButton>
+          <div style={{
+            border: '1px dashed rgba(255,255,255,0.1)',
+            padding: '5rem 2rem', textAlign: 'center',
+          }}>
+            <p className="font-display" style={{
+              fontSize: '1.5rem', color: 'rgba(255,255,255,0.2)',
+              marginBottom: '1rem',
+            }}>No games yet</p>
+            <p className="font-body" style={{
+              fontSize: '0.875rem', color: 'rgba(255,255,255,0.35)',
+              marginBottom: '2rem',
+            }}>Create a game to get an API key and start assigning agents.</p>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="font-condensed"
+              style={{
+                fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.1em',
+                textTransform: 'uppercase', padding: '0.75rem 2rem',
+                backgroundColor: '#D8315B', border: '2px solid #D8315B',
+                color: '#ffffff', cursor: 'pointer', borderRadius: 0,
+              }}
+            >
+              Create First Game
+            </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+            gap: '1px',
+            backgroundColor: 'rgba(255,255,255,0.06)',
+          }}>
             {games.map((game) => (
-              <div
-                key={game.id}
-                className="border-4 border-blue-500 bg-black hover:border-purple-500 transition-all group relative flex flex-col"
+              <div key={game.id} style={{
+                backgroundColor: '#1E1B18', position: 'relative',
+                transition: 'background-color 0.2s ease',
+              }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(216,49,91,0.04)')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#1E1B18')}
               >
-                {/* Key revoke button — top right corner */}
+                {/* Key button */}
                 <button
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    setRevokeTarget(game)
-                  }}
+                  onClick={e => { e.preventDefault(); e.stopPropagation(); setRevokeTarget(game) }}
                   title="Revoke & regenerate API key"
-                  className="absolute top-3 right-3 z-10 p-2 border-2 border-gray-700 hover:border-purple-500 text-gray-500 hover:text-purple-300 transition-all bg-black"
+                  style={{
+                    position: 'absolute', top: '1rem', right: '1rem', zIndex: 10,
+                    padding: '0.375rem',
+                    background: 'none', border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'rgba(255,255,255,0.3)', cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderColor = 'rgba(216,49,91,0.4)'
+                    e.currentTarget.style.color = '#ffffff'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'
+                    e.currentTarget.style.color = 'rgba(255,255,255,0.3)'
+                  }}
                 >
-                  <KeyIcon className="w-4 h-4" />
+                  <KeyIcon className="w-3.5 h-3.5" />
                 </button>
 
-                {/* Clickable card area */}
-                <Link href={`/games/${game.id}`} className="flex h-full flex-1 flex-col p-6">
-                  <div>
-                    <h3 className="text-xl font-bold text-white uppercase mb-2 pr-8">
-                      {game.name}
-                    </h3>
-                    <p className="text-sm text-blue-300 font-bold mb-1">
-                      {game.characterCount}{' '}
-                      {game.characterCount === 1 ? 'CHARACTER' : 'CHARACTERS'}
-                    </p>
-                    <p className="text-xs text-gray-400 font-mono">
-                      {new Date(game.createdAt).toLocaleDateString()}
-                    </p>
+                <Link href={`/games/${game.id}`} style={{ textDecoration: 'none', display: 'block', padding: '1.75rem' }}>
+                  <div className="font-condensed" style={{
+                    fontSize: '0.6rem', letterSpacing: '0.12em', textTransform: 'uppercase',
+                    color: 'rgba(216,49,91,0.7)', marginBottom: '0.5rem',
+                  }}>
+                    {new Date(game.createdAt).toLocaleDateString()}
                   </div>
 
-                  <div className="mt-auto border-t-2 border-blue-500 pt-4">
-                    <RetroButton variant="blue" size="md" className="w-full text-xs">
-                      VIEW CHARACTERS
-                    </RetroButton>
+                  <h3 className="font-display" style={{
+                    fontSize: '1.35rem', fontWeight: 400,
+                    color: '#ffffff', letterSpacing: '-0.01em',
+                    marginBottom: '0.5rem', paddingRight: '2rem',
+                  }}>
+                    {game.name}
+                  </h3>
+
+                  <p className="font-condensed" style={{
+                    fontSize: '0.7rem', letterSpacing: '0.08em', textTransform: 'uppercase',
+                    color: 'rgba(255,255,255,0.35)',
+                    marginBottom: '1.5rem',
+                  }}>
+                    {game.characterCount} {game.characterCount === 1 ? 'agent' : 'agents'}
+                  </p>
+
+                  <div className="font-condensed" style={{
+                    fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase',
+                    color: 'rgba(216,49,91,0.7)',
+                    display: 'flex', alignItems: 'center', gap: '0.375rem',
+                  }}>
+                    View Agents →
                   </div>
                 </Link>
               </div>
@@ -419,21 +498,20 @@ export default function GamesPage() {
         )}
       </main>
 
-      {/* Create Game Modal */}
       {showCreate && (
         <CreateGameModal
           onClose={() => setShowCreate(false)}
-          onCreated={handleGameCreated}
+          onCreated={(game) => setGames(prev => [{ ...game, characterCount: 0 }, ...prev])}
         />
       )}
 
-      {/* Revoke API Key Modal */}
       {revokeTarget && (
         <RevokeModal
           game={revokeTarget}
           onClose={() => setRevokeTarget(null)}
           onRevoked={(updated) => {
-            handleKeyRevoked(updated)
+            setGames(prev => prev.map(g => g.id === updated.id ? { ...g, apiKey: updated.apiKey } : g))
+            setRevokeTarget(null)
           }}
         />
       )}

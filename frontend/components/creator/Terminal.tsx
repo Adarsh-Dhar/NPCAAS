@@ -62,6 +62,18 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
   const handleSendMessage = async () => {
     if (!input.trim()) return
 
+    if (!characterId) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'system',
+          text: 'Deploy the NPC first before sending chat messages.',
+          id: `err_${Date.now()}`,
+        },
+      ])
+      return
+    }
+
     const userMessage = input.trim()
     setInput('')
     const userId = `msg_${Date.now()}`
@@ -435,11 +447,11 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
 
       <RetroInput
         borderColor="blue"
-        placeholder="Send a message..."
+        placeholder={characterId ? 'Send a message...' : 'Deploy the NPC to chat'}
         value={input}
         onChange={(e) => setInput(e.target.value)}
         className="text-xs"
-        disabled={loading}
+        disabled={loading || !characterId}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !loading) handleSendMessage()
         }}
@@ -449,7 +461,7 @@ export default function Terminal({ characterId, onAction }: TerminalProps) {
           variant="blue"
           size="sm"
           onClick={handleSendMessage}
-          disabled={loading || !input.trim()}
+          disabled={loading || !characterId || !input.trim()}
           className="text-xs"
         >
           {loading ? 'Sending...' : 'Send'}

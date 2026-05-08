@@ -1,17 +1,13 @@
 interface FormSectionProps {
   title: string
   description?: string
-  borderColor: 'orange' | 'purple' | 'red' | 'yellow' | 'cyan' | 'green'
+  borderColor: 'purple' | 'blue'
   children: React.ReactNode
 }
 
 const colorMap = {
-  orange: 'retro-card-blue',
-  purple: 'retro-card-purple',
-  red: 'retro-card-blue',
-  yellow: 'retro-card-blue',
-  cyan: 'retro-card-blue',
-  green: 'retro-card-blue',
+  blue : 'retro-border-blue',
+  purple : 'retro-border-purple',
 }
 
 export default function FormSection({
@@ -21,7 +17,7 @@ export default function FormSection({
   children,
 }: FormSectionProps) {
   return (
-    <div className={`${colorMap[borderColor]}`}>
+    <div className={`${colorMap[borderColor as keyof typeof colorMap]} border-2 rounded-lg p-6`}>
       {/* Header */}
       <div className="mb-4 pb-3 border-b-2 border-current">
         <h3 className="text-sm font-bold uppercase text-white">{title}</h3>

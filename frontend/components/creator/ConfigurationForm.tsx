@@ -348,7 +348,7 @@ export default function ConfigurationForm({
           AGENT IDENTITY
         </h3>
         <RetroInput
-          borderColor="blue"
+          borderColor="cyan"
           label="Character Name"
           placeholder="e.g. KERMIT_NPC_01"
           value={formData.name}

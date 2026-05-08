@@ -6,35 +6,45 @@ interface RetroInputProps
   label?: string
 }
 
-const borderClasses = {
-  cyan: 'border-blue-400',
-  orange: 'border-blue-700',
-  purple: 'border-purple-400',
-  yellow: 'border-blue-500',
-  red: 'border-purple-500',
-  green: 'border-blue-600',
-  magenta: 'border-purple-300',
-  blue: 'border-blue-300',
-}
-
 const RetroInput = React.forwardRef<HTMLInputElement, RetroInputProps>(
-  ({ borderColor = 'blue', label, className = '', ...props }, ref) => {
+  ({ borderColor = 'blue', label, className = '', style, ...props }, ref) => {
+    const [focused, setFocused] = React.useState(false)
+
+    const isCrimson = borderColor === 'purple' || borderColor === 'magenta' || borderColor === 'red'
+
     return (
-      <div className="flex flex-col gap-2">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
         {label && (
-          <label className="text-xs font-bold uppercase text-white">
+          <label className="font-condensed" style={{
+            fontSize: '0.65rem',
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.5)',
+          }}>
             {label}
           </label>
         )}
         <input
           ref={ref}
-          className={`
-            w-full bg-black text-white border-4 rounded-none px-3 py-2 
-            focus:outline-none focus:ring-0 focus:bg-slate-950
-            transition-colors placeholder-slate-500
-            ${borderClasses[borderColor]}
-            ${className}
-          `}
+          className={`font-body ${className}`.trim()}
+          style={{
+            width: '100%',
+            backgroundColor: focused ? 'rgba(216,49,91,0.05)' : 'rgba(255,255,255,0.04)',
+            color: '#ffffff',
+            border: '1px solid',
+            borderColor: focused
+              ? (isCrimson ? 'rgba(216,49,91,0.7)' : 'rgba(255,255,255,0.35)')
+              : (isCrimson ? 'rgba(216,49,91,0.25)' : 'rgba(255,255,255,0.12)'),
+            borderRadius: 0,
+            padding: '0.6rem 0.875rem',
+            fontSize: '0.875rem',
+            outline: 'none',
+            transition: 'all 0.2s ease',
+            ...style,
+          }}
+          onFocus={e => { setFocused(true); props.onFocus?.(e) }}
+          onBlur={e => { setFocused(false); props.onBlur?.(e) }}
           {...props}
         />
       </div>
