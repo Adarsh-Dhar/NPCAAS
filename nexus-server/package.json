@@ -1,0 +1,30 @@
+{
+  "name": "nexus-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/src/app.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/src/app.js",
+    "dev": "npx tsc && node dist/src/app.js",
+    "metaverse:dev": "node -r ts-node/register src/app.ts",
+    "metaverse:js": "node server.js",
+    "metaverse:start": "PORT=3000 node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "packageManager": "pnpm@9.10.0+sha1.216899f511c8dfde183c7cb50b69009c779534a8",
+  "devDependencies": {
+    "@types/express": "^4.17.1",
+    "ts-node": "10.9.2",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@types/cors": "^2.8.19",
+    "cors": "^2.8.6",
+    "express": "^4.17.1"
+  }
+}
