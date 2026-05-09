@@ -88,7 +88,9 @@ export default function TradesPage() {
                           Trade #{trade.id}
                         </h3>
                         <div className="text-xs text-muted-foreground mt-1 font-mono">
-                          {trade.agents.length > 0
+                          {trade.buyer && trade.seller
+                            ? `Buyer: ${trade.buyer} | Seller: ${trade.seller}`
+                            : trade.agents.length > 0
                             ? `Agents: ${trade.agents.join(', ')}`
                             : trade.brokerName
                             ? `Broker: ${trade.brokerName}`

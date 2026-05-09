@@ -101,7 +101,9 @@ export default function TradeDetailPage({ params }: { params: Promise<{ id: stri
                 Participating Agents
               </div>
               <div className="space-y-2">
-                {(trade.agents.length > 0
+                {(trade.buyer && trade.seller
+                  ? [`BUYER: ${trade.buyer}`, `SELLER: ${trade.seller}`]
+                  : trade.agents.length > 0
                   ? trade.agents
                   : trade.brokerName
                   ? [trade.brokerName]

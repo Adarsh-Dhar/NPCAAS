@@ -30,6 +30,8 @@ export interface Trade {
   id: string;
   poolId: string;
   brokerName: string;
+  buyer?: string;
+  seller?: string;
   asset: string;
   price: string;
   status: 'PENDING' | 'ACTIVE' | 'SETTLED';
@@ -94,6 +96,8 @@ export const api = {
   executeTrade: (data: {
     poolId: string;
     brokerName: string;
+    buyer?: string;
+    seller?: string;
     asset: string;
     price: string | number;
     negotiation?: Record<string, unknown>;

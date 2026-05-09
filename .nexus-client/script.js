@@ -273,15 +273,21 @@ function kpass_sessionRevoke(sessionId) {
 
 // ─── TRADE EXECUTION ─────────────────────────────────────────────────────────
 async function executeTrade(poolId, incomingMsg, context) {
-  const { brokerName } = context;
+  const { brokerName, agentConfig } = context;
   const asset =
     incomingMsg?.asset || incomingMsg?.instrument || 'Real-Time Sentiment Dataset';
   const rawPrice = incomingMsg?.amount ?? incomingMsg?.price ?? DEFAULT_MAX_PER_TX;
   const price = String(rawPrice);
+  const role = String(agentConfig?.role || 'buyer').toLowerCase();
+  const counterparty = incomingMsg?.from || incomingMsg?.counterparty || 'DataOracle_7';
+  const buyer = role === 'seller' ? counterparty : brokerName;
+  const seller = role === 'seller' ? brokerName : counterparty;
 
   const payload = {
     poolId,
     brokerName,
+    buyer,
+    seller,
     asset,
     price,
     negotiation: incomingMsg,
@@ -295,11 +301,13 @@ async function executeTrade(poolId, incomingMsg, context) {
   log.emit('TRADE_EXECUTED', {
     poolId,
     brokerName,
+    buyer,
+    seller,
     asset,
     price,
     success: Boolean(result?.success),
   });
-  log.info(`Trade settled for ${brokerName}: ${asset} @ $${price}`);
+  log.info(`P2P trade settled: ${buyer} acquired ${asset} from ${seller} for $${price}`);
   return result;
 }
 

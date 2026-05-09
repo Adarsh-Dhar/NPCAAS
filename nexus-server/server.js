@@ -277,14 +277,18 @@ app.post('/api/join-pool', (req, res) => {
 
 // POST /api/execute-trade — Settle a Block Trade
 app.post('/api/execute-trade', (req, res) => {
-  const { poolId, brokerName, asset, price, negotiation } = req.body || {};
+  const { poolId, brokerName, buyer, seller, counterparty, asset, price, negotiation } =
+    req.body || {};
 
   if (!poolId || !darkPools[poolId]) {
     return res.status(404).json({ error: `Pool ${poolId} not found.` });
   }
-  if (!brokerName || price === undefined || price === null) {
-    return res.status(400).json({ error: 'brokerName and price are required' });
+  if ((!brokerName && !buyer) || price === undefined || price === null) {
+    return res.status(400).json({ error: 'buyer (or brokerName) and price are required' });
   }
+
+  const buyerName = String(buyer || brokerName || 'Unknown Buyer');
+  const sellerName = String(seller || counterparty || 'DataOracle_7');
 
   // Validate price is numeric
   const numericPrice = parseFloat(String(price).replace(/[^0-9.]/g, ''));
@@ -303,7 +307,9 @@ app.post('/api/execute-trade', (req, res) => {
   const trade = {
     id: tradeId,
     poolId,
-    brokerName: String(brokerName),
+    brokerName: String(brokerName || buyerName),
+    buyer: buyerName,
+    seller: sellerName,
     asset: String(asset || 'Unknown Asset'),
     price: String(price),
     status: 'SETTLED',
@@ -329,7 +335,7 @@ app.post('/api/execute-trade', (req, res) => {
   pushGlobalTrade(trade);
 
   // Update broker status: SETTLING → IDLE after 3s
-  const broker = darkPools[poolId].brokers.find((b) => b.brokerName === brokerName);
+  const broker = darkPools[poolId].brokers.find((b) => b.brokerName === buyerName);
   if (broker) {
     broker.status = 'SETTLING';
     broker.lastActive = new Date().toISOString();
@@ -343,10 +349,11 @@ app.post('/api/execute-trade', (req, res) => {
     }, 3000);
   }
 
-  console.log(`\n[NEXUS CLEARING] ⚡ Block Trade Confirmed`);
-  console.log(`[NEXUS CLEARING] 💼 Broker: ${brokerName} | Pool: ${poolId}`);
-  console.log(`[NEXUS CLEARING] 📊 Asset: [${asset}]`);
-  console.log(`[NEXUS CLEARING] 💵 Amount: $${price} USDC`);
+  console.log(`\n[NEXUS CLEARING] ⚡ P2P Block Trade Confirmed On-Chain`);
+  console.log(`[NEXUS CLEARING] 🟢 BUYER:  ${buyerName}`);
+  console.log(`[NEXUS CLEARING] 🔴 SELLER: ${sellerName}`);
+  console.log(`[NEXUS CLEARING] 📊 ASSET:  [${asset}]`);
+  console.log(`[NEXUS CLEARING] 💵 SETTLED AMOUNT: $${price} USDC`);
   console.log(`[NEXUS CLEARING] 🔗 TxHash: ${txHash}`);
 
   io.to(poolId).emit('pool:trade-settled', trade);
@@ -356,7 +363,7 @@ app.post('/api/execute-trade', (req, res) => {
     poolId,
     tradeId,
     timestamp: ts,
-    content: `[BLOCK TRADE CLEARED] ${brokerName} acquired ${asset} for $${price} USDC via Kite Settlement`,
+    content: `[BLOCK TRADE CLEARED] ${buyerName} acquired ${asset} from ${sellerName} for $${price} USDC.`,
     isBlurred: false,
     isSettlement: true,
     txHash,

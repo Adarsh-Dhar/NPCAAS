@@ -29,6 +29,8 @@ export interface Trade {
   details: string;
   poolId?: string;
   brokerName?: string;
+  buyer?: string;
+  seller?: string;
   asset?: string;
   price?: string;
   txHash?: string;
@@ -94,6 +96,8 @@ export interface ApiTrade {
   id: string;
   poolId: string;
   brokerName: string;
+  buyer?: string;
+  seller?: string;
   asset: string;
   price: string;
   status: 'PENDING' | 'ACTIVE' | 'SETTLED';
