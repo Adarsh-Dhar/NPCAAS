@@ -1,5 +1,7 @@
 const { execSync } = require('child_process');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '.env'), override: true });
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const SERVER_URL = process.env.NEXUS_SERVER_URL || 'http://localhost:5000/api/execute-trade';

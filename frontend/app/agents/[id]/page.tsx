@@ -145,22 +145,40 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               <h4 className="text-sm font-bold text-foreground mb-4 uppercase tracking-wider">
                 Recent Trades ({agentTrades.length})
               </h4>
-              <div className="space-y-2">
-                {agentTrades.slice(0, 5).map(trade => (
-                  <Link key={trade.id} href={`/trades/${trade.id}`}>
-                    <div className="flex items-center justify-between p-2 bg-muted/20 rounded hover:bg-muted/40 transition-colors">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 bg-primary rounded-full" />
-                        <span className="text-xs font-mono text-foreground">{trade.asset}</span>
+              <ul className="space-y-4">
+                {agentTrades.slice(0, 5).map((trade, i) => (
+                  <li key={trade.id || `${trade.asset || 'trade'}-${i}`}>
+                    <Link href={`/trades/${trade.id}`} className="block">
+                      <div className="flex justify-between items-start border-b border-green-900/50 pb-3 hover:border-green-700/70 transition-colors">
+                        <div>
+                          <div className="text-white font-bold">
+                            {trade.asset || 'Real-Time Sentiment Dataset'}
+                          </div>
+
+                          <div className="text-xs text-green-500 mt-1 flex items-center gap-2 flex-wrap">
+                            <span className="bg-green-950 px-1 border border-green-800 rounded">
+                              BUYER: {trade.buyer || 'QuantBot-Alpha'}
+                            </span>
+                            <span className="text-green-700">⟷</span>
+                            <span className="bg-green-950 px-1 border border-green-800 rounded">
+                              SELLER: {trade.seller || 'DataOracle_7'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <div className="text-green-400 font-mono">
+                            ${trade.price || '0.50'} USDC
+                          </div>
+                          <div className="text-xs text-green-800 mt-1">
+                            {trade.timestamp || trade.createdAt || '—'}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 text-xs">
-                        <span className="text-primary font-bold">${trade.price} USDC</span>
-                        <span className="text-muted-foreground">{trade.timestamp}</span>
-                      </div>
-                    </div>
-                  </Link>
+                    </Link>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           )}
         </div>
