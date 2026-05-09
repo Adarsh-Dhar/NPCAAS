@@ -1,11 +1,13 @@
 import type { Metadata } from 'next'
+import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
-import { WalletProvider } from '@/components/WalletContext'
 import './globals.css'
 
+const geist = Geist({ subsets: ["latin"] });
+
 export const metadata: Metadata = {
-  title: 'GuildCraft | Autonomous NPC Platform',
-  description: 'Create autonomous AI NPCs for the PYUSD network',
+  title: 'NEXUS OTC - Decentralized Trading',
+  description: 'Secure peer-to-peer OTC trading network',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -31,32 +33,10 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const currentYear = new Date().getFullYear()
-
   return (
-    <html lang="en">
-      <head>
-        <link rel="stylesheet" href="https://use.typekit.net/syc1pzu.css" />
-      </head>
-      <body className="font-body">
-        <WalletProvider>
-          {children}
-        </WalletProvider>
-        <footer
-          className="font-condensed"
-          style={{
-            borderTop: '1px solid rgba(255,255,255,0.08)',
-            backgroundColor: '#1a1715',
-            padding: '1rem 1.5rem',
-            textAlign: 'center',
-            fontSize: '0.75rem',
-            letterSpacing: '0.06em',
-            color: 'rgba(255,255,255,0.3)',
-            textTransform: 'uppercase',
-          }}
-        >
-          {`© ${currentYear} Adarsh — MIT License`}
-        </footer>
+    <html lang="en" className="dark" style={geist.style}>
+      <body className="antialiased bg-background text-foreground">
+        {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

@@ -1,13 +1,10 @@
-import TopNav from '@/components/TopNav'
-import HeroSection from '@/components/landing/HeroSection'
-import ExplainerGrid from '@/components/landing/ExplainerGrid'
+import { NexusLayout } from '@/components/nexus-layout';
+import { LiveMatchingEngine } from '@/components/main-feed/live-matching-engine';
 
 export default function Home() {
   return (
-    <main className="bg-black min-h-screen">
-      <TopNav />
-      <HeroSection />
-      <ExplainerGrid />
-    </main>
-  )
+    <NexusLayout>
+      <LiveMatchingEngine />
+    </NexusLayout>
+  );
 }
