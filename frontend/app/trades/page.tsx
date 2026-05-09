@@ -5,7 +5,7 @@ import { NexusLayout } from '@/components/nexus-layout';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useNexus } from '@/lib/nexus-context';
 
-const statusColors = {
+const statusColors: Record<string, string> = {
   PENDING: 'text-secondary border-secondary/50 bg-secondary/10',
   ACTIVE: 'text-primary border-primary/50 bg-primary/10',
   SETTLED: 'text-accent border-accent/50 bg-accent/10',
@@ -16,9 +16,10 @@ export default function TradesPage() {
 
   async function handleDemoSettlement() {
     const poolId = activePoolId ?? pools[0]?.poolId;
-    const brokerName = agents[0]?.name;
+    const brokerName = agents[0]?.brokerName;
 
     if (!poolId || !brokerName) {
+      console.warn('[TradesPage] No pool or broker available for demo settlement');
       return;
     }
 
@@ -60,46 +61,80 @@ export default function TradesPage() {
               </button>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">All negotiations, active trades, and settlements</p>
+          <p className="text-xs text-muted-foreground mt-2">
+            All negotiations, active trades, and settlements
+          </p>
         </div>
 
         <ScrollArea className="flex-1">
-          <div className="space-y-3 pr-4">
-            {trades.map((trade) => (
-              <Link key={trade.id} href={`/trades/${trade.id}`}>
-                <div className="border border-border/40 rounded-lg p-4 bg-card/50 hover:bg-card/80 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10 transition-all cursor-pointer group backdrop-blur-sm">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">
-                        Trade #{trade.id}
-                      </h3>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        Agents: {trade.agents.join(', ')}
+          {trades.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+              <div className="w-12 h-12 border border-border/30 rounded-full flex items-center justify-center">
+                <div className="w-3 h-3 bg-muted rounded-full" />
+              </div>
+              <p className="text-sm font-medium">No trades recorded yet</p>
+              <p className="text-xs opacity-60 text-center max-w-56">
+                Use the CLI to deploy brokers or trigger a demo settlement above
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3 pr-4">
+              {trades.map((trade) => (
+                <Link key={trade.id} href={`/trades/${trade.id}`}>
+                  <div className="border border-border/40 rounded-lg p-4 bg-card/50 hover:bg-card/80 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10 transition-all cursor-pointer group backdrop-blur-sm">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-foreground group-hover:text-primary transition-colors font-mono">
+                          Trade #{trade.id}
+                        </h3>
+                        <div className="text-xs text-muted-foreground mt-1 font-mono">
+                          {trade.agents.length > 0
+                            ? `Agents: ${trade.agents.join(', ')}`
+                            : trade.brokerName
+                            ? `Broker: ${trade.brokerName}`
+                            : 'Unknown agents'}
+                        </div>
+                      </div>
+                      <span
+                        className={`text-xs px-3 py-1.5 border rounded-full font-semibold flex-shrink-0 ml-3 ${
+                          statusColors[trade.status] ?? 'text-muted-foreground border-border bg-muted/5'
+                        }`}
+                      >
+                        {trade.status}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4 text-xs">
+                      <div>
+                        <div className="text-muted-foreground uppercase tracking-wider mb-1 font-medium">
+                          Amount
+                        </div>
+                        <div className="text-primary font-bold font-mono">
+                          ${trade.price || '0'} USDC
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground uppercase tracking-wider mb-1 font-medium">
+                          Time
+                        </div>
+                        <div className="text-foreground font-medium font-mono">
+                          {trade.timestamp || trade.createdAt}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground uppercase tracking-wider mb-1 font-medium">
+                          Asset
+                        </div>
+                        <div className="text-accent truncate font-mono">
+                          {trade.asset || 'Live settlement'}
+                        </div>
                       </div>
                     </div>
-                    <span className={`text-xs px-3 py-1.5 border rounded-full font-semibold ${statusColors[trade.status as keyof typeof statusColors]}`}>
-                      {trade.status}
-                    </span>
                   </div>
-
-                  <div className="grid grid-cols-3 gap-4 text-xs">
-                    <div>
-                      <div className="text-muted-foreground uppercase tracking-wider mb-1 font-medium">Amount</div>
-                      <div className="text-primary font-bold">{trade.amount || trade.price || '0'}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground uppercase tracking-wider mb-1 font-medium">Created</div>
-                      <div className="text-foreground font-medium">{trade.createdAt}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground uppercase tracking-wider mb-1 font-medium">Details</div>
-                      <div className="text-accent truncate">{trade.details || trade.asset || 'Live settlement'}</div>
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </ScrollArea>
       </div>
     </NexusLayout>

@@ -5,6 +5,14 @@ import { getSocket } from '@/lib/socket';
 import { api, Broker, Trade, FeedActivity, GlobalState } from '@/lib/api';
 import type { Socket } from 'socket.io-client';
 
+interface ExecuteTradePayload {
+  poolId: string;
+  brokerName: string;
+  asset: string;
+  price: string | number;
+  negotiation?: Record<string, unknown> | string | null;
+}
+
 interface NexusContextValue {
   // Connection
   connected: boolean;
@@ -19,10 +27,13 @@ interface NexusContextValue {
   // Derived stats
   activeEnclaves: number;
   totalVolume: string;
+  activePoolId: string | null;
 
   // Actions
   refetch: () => void;
+  refreshState: () => void;
   clearFeed: () => void;
+  executeTrade: (payload: ExecuteTradePayload) => Promise<void>;
 }
 
 const NexusContext = createContext<NexusContextValue | null>(null);
@@ -45,6 +56,9 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
   const socketRef = useRef<Socket | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
+  // ── Derived: active pool id (first available pool) ───────────────────────
+  const activePoolId = pools.length > 0 ? pools[0].poolId : null;
+
   // ── REST fetch ──────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     try {
@@ -59,15 +73,37 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
 
       setAgents(agentsData);
       setTrades(tradesData);
-      setPools(stateData.pools.map(p => ({
-        poolId: p.poolId,
-        brokerCount: p.brokers ? p.brokers.length : 0,
-        tradeCount: p.tradeCount,
-      })));
+      setPools(
+        stateData.pools.map((p) => ({
+          poolId: p.poolId,
+          brokerCount: p.brokers ? p.brokers.length : 0,
+          tradeCount: p.tradeCount,
+        }))
+      );
     } catch {
       setServerOnline(false);
     }
   }, []);
+
+  // Alias so both refetch and refreshState work
+  const refreshState = fetchAll;
+
+  // ── executeTrade action ─────────────────────────────────────────────────────
+  const executeTrade = useCallback(async (payload: ExecuteTradePayload) => {
+    try {
+      await api.executeTrade({
+        poolId: payload.poolId,
+        brokerName: payload.brokerName,
+        asset: payload.asset,
+        price: payload.price,
+        negotiation: payload.negotiation as Record<string, unknown> | undefined,
+      });
+      // Refresh state after trade so UI updates immediately
+      await fetchAll();
+    } catch (err) {
+      console.error('[NexusContext] executeTrade error:', err);
+    }
+  }, [fetchAll]);
 
   // ── Socket setup ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -93,15 +129,15 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
 
     // Live feed activity
     socket.on('feed:activity', (item: FeedActivity) => {
-      setFeedItems(prev => {
+      setFeedItems((prev) => {
         const next = [item, ...prev];
         return next.slice(0, MAX_FEED_ITEMS);
       });
 
-      // If it's a settlement, update trades and agents
+      // If it's a settlement, update trades list
       if (item.type === 'SETTLEMENT' && item.trade) {
-        setTrades(prev => {
-          const exists = prev.find(t => t.id === item.trade!.id);
+        setTrades((prev) => {
+          const exists = prev.find((t) => t.id === item.trade!.id);
           if (exists) return prev;
           return [item.trade!, ...prev];
         });
@@ -110,16 +146,16 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
 
     // Pool-level broker/trade updates
     socket.on('pool:state', (data: { poolId: string; brokers: Broker[]; trades: Trade[] }) => {
-      setAgents(prev => {
-        const withPoolId = (data.brokers || []).map(b => ({ ...b, poolId: data.poolId }));
-        const filtered = prev.filter(a => a.poolId !== data.poolId);
+      setAgents((prev) => {
+        const withPoolId = (data.brokers || []).map((b) => ({ ...b, poolId: data.poolId }));
+        const filtered = prev.filter((a) => a.poolId !== data.poolId);
         return [...filtered, ...withPoolId];
       });
     });
 
     socket.on('pool:trade-settled', (trade: Trade) => {
-      setTrades(prev => {
-        const exists = prev.find(t => t.id === trade.id);
+      setTrades((prev) => {
+        const exists = prev.find((t) => t.id === trade.id);
         if (exists) return prev;
         return [trade, ...prev];
       });
@@ -130,34 +166,37 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
     });
 
     // Pool negotiation activity (blurred)
-    socket.on('pool:negotiation', (data: {
-      poolId: string;
-      timestamp: string;
-      from: string;
-      action: string;
-      isBlurred: boolean;
-    }) => {
-      setFeedItems(prev => {
-        const item: FeedActivity = {
-          type: 'NEGOTIATION',
-          poolId: data.poolId,
-          timestamp: data.timestamp,
-          content: `Private negotiation session ${data.poolId} — activity detected`,
-          isBlurred: true,
-          isSettlement: false,
-        };
-        return [item, ...prev].slice(0, MAX_FEED_ITEMS);
-      });
+    socket.on(
+      'pool:negotiation',
+      (data: {
+        poolId: string;
+        timestamp: string;
+        from: string;
+        action: string;
+        isBlurred: boolean;
+      }) => {
+        setFeedItems((prev) => {
+          const item: FeedActivity = {
+            type: 'NEGOTIATION',
+            poolId: data.poolId,
+            timestamp: data.timestamp,
+            content: `Private negotiation session ${data.poolId} — activity detected`,
+            isBlurred: true,
+            isSettlement: false,
+          };
+          return [item, ...prev].slice(0, MAX_FEED_ITEMS);
+        });
 
-      // Mark the agent as negotiating
-      setAgents(prev =>
-        prev.map(a =>
-          a.brokerName === data.from
-            ? { ...a, status: 'NEGOTIATING', lastActive: new Date().toISOString() }
-            : a
-        )
-      );
-    });
+        // Mark the agent as negotiating
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.brokerName === data.from
+              ? { ...a, status: 'NEGOTIATING', lastActive: new Date().toISOString() }
+              : a
+          )
+        );
+      }
+    );
 
     return () => {
       socket.off('connect');
@@ -185,7 +224,7 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
 
   const totalVolume = (() => {
     const total = trades.reduce((sum, t) => {
-      const n = parseFloat(t.price.replace(/[^0-9.]/g, ''));
+      const n = parseFloat(String(t.price).replace(/[^0-9.]/g, ''));
       return sum + (isNaN(n) ? 0 : n);
     }, 0);
     if (total >= 1_000_000) return `$${(total / 1_000_000).toFixed(1)}M`;
@@ -196,18 +235,23 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
   const clearFeed = useCallback(() => setFeedItems([]), []);
 
   return (
-    <NexusContext.Provider value={{
-      connected,
-      serverOnline,
-      agents,
-      trades,
-      feedItems,
-      pools,
-      activeEnclaves,
-      totalVolume,
-      refetch: fetchAll,
-      clearFeed,
-    }}>
+    <NexusContext.Provider
+      value={{
+        connected,
+        serverOnline,
+        agents,
+        trades,
+        feedItems,
+        pools,
+        activeEnclaves,
+        totalVolume,
+        activePoolId,
+        refetch: fetchAll,
+        refreshState,
+        clearFeed,
+        executeTrade,
+      }}
+    >
       {children}
     </NexusContext.Provider>
   );
