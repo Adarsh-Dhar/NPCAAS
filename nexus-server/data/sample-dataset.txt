@@ -1,0 +1,7 @@
+Sample dataset for Nexus OTC demo
+
+This is a placeholder dataset file for demonstration only.
+In production, the seller would securely upload the dataset to an object store
+and the buyer would receive a signed URL to download the dataset after settlement.
+
+— Nexus OTC Demo

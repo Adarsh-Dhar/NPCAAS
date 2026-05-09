@@ -31,6 +31,10 @@ const io = new Server(server, {
 
 const PORT = Number(process.env.PORT || 3000);
 
+// Serve sample datasets (secure delivery validated by token)
+const path = require('path');
+app.use('/data', express.static(path.join(__dirname, 'data')));
+
 // ─── Optional API key authentication ─────────────────────────────────────────
 // Set NEXUS_API_KEY in your environment to require it on all /api/* requests.
 // Leave unset to run in open dev mode (no auth).
@@ -52,6 +56,9 @@ app.use('/api', requireApiKey);
 // ─── In-memory state ──────────────────────────────────────────────────────────
 // darkPools[poolId] = { brokers: [], negotiations: [], trades: [], createdAt: '' }
 const darkPools = {};
+
+// Delivery tokens for settled trades: deliveryTokens[tradeId] = { token, filename, expiresAt }
+const deliveryTokens = {};
 
 // Global trade ledger (capped at 1000 to prevent unbounded memory growth)
 const MAX_GLOBAL_TRADES = 1000;
@@ -299,6 +306,17 @@ app.post('/api/execute-trade', (req, res) => {
     agents: darkPools[poolId].brokers.map((b) => b.brokerName),
   };
 
+  // Attach a short-lived delivery token for a sample dataset (demo only)
+  try {
+    const token = Math.random().toString(36).slice(2, 10);
+    const filename = 'sample-dataset.txt';
+    const expiresAt = Date.now() + 1000 * 60 * 60; // 1 hour
+    deliveryTokens[tradeId] = { token, filename, expiresAt };
+    trade.delivery = { endpoint: `/api/delivery/${tradeId}`, token, filename, expiresAt };
+  } catch (err) {
+    console.warn('[delivery] Failed to create delivery token:', err && err.message);
+  }
+
   darkPools[poolId].trades.push(trade);
   pushGlobalTrade(trade);
 
@@ -401,6 +419,30 @@ app.get('/api/trades/:id', (req, res) => {
   const trade = globalTrades.find((t) => t.id === req.params.id);
   if (!trade) return res.status(404).json({ error: 'Trade not found' });
   res.json(trade);
+});
+
+// GET /api/delivery/:tradeId?token= — Secure dataset delivery for settled trades
+app.get('/api/delivery/:tradeId', (req, res) => {
+  const { tradeId } = req.params;
+  const { token } = req.query || {};
+  const record = deliveryTokens[tradeId];
+  if (!record) return res.status(404).json({ error: 'Delivery not found for trade' });
+  if (!token || String(token) !== String(record.token)) {
+    return res.status(401).json({ error: 'Invalid or missing delivery token' });
+  }
+  if (Date.now() > record.expiresAt) {
+    delete deliveryTokens[tradeId];
+    return res.status(410).json({ error: 'Delivery token expired' });
+  }
+
+  // Stream the file from the server data directory (demo dataset)
+  const filePath = require('path').join(__dirname, 'data', record.filename);
+  return res.sendFile(filePath, (err) => {
+    if (err) {
+      console.warn('[delivery] sendFile error:', err && err.message);
+      return res.status(500).json({ error: 'Failed to deliver dataset' });
+    }
+  });
 });
 
 // GET /api/agents — All agents across all pools

@@ -27,6 +27,16 @@ const WAIT_KPASS_TIMEOUT_MS = Number(process.env.NEXUS_KPASS_WAIT_TIMEOUT_MS || 
 // When true, kpass commands are simulated locally — no real binary required
 const KPASS_MOCK = process.env.NEXUS_KPASS_MOCK === 'true' || process.env.NEXUS_KPASS_MOCK === '1';
 
+// If KPASS_MOCK is not explicitly enabled but `kpass` binary is missing, fall back to mock
+if (!KPASS_MOCK) {
+  try {
+    execSync('command -v kpass', { stdio: 'ignore', shell: '/bin/bash' });
+  } catch (err) {
+    console.warn('[nexus] kpass binary not found in PATH — falling back to NEXUS_KPASS_MOCK=true for local dev.');
+    process.env.NEXUS_KPASS_MOCK = 'true';
+  }
+}
+
 // ─── STARTUP VALIDATION ───────────────────────────────────────────────────────
 function validateEnv() {
   const missing = [];

@@ -1,3 +1,38 @@
+Nexus OTC — Local dev README
+
+Overview
+ - This workspace contains a demo OTC Dark Pool: a `nexus-server` (Express + Socket.io),
+   a `.nexus-client` CLI bridge for Kite Agent Passport flows, and a `frontend` Next.js app.
+
+Quick start (development)
+1. Copy environment example and fill required keys:
+   cp .env.example .env
+   Edit `.env` and set `ANTHROPIC_API_KEY` at minimum.
+
+2. Start the server (nexus-server):
+   cd nexus-server
+   npm install
+   npm run metaverse:js
+
+3. In another terminal, run a broker (in mock mode):
+   ANTHROPIC_API_KEY=sk-xxx NEXUS_KPASS_MOCK=true node .nexus-client/script.js deploy-broker --pool-id POOL-1234 --broker-name DemoBot
+
+4. Start the frontend (Next.js):
+   cd frontend
+   npm install
+   npm run dev
+
+Notes
+- The Kite Agent Passport (`kpass`) integration is mocked by default (`NEXUS_KPASS_MOCK=true`).
+- Settlement `txHash` values are placeholders until on-chain Kite integration is implemented.
+- The server now includes a simple dataset delivery endpoint for settled trades.
+
+Tasks completed in this change
+- Added `.env.example` and this `README.md`.
+- Added a dataset delivery endpoint and a sample dataset.
+- Removed stale `nexus-server/dist/app.js` build artifact.
+- Reconciled TypeScript types in `frontend/lib/types.ts`.
+- Added a basic Jest smoke test scaffold in `nexus-server`.
 # 🎮 GuildCraft
 
 GuildCraft (formerly NPCAAS) is a lightweight, one-click NPM SDK that empowers game developers to deploy autonomous, LLM-integrated Non-Playable Characters (NPCs) with native Web3 payment capabilities.
