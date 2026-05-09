@@ -399,84 +399,12 @@ async function deployBroker(flags) {
   if (!poolId) throw new Error('--pool-id is required');
   if (!brokerName) throw new Error('--broker-name is required');
 
-  if (KPASS_MOCK) {
-    log.warn('⚠  NEXUS_KPASS_MOCK=true — running in simulation mode (no real Kite chain)');
-  }
-
-  // Step 1: Register agent on Kite
-  log.info(`Registering broker "${brokerName}" on Kite${KPASS_MOCK ? ' (mock)' : ''}…`);
-  let agentId;
-  if (dryRun) {
-    log.warn('--dry-run: would run: kpass agent:register …');
-    agentId = 'DRY-RUN-AGENT-ID';
-  } else {
-    const registerData = parseKpassJSON(kpass_register(), 'kpass agent:register');
-    agentId = requireField(registerData, ['agent_id', 'agentId', 'id'], 'register response');
-  }
-  log.info(`Broker registered → Agent ID: ${agentId}`);
-
-  // Step 2: Create budget session
-  log.info('Requesting budget session…');
-  log.info(`  Max per tx : $${maxPerTx} ${assets}`);
-  log.info(`  Max total  : $${maxTotal} ${assets}`);
-  log.info(`  TTL        : ${ttl}`);
-  const ttlSeconds = parseTtlSeconds(ttl);
-
-  const delegation = JSON.stringify({
-    task: { summary: `Nexus OTC block trade for ${brokerName}` },
-    payment_policy: {
-      allowed_payment_approaches: [payment],
-      assets: [assets],
-      max_amount_per_tx: maxPerTx,
-      max_total_amount: maxTotal,
-      ttl_seconds: ttlSeconds,
-    },
-  });
-
-  let requestId;
-  if (dryRun) {
-    log.warn('--dry-run: would run: kpass agent:session create …');
-    requestId = 'DRY-RUN-REQUEST-ID';
-  } else {
-    const sessionReqData = parseKpassJSON(kpass_sessionCreate(delegation), 'kpass agent:session create');
-    requestId = requireField(
-      sessionReqData,
-      ['request_id', 'requestId', 'id'],
-      'session create response'
-    );
-    const approvalUrl = sessionReqData.approval_url || sessionReqData.approvalUrl || '';
-    if (approvalUrl && !KPASS_MOCK) {
-      log.emit('APPROVAL_URL', approvalUrl);
-      log.warn(`Approval URL: ${approvalUrl}`);
-      const opened = openUrl(approvalUrl);
-      if (!opened) {
-        log.warn('Could not auto-open browser. Open the approval URL manually to continue.');
-      }
-    }
-  }
-  log.info(`Session request submitted → Request ID: ${requestId}`);
-
-  if (!KPASS_MOCK) {
-    log.warn('⚠  Passkey approval required — check your browser / authenticator app.');
-  }
-
-  // Step 3: Wait for approval
-  let sessionId;
-  if (dryRun) {
-    log.warn('--dry-run: would run: kpass agent:session status --wait …');
-    sessionId = 'DRY-RUN-SESSION-ID';
-  } else {
-    const approvedData = parseKpassJSON(
-      kpass_sessionStatus(requestId),
-      'kpass agent:session status'
-    );
-    sessionId = requireField(
-      approvedData,
-      ['session_id', 'sessionId', 'id'],
-      'session status response'
-    );
-  }
-  log.info(`✅ Budget session approved → Session ID: ${sessionId}`);
+  // Step 1-3 replaced: Kite Passport session is managed via the Passport dashboard
+  // at https://agentpassport.ai — approve the spending session there with your passkey.
+  // KITE_API_KEY in .env is the credential proving that approval happened.
+  const agentId  = process.env.KITE_AGENT_ID  || `nexus-broker-${Date.now()}`;
+  const sessionId = process.env.KITE_SESSION_ID || `session-${Date.now()}`;
+  log.info(`Using Kite Passport session: Agent=${agentId}, Session=${sessionId}`);
 
   // Step 4: Join pool via nexus server
   log.info(`Sending "${brokerName}" to pool ${poolId}…`);
@@ -497,7 +425,7 @@ async function deployBroker(flags) {
       socket = require('socket.io-client')(SERVER_BASE_URL);
     } catch {
       log.warn('socket.io-client is not installed; skipping live negotiation wiring.');
-      return { agentId, requestId, sessionId, poolId };
+      return { agentId, sessionId, poolId };
     }
 
     const agentConfig = {
@@ -587,7 +515,7 @@ async function deployBroker(flags) {
     });
   }
 
-  return { agentId, requestId, sessionId, poolId };
+  return { agentId, sessionId, poolId };
 }
 
 function listSessions(flags) {

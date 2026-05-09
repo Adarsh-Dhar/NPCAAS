@@ -53,7 +53,66 @@ function requireApiKey(req, res, next) {
 // Apply to all /api routes
 app.use('/api', requireApiKey);
 
-// ─── In-memory state ──────────────────────────────────────────────────────────
+// ─── x402 Payment helpers ─────────────────────────────────────────────────────
+const KITE_FACILITATOR_URL = process.env.KITE_FACILITATOR_URL || 'https://facilitator.pieverse.io';
+const KITE_PAYEE_ADDRESS   = process.env.KITE_PAYEE_ADDRESS   || '0x4A50DCA63d541372ad36E5A36F1D542d51164F19';
+const KITE_ASSET_ADDRESS   = process.env.KITE_ASSET_ADDRESS   || '0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63';
+const KITE_NETWORK         = process.env.KITE_NETWORK         || 'kite-testnet';
+
+/**
+ * Verify + settle an x402 payment via the Pieverse facilitator.
+ * Returns { txHash } on success, throws on failure.
+ */
+async function settleX402Payment(xPaymentHeader) {
+  let decoded;
+  try {
+    decoded = JSON.parse(Buffer.from(xPaymentHeader, 'base64').toString('utf8'));
+  } catch (e) {
+    throw new Error(`Invalid X-Payment header: ${e.message}`);
+  }
+
+  const settleRes = await fetch(`${KITE_FACILITATOR_URL}/v2/settle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      authorization: decoded.authorization,
+      signature: decoded.signature,
+      network: KITE_NETWORK,
+    }),
+  });
+
+  const settleData = await settleRes.json();
+  if (!settleRes.ok) {
+    throw new Error(`Facilitator settle failed: ${JSON.stringify(settleData)}`);
+  }
+
+  return { txHash: settleData.txHash || settleData.transaction_hash || settleData.hash };
+}
+
+/**
+ * Poll the Kite explorer to confirm a transaction is on-chain.
+ * Returns true if confirmed, false after max attempts.
+ */
+const KITE_EXPLORER_API = process.env.KITE_EXPLORER_API || 'https://testnet.kitescan.ai/api';
+
+async function confirmTxOnChain(txHash, maxAttempts = 10, delayMs = 3000) {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const res = await fetch(
+        `${KITE_EXPLORER_API}?module=transaction&action=gettxreceiptstatus&txhash=${txHash}`
+      );
+      const data = await res.json();
+      // Kite explorer follows Etherscan-compatible API: status "1" = success
+      if (data?.result?.status === '1') return true;
+    } catch {
+      // explorer may not be up — continue polling
+    }
+    if (i < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  return false;
+}
 // darkPools[poolId] = { brokers: [], negotiations: [], trades: [], createdAt: '' }
 const darkPools = {};
 
@@ -276,33 +335,69 @@ app.post('/api/join-pool', (req, res) => {
 });
 
 // POST /api/execute-trade — Settle a Block Trade
-app.post('/api/execute-trade', (req, res) => {
+app.post('/api/execute-trade', async (req, res) => {
   const { poolId, brokerName, buyer, seller, counterparty, asset, price, negotiation } =
     req.body || {};
 
   if (!poolId || !darkPools[poolId]) {
     return res.status(404).json({ error: `Pool ${poolId} not found.` });
   }
-  if ((!brokerName && !buyer) || price === undefined || price === null) {
-    return res.status(400).json({ error: 'buyer (or brokerName) and price are required' });
-  }
 
-  const buyerName = String(buyer || brokerName || 'Unknown Buyer');
+  const buyerName  = String(buyer || brokerName || 'Unknown Buyer');
   const sellerName = String(seller || counterparty || 'DataOracle_7');
+  const numericPrice = parseFloat(String(price || '0').replace(/[^0-9.]/g, ''));
 
-  // Validate price is numeric
-  const numericPrice = parseFloat(String(price).replace(/[^0-9.]/g, ''));
   if (isNaN(numericPrice) || numericPrice <= 0) {
     return res.status(400).json({ error: `Invalid price: ${price}` });
   }
 
+  // ── x402: no payment header → return 402 with payment terms ─────────────
+  const xPayment = req.headers['x-payment'];
+  if (!xPayment) {
+    // Amount in wei (1 USDC = 1e18 on Kite testnet token)
+    const amountWei = String(Math.round(numericPrice * 1e18));
+    return res.status(402).json({
+      error: 'X-PAYMENT header is required',
+      accepts: [{
+        scheme: 'gokite-aa',
+        network: KITE_NETWORK,
+        maxAmountRequired: amountWei,
+        resource: `${req.protocol}://${req.get('host')}/api/execute-trade`,
+        description: `Nexus OTC block trade: ${buyerName} acquires ${asset || 'dataset'} from ${sellerName}`,
+        mimeType: 'application/json',
+        outputSchema: {
+          input:  { discoverable: true, method: 'POST', type: 'http' },
+          output: { properties: { success: { type: 'boolean' }, txHash: { type: 'string' } }, required: ['success', 'txHash'], type: 'object' },
+        },
+        payTo: KITE_PAYEE_ADDRESS,
+        maxTimeoutSeconds: 300,
+        asset: KITE_ASSET_ADDRESS,
+        extra: null,
+        merchantName: 'Nexus OTC Clearinghouse',
+      }],
+      x402Version: 1,
+    });
+  }
+
+  // ── x402: header present → settle on-chain ───────────────────────────────
+  let txHash;
+  try {
+    const settled = await settleX402Payment(xPayment);
+    txHash = settled.txHash;
+  } catch (err) {
+    console.error('[x402] Settlement failed:', err.message);
+    return res.status(402).json({ error: `Payment settlement failed: ${err.message}` });
+  }
+
+  // ── Confirm txHash on-chain before issuing delivery ─────────────────────
+  const confirmed = await confirmTxOnChain(txHash);
+  if (!confirmed) {
+    console.warn(`[x402] TxHash ${txHash} not confirmed on-chain after polling — delivery withheld`);
+  }
+
+  // ── Record the trade (same logic as before, now with real txHash) ─────────
   const tradeId = String(tradeIdCounter++).padStart(4, '0');
   const ts = timestamp();
-  // NOTE: txHash is a placeholder. Replace with real Kite chain tx hash when integrated.
-  const txHash =
-    '0x' +
-    Math.random().toString(16).slice(2, 18) +
-    Math.random().toString(16).slice(2, 18);
 
   const trade = {
     id: tradeId,
@@ -313,74 +408,69 @@ app.post('/api/execute-trade', (req, res) => {
     asset: String(asset || 'Unknown Asset'),
     price: String(price),
     status: 'SETTLED',
-    txHash,
+    txHash,   // ← real on-chain hash from Kite
     timestamp: ts,
     createdAt: new Date().toISOString(),
     negotiation: negotiation || null,
     agents: darkPools[poolId].brokers.map((b) => b.brokerName),
   };
 
-  // Attach a short-lived delivery token for a sample dataset (demo only)
-  try {
-    const token = Math.random().toString(36).slice(2, 10);
-    const filename = 'sample-dataset.txt';
-    const expiresAt = Date.now() + 1000 * 60 * 60; // 1 hour
-    deliveryTokens[tradeId] = { token, filename, expiresAt };
-    trade.delivery = { endpoint: `/api/delivery/${tradeId}`, token, filename, expiresAt };
-  } catch (err) {
-    console.warn('[delivery] Failed to create delivery token:', err && err.message);
-  }
-
   darkPools[poolId].trades.push(trade);
   pushGlobalTrade(trade);
 
-  // Update broker status: SETTLING → IDLE after 3s
+  // ── Issue delivery token only after on-chain confirmation ────────────────
+  if (confirmed) {
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(16).toString('hex');
+    const expiresAt = Date.now() + 1000 * 60 * 60; // 1 hour
+
+    // Option A: serve a local file (replace sentiment-dataset.csv with real data)
+    deliveryTokens[tradeId] = {
+      token,
+      filename: process.env.DATASET_FILENAME || 'sentiment-dataset.csv',
+      expiresAt,
+    };
+
+    // Option B: serve a signed URL to S3/R2 (uncomment if using cloud storage)
+    // const signedUrl = await generateSignedUrl(asset);
+    // deliveryTokens[tradeId] = { token, signedUrl, expiresAt };
+
+    trade.delivery = {
+      endpoint: `/api/delivery/${tradeId}`,
+      token,
+      expiresAt,
+      confirmed: true,
+    };
+  }
+
+  // Update broker status (same as before)
   const broker = darkPools[poolId].brokers.find((b) => b.brokerName === buyerName);
   if (broker) {
     broker.status = 'SETTLING';
     broker.lastActive = new Date().toISOString();
-    broker.sessionLimit = Math.min(
-      100,
-      (broker.sessionLimit || 0) + Math.floor(Math.random() * 30 + 10)
-    );
-    setTimeout(() => {
-      if (broker) broker.status = 'IDLE';
-      broadcastPoolState(poolId);
-    }, 3000);
+    broker.sessionLimit = Math.min(100, (broker.sessionLimit || 0) + Math.floor(Math.random() * 30 + 10));
+    setTimeout(() => { if (broker) broker.status = 'IDLE'; broadcastPoolState(poolId); }, 3000);
   }
 
   console.log(`\n[NEXUS CLEARING] ⚡ P2P Block Trade Confirmed On-Chain`);
   console.log(`[NEXUS CLEARING] 🟢 BUYER:  ${buyerName}`);
   console.log(`[NEXUS CLEARING] 🔴 SELLER: ${sellerName}`);
-  console.log(`[NEXUS CLEARING] 📊 ASSET:  [${asset}]`);
-  console.log(`[NEXUS CLEARING] 💵 SETTLED AMOUNT: $${price} USDC`);
+  console.log(`[NEXUS CLEARING] 📊 ASSET:  ${asset}`);
+  console.log(`[NEXUS CLEARING] 💵 SETTLED: $${price} USDC`);
   console.log(`[NEXUS CLEARING] 🔗 TxHash: ${txHash}`);
 
   io.to(poolId).emit('pool:trade-settled', trade);
-
   io.to('global').emit('feed:activity', {
-    type: 'SETTLEMENT',
-    poolId,
-    tradeId,
-    timestamp: ts,
+    type: 'SETTLEMENT', poolId, tradeId, timestamp: ts,
     content: `[BLOCK TRADE CLEARED] ${buyerName} acquired ${asset} from ${sellerName} for $${price} USDC.`,
-    isBlurred: false,
-    isSettlement: true,
-    txHash,
-    trade,
+    isBlurred: false, isSettlement: true, txHash, trade,
   });
-
   io.emit('global:state', {
-    pools: Object.keys(darkPools).map((id) => ({
-      poolId: id,
-      brokerCount: darkPools[id].brokers.length,
-      tradeCount: darkPools[id].trades.length,
-    })),
+    pools: Object.keys(darkPools).map((id) => ({ poolId: id, brokerCount: darkPools[id].brokers.length, tradeCount: darkPools[id].trades.length })),
     trades: globalTrades.slice(-50),
   });
-
   broadcastPoolState(poolId);
-  res.json({ success: true, txHash, tradeId });
+  return res.json({ success: true, txHash, tradeId });
 });
 
 // POST /api/negotiate — HTTP relay for negotiation (alternative to socket)
@@ -441,23 +531,31 @@ app.get('/api/delivery/:tradeId', (req, res) => {
   const { tradeId } = req.params;
   const { token } = req.query || {};
   const record = deliveryTokens[tradeId];
+
   if (!record) return res.status(404).json({ error: 'Delivery not found for trade' });
-  if (!token || String(token) !== String(record.token)) {
-    return res.status(401).json({ error: 'Invalid or missing delivery token' });
-  }
+  if (!token || token !== record.token) return res.status(401).json({ error: 'Invalid token' });
   if (Date.now() > record.expiresAt) {
     delete deliveryTokens[tradeId];
-    return res.status(410).json({ error: 'Delivery token expired' });
+    return res.status(410).json({ error: 'Token expired' });
   }
 
-  // Stream the file from the server data directory (demo dataset)
-  const filePath = require('path').join(__dirname, 'data', record.filename);
-  return res.sendFile(filePath, (err) => {
-    if (err) {
-      console.warn('[delivery] sendFile error:', err && err.message);
-      return res.status(500).json({ error: 'Failed to deliver dataset' });
-    }
-  });
+  // Option A: local file
+  if (record.filename) {
+    const filePath = require('path').join(__dirname, 'data', record.filename);
+    return res.sendFile(filePath, (err) => {
+      if (err) {
+        console.warn('[delivery] sendFile error:', err && err.message);
+        return res.status(500).json({ error: 'Failed to deliver dataset' });
+      }
+    });
+  }
+
+  // Option B: redirect to signed cloud URL
+  if (record.signedUrl) {
+    return res.redirect(302, record.signedUrl);
+  }
+
+  return res.status(500).json({ error: 'No delivery method configured' });
 });
 
 // GET /api/agents — All agents across all pools
