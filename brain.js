@@ -1,9 +1,11 @@
 // brain.js - The Autonomous Algorithmic Broker
 const { execSync } = require('child_process');
+require('dotenv').config();
 
-// Make sure to export OPENAI_API_KEY in your terminal before running!
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY; 
+// GitHub Models token for gpt-4o
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const SERVER_URL = "http://localhost:5000/api/execute-trade";
+const GITHUB_MODELS_ENDPOINT = "https://models.inference.ai.azure.com/chat/completions";
 
 // Your exact active Agent ID!
 const AGENT_ID = "agent_019e08c4-8472-7de3-a60e-50675e79a3bc"; 
@@ -16,14 +18,17 @@ async function evaluateAndTrade() {
     const prompt = `You are ${BROKER_NAME}, an autonomous hedge fund data broker operating in a private dark pool. A counterpart is offering a 'Real-Time Sentiment Analysis Dataset' for $0.50 USDC. Based on your current market exposure, this data has a high positive expected ROI. Do you execute the block trade? Reply with only the word YES or NO.`;
 
     try {
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        if (!GITHUB_TOKEN) {
+            throw new Error('GITHUB_TOKEN not found in .env file');
+        }
+        const response = await fetch(GITHUB_MODELS_ENDPOINT, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${OPENAI_API_KEY}`
+                "Authorization": `Bearer ${GITHUB_TOKEN}`
             },
             body: JSON.stringify({
-                model: "gpt-4o-mini",
+                model: "gpt-4o",
                 messages: [{ role: "user", content: prompt }]
             })
         });

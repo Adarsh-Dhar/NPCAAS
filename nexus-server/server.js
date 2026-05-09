@@ -191,7 +191,15 @@ app.get('/api/state', (req, res) => {
 
 // POST /api/create-pool — Initialize a Secure Dark Pool
 app.post('/api/create-pool', (req, res) => {
-  const poolId = 'POOL-' + Math.floor(1000 + Math.random() * 9000);
+  const requestedPoolId = req.body?.poolId;
+  const poolId = requestedPoolId || 'POOL-' + Math.floor(1000 + Math.random() * 9000);
+  if (!/^POOL-\d{4}$/.test(poolId)) {
+    return res.status(400).json({ error: 'poolId must match POOL-1234 format.' });
+  }
+  if (darkPools[poolId]) {
+    return res.status(409).json({ error: `Pool ${poolId} already exists.` });
+  }
+
   darkPools[poolId] = {
     brokers: [],
     negotiations: [],

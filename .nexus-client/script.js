@@ -11,6 +11,11 @@
 
 'use strict';
 
+const path = require('path');
+const dotenv = require('dotenv');
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
+
 const { execSync } = require('child_process');
 const { runBrain, buildInitialBid, buildInitialAsk, shouldStopNegotiation } = require('./economic-engine');
 
@@ -40,7 +45,9 @@ if (!KPASS_MOCK) {
 // ─── STARTUP VALIDATION ───────────────────────────────────────────────────────
 function validateEnv() {
   const missing = [];
-  if (!process.env.ANTHROPIC_API_KEY) missing.push('ANTHROPIC_API_KEY');
+  if (!process.env.GITHUB_TOKEN && !process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY) {
+    missing.push('GITHUB_TOKEN or OPENAI_API_KEY');
+  }
   if (missing.length > 0) {
     console.error(`[nexus] ❌ Missing required environment variables: ${missing.join(', ')}`);
     console.error('[nexus]    Copy .env.example to .env and fill in the values.');
@@ -622,6 +629,7 @@ function revokeSession(flags) {
         await createPool(flags);
         break;
       case 'deploy-broker':
+      case 'join-pool':
         await deployBroker(flags);
         break;
       case 'list-sessions':
