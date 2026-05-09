@@ -1,41 +1,37 @@
 #!/usr/bin/env node
-// nexus.js — Bridge between Codex agent, multiplayer web server, and Kite Agent Passport
+// nexus.js — Bridge between Codex agent, OTC clearinghouse, and Kite Agent Passport
 // Requires Node.js 18+ (native fetch)
 
 'use strict';
 
 const { execSync } = require('child_process');
+const { runBrain } = require('./economic-engine');
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
-const SERVER_BASE_URL    = process.env.NEXUS_SERVER_URL  || 'http://localhost:3000';
-const DEFAULT_MAX_PER_TX = process.env.NEXUS_MAX_PER_TX  || '0.50';
-const DEFAULT_MAX_TOTAL  = process.env.NEXUS_MAX_TOTAL   || '5.00';
-const DEFAULT_TTL        = process.env.NEXUS_SESSION_TTL || '1h';    // kpass expects "1h", "24h", etc.
-const DEFAULT_ASSETS     = process.env.NEXUS_ASSETS      || 'USDC';
-const DEFAULT_PAYMENT    = process.env.NEXUS_PAYMENT     || 'x402';
+const SERVER_BASE_URL = process.env.NEXUS_SERVER_URL || 'http://localhost:3000';
+const DEFAULT_MAX_PER_TX = process.env.NEXUS_MAX_PER_TX || '0.50';
+const DEFAULT_MAX_TOTAL = process.env.NEXUS_MAX_TOTAL || '5.00';
+const DEFAULT_TTL = process.env.NEXUS_SESSION_TTL || '1h'; // kpass expects "1h", "24h", etc.
+const DEFAULT_ASSETS = process.env.NEXUS_ASSETS || 'USDC';
+const DEFAULT_PAYMENT = process.env.NEXUS_PAYMENT || 'x402';
 const DEFAULT_KPASS_TIMEOUT_MS = Number(process.env.NEXUS_KPASS_TIMEOUT_MS || (5 * 60 * 1000));
-const WAIT_KPASS_TIMEOUT_MS    = Number(process.env.NEXUS_KPASS_WAIT_TIMEOUT_MS || (30 * 60 * 1000));
+const WAIT_KPASS_TIMEOUT_MS = Number(process.env.NEXUS_KPASS_WAIT_TIMEOUT_MS || (30 * 60 * 1000));
 
 // ─── LOGGING ─────────────────────────────────────────────────────────────────
 
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
-const LOG_LEVEL  = LOG_LEVELS[process.env.NEXUS_LOG_LEVEL] ?? LOG_LEVELS.info;
+const LOG_LEVEL = LOG_LEVELS[process.env.NEXUS_LOG_LEVEL] ?? LOG_LEVELS.info;
 
 const log = {
-  debug : (...a) => LOG_LEVEL <= 0 && console.debug('[nexus:debug]', ...a),
-  info  : (...a) => LOG_LEVEL <= 1 && console.log  ('[nexus]',       ...a),
-  warn  : (...a) => LOG_LEVEL <= 2 && console.warn ('[nexus:warn]',  ...a),
-  error : (...a) => LOG_LEVEL <= 3 && console.error('[nexus:error]', ...a),
-  // Machine-parseable output lines for Codex to capture
-  emit  : (tag, payload) => console.log(`${tag}: ${typeof payload === 'object' ? JSON.stringify(payload) : payload}`),
+  debug: (...a) => LOG_LEVEL <= 0 && console.debug('[nexus:debug]', ...a),
+  info: (...a) => LOG_LEVEL <= 1 && console.log('[nexus]', ...a),
+  warn: (...a) => LOG_LEVEL <= 2 && console.warn('[nexus:warn]', ...a),
+  error: (...a) => LOG_LEVEL <= 3 && console.error('[nexus:error]', ...a),
+  emit: (tag, payload) => console.log(`${tag}: ${typeof payload === 'object' ? JSON.stringify(payload) : payload}`),
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
-/**
- * POST/GET against the game web server with JSON body.
- * Throws a descriptive error on any non-2xx response.
- */
 async function apiFetch(path, options = {}) {
   const url = `${SERVER_BASE_URL}${path}`;
   log.debug(`→ ${options.method || 'GET'} ${url}`);
@@ -51,7 +47,7 @@ async function apiFetch(path, options = {}) {
   }
 
   let body;
-  try   { body = await res.json(); }
+  try { body = await res.json(); }
   catch { body = await res.text().catch(() => '(empty body)'); }
 
   if (!res.ok) {
@@ -62,18 +58,13 @@ async function apiFetch(path, options = {}) {
   return body;
 }
 
-/**
- * Run a shell command synchronously, return trimmed stdout.
- * Inherits stdin so interactive prompts (passkey) reach the terminal.
- * Throws with a clean message on non-zero exit.
- */
 function shell(cmd, { timeoutMs = DEFAULT_KPASS_TIMEOUT_MS } = {}) {
   log.debug(`$ ${cmd}`);
   try {
     return execSync(cmd, {
       stdio: ['inherit', 'pipe', 'pipe'],
       timeout: timeoutMs,
-      shell: '/bin/bash',       // Bypass user zsh startup files that can break non-interactive child shells
+      shell: '/bin/bash',
     }).toString().trim();
   } catch (err) {
     const stderr = err.stderr?.toString().trim() || '';
@@ -83,10 +74,30 @@ function shell(cmd, { timeoutMs = DEFAULT_KPASS_TIMEOUT_MS } = {}) {
   }
 }
 
-/**
- * Open a URL in the user's browser if possible.
- * Best-effort only; failures are logged but do not stop the flow.
- */
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'"'"'`)}'`;
+}
+
+function parseTtlSeconds(ttl) {
+  const value = String(ttl ?? DEFAULT_TTL).trim().toLowerCase();
+  const match = value.match(/^(\d+(?:\.\d+)?)([smhd])?$/);
+
+  if (!match) {
+    throw new Error(`Invalid TTL value: ${ttl}`);
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2] || 's';
+  const multipliers = {
+    s: 1,
+    m: 60,
+    h: 60 * 60,
+    d: 24 * 60 * 60,
+  };
+
+  return Math.round(amount * multipliers[unit]);
+}
+
 function openUrl(url) {
   if (!url) return false;
 
@@ -106,16 +117,13 @@ function openUrl(url) {
       });
       return true;
     } catch {
-      // Keep trying fallback commands for the platform.
+      // Continue to fallback open command.
     }
   }
 
   return false;
 }
 
-/**
- * Parse `kpass` JSON output safely.
- */
 function parseKpassJSON(raw, cmdHint) {
   try {
     return JSON.parse(raw);
@@ -124,10 +132,6 @@ function parseKpassJSON(raw, cmdHint) {
   }
 }
 
-/**
- * Extract a field from an object trying multiple key name variants.
- * Throws if none found.
- */
 function requireField(obj, keys, label) {
   for (const k of keys) {
     if (obj[k] != null) return obj[k];
@@ -135,7 +139,6 @@ function requireField(obj, keys, label) {
   throw new Error(`Missing field (tried: ${keys.join(', ')}) in ${label}: ${JSON.stringify(obj)}`);
 }
 
-/** Parse CLI flags of the form --key value or --key=value */
 function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i++) {
@@ -152,6 +155,30 @@ function parseArgs(argv) {
     }
   }
   return args;
+}
+
+async function executeTrade(poolId, incomingMsg, context) {
+  const { brokerName } = context;
+  const asset = incomingMsg?.asset || incomingMsg?.instrument || 'Real-Time Sentiment Dataset';
+  const rawPrice = incomingMsg?.amount ?? incomingMsg?.price ?? DEFAULT_MAX_PER_TX;
+  const price = String(rawPrice);
+
+  const payload = {
+    poolId,
+    brokerName,
+    asset,
+    price,
+    negotiation: incomingMsg,
+  };
+
+  const result = await apiFetch('/api/execute-trade', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  log.emit('TRADE_EXECUTED', { poolId, brokerName, asset, price, success: Boolean(result?.success) });
+  log.info(`Trade settled for ${brokerName}: ${asset} @ $${price}`);
+  return result;
 }
 
 function printUsage() {
@@ -180,6 +207,9 @@ OPTIONS (deploy-broker)
   --ttl          <time>    Session lifetime e.g. 1h, 24h (default: ${DEFAULT_TTL})
   --assets       <asset>   Asset type                    (default: ${DEFAULT_ASSETS})
   --payment      <method>  Payment approach              (default: ${DEFAULT_PAYMENT})
+  --hidden-floor <amount>  Negotiation hidden floor      (default: 40)
+  --hidden-ceiling <amount> Negotiation hidden ceiling   (default: 50)
+  --role         <role>    buyer|seller                  (default: buyer)
   --dry-run                Print commands without executing them
 
 ENVIRONMENT VARIABLES
@@ -194,16 +224,11 @@ ENVIRONMENT VARIABLES
 MACHINE-PARSEABLE OUTPUT (for Codex)
   POOL_CREATED: <poolId>
   BROKER_JOINED: {"poolId":…,"brokerName":…,"agentId":…,"sessionId":…}
+  TRADE_EXECUTED: {"poolId":…,"brokerName":…,"asset":…,"price":…,"success":…}
   SESSION_REVOKED: <sessionId>
 `);
 }
 
-// ─── COMMANDS ─────────────────────────────────────────────────────────────────
-
-/**
- * create-pool
- * Initializes a secure dark pool and emits the Pool ID.
- */
 async function createPool(flags) {
   log.info('Initializing secure dark pool…');
 
@@ -213,7 +238,7 @@ async function createPool(flags) {
     return;
   }
 
-  const data   = await apiFetch('/api/create-pool', { method: 'POST' });
+  const data = await apiFetch('/api/create-pool', { method: 'POST' });
   const poolId = requireField(data, ['poolId', 'pool_id', 'id'], 'create-pool response');
 
   log.emit('POOL_CREATED', poolId);
@@ -221,29 +246,21 @@ async function createPool(flags) {
   return poolId;
 }
 
-/**
- * deploy-broker
- * Full 3-step flow:
- *   1. Register broker identity on Kite
- *   2. Submit budget session request → wait for passkey approval
- *   3. Connect broker to the dark pool
- */
 async function deployBroker(flags) {
   const {
     poolId,
     brokerName,
     maxPerTx = DEFAULT_MAX_PER_TX,
-    maxTotal  = DEFAULT_MAX_TOTAL,
-    ttl       = DEFAULT_TTL,
-    assets    = DEFAULT_ASSETS,
-    payment   = DEFAULT_PAYMENT,
-    dryRun    = false,
+    maxTotal = DEFAULT_MAX_TOTAL,
+    ttl = DEFAULT_TTL,
+    assets = DEFAULT_ASSETS,
+    payment = DEFAULT_PAYMENT,
+    dryRun = false,
   } = flags;
 
   if (!poolId) throw new Error('--pool-id is required');
   if (!brokerName) throw new Error('--broker-name is required');
 
-  // ── Step 1: Register broker identity ──────────────────────────────────────
   log.info(`Registering broker "${brokerName}" on Kite…`);
 
   const registerCmd = [
@@ -263,21 +280,25 @@ async function deployBroker(flags) {
   }
   log.info(`Broker registered → Agent ID: ${agentId}`);
 
-  // ── Step 2: Submit budget session request ──────────────────────────────────
   log.info('Requesting budget session…');
   log.info(`  Max per tx : $${maxPerTx} ${assets}`);
   log.info(`  Max total  : $${maxTotal} ${assets}`);
   log.info(`  TTL        : ${ttl}`);
-  log.info(`  Payment    : ${payment}`);
+  const ttlSeconds = parseTtlSeconds(ttl);
+  const delegation = JSON.stringify({
+    task: { summary: `Nexus OTC block trade for ${brokerName}` },
+    payment_policy: {
+      allowed_payment_approaches: ['x402'],
+      assets: ['USDC'],
+      max_amount_per_tx: maxPerTx,
+      max_total_amount: maxTotal,
+      ttl_seconds: ttlSeconds,
+    },
+  });
 
   const sessionCmd = [
     'kpass agent:session create',
-    `--task-summary "Nexus OTC Block Trading for ${brokerName}"`,
-    `--max-amount-per-tx ${maxPerTx}`,
-    `--max-total-amount  ${maxTotal}`,
-    `--ttl ${ttl}`,
-    `--assets ${assets}`,
-    `--payment-approach ${payment}`,
+    `--delegation ${shellQuote(delegation)}`,
     '--output json',
     '--no-interactive',
   ].join(' ');
@@ -289,13 +310,7 @@ async function deployBroker(flags) {
     requestId = 'DRY-RUN-REQUEST-ID';
   } else {
     const sessionReqData = parseKpassJSON(shell(sessionCmd), 'kpass agent:session create');
-    // NOTE: 'create' returns a request_id, NOT a session_id yet.
-    // The session only becomes active after passkey approval in Step 2.5.
-    requestId = requireField(
-      sessionReqData,
-      ['request_id', 'requestId', 'id'],
-      'session create response'
-    );
+    requestId = requireField(sessionReqData, ['request_id', 'requestId', 'id'], 'session create response');
 
     approvalUrl = sessionReqData.approval_url || sessionReqData.approvalUrl || '';
     const createStatus = sessionReqData.status || '';
@@ -312,7 +327,6 @@ async function deployBroker(flags) {
   }
   log.info(`Session request submitted → Request ID: ${requestId}`);
 
-  // ── Step 2.5: Block until user approves with passkey ──────────────────────
   log.warn('⚠  Passkey approval required — check your browser / authenticator app.');
 
   const waitCmd = [
@@ -328,60 +342,85 @@ async function deployBroker(flags) {
     log.warn(`--dry-run: would run:\n  $ ${waitCmd}`);
     sessionId = 'DRY-RUN-SESSION-ID';
   } else {
-    // This call blocks until the user physically approves or the TTL lapses.
     const approvedData = parseKpassJSON(
       shell(waitCmd, { timeoutMs: WAIT_KPASS_TIMEOUT_MS }),
       'kpass agent:session status'
     );
-    sessionId = requireField(
-      approvedData,
-      ['session_id', 'sessionId', 'id'],
-      'session status response'
-    );
+    sessionId = requireField(approvedData, ['session_id', 'sessionId', 'id'], 'session status response');
   }
   log.info(`✅ Budget session approved → Session ID: ${sessionId}`);
 
-  // ── Step 3: Connect broker to the dark pool ───────────────────────────────
   log.info(`Sending "${brokerName}" to pool ${poolId}…`);
 
-  const payload  = { poolId, brokerName, agentId, sessionId };
-
+  const payload = { poolId, brokerName, agentId, sessionId };
   if (dryRun) {
     log.warn(`--dry-run: would POST /api/join-pool with ${JSON.stringify(payload)}`);
   } else {
     await apiFetch('/api/join-pool', {
-      method : 'POST',
-      body   : JSON.stringify(payload),
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 
-  // Machine-parseable lines for Codex
   log.emit('BROKER_JOINED', { poolId, brokerName, agentId, sessionId });
   log.info(`🕴️ "${brokerName}" is live in ${poolId}`);
+
+  // Step 2.2: after joining a pool, open a socket connection and wire the brain.
+  if (!dryRun) {
+    let socket;
+    try {
+      socket = require('socket.io-client')(SERVER_BASE_URL);
+    } catch {
+      log.warn('socket.io-client is not installed; skipping live negotiation wiring.');
+      return { agentId, requestId, sessionId, poolId };
+    }
+
+    const agentConfig = {
+      hiddenFloor: Number(flags.hiddenFloor ?? process.env.NEXUS_HIDDEN_FLOOR ?? 40),
+      hiddenCeiling: Number(flags.hiddenCeiling ?? process.env.NEXUS_HIDDEN_CEILING ?? 50),
+      role: String(flags.role ?? process.env.NEXUS_ROLE ?? 'buyer'),
+      brokerName,
+      agentId,
+      sessionId,
+      poolId,
+    };
+
+    socket.on('connect', () => {
+      log.info(`Socket connected (${socket.id}); joining pool ${poolId}`);
+      socket.emit('join-pool', poolId);
+    });
+
+    socket.on('connect_error', (err) => {
+      log.warn(`Socket connect error: ${err.message}`);
+    });
+
+    socket.on('negotiate', async (msg) => {
+      try {
+        const decision = await runBrain(msg, agentConfig);
+        if (decision.action === 'ACCEPT') {
+          await executeTrade(poolId, msg, { brokerName, agentConfig });
+        } else {
+          socket.emit('negotiate', { poolId, msg: { ...decision, from: brokerName } });
+        }
+      } catch (err) {
+        log.error(`Negotiation loop failed: ${err.message}`);
+      }
+    });
+  }
 
   return { agentId, requestId, sessionId, poolId };
 }
 
-/**
- * list-sessions
- * Lists all active Kite sessions for a given agent.
- */
 function listSessions(flags) {
   const { agentId } = flags;
   if (!agentId) throw new Error('--agent-id is required');
 
   log.info(`Listing sessions for agent ${agentId}…`);
-  const raw  = shell(
-    `kpass agent:session list --agent-id ${agentId} --output json --no-interactive`
-  );
+  const raw = shell(`kpass agent:session list --agent-id ${agentId} --output json --no-interactive`);
   const data = parseKpassJSON(raw, 'kpass agent:session list');
   console.log(JSON.stringify(data, null, 2));
 }
 
-/**
- * revoke-session
- * Immediately revokes an active Kite session.
- */
 function revokeSession(flags) {
   const { sessionId } = flags;
   if (!sessionId) throw new Error('--session-id is required');
@@ -392,10 +431,7 @@ function revokeSession(flags) {
   log.info(`Session ${sessionId} revoked.`);
 }
 
-// ─── ENTRY POINT ─────────────────────────────────────────────────────────────
-
 (async () => {
-  // Verify Node 18+ for native fetch
   const [major] = process.versions.node.split('.').map(Number);
   if (major < 18) {
     console.error('[nexus] ❌ Requires Node.js 18 or later (native fetch).');
@@ -412,10 +448,18 @@ function revokeSession(flags) {
 
   try {
     switch (command) {
-      case 'create-pool':    await createPool(flags);  break;
-      case 'deploy-broker':  await deployBroker(flags); break;
-      case 'list-sessions':  listSessions(flags);      break;
-      case 'revoke-session': revokeSession(flags);     break;
+      case 'create-pool':
+        await createPool(flags);
+        break;
+      case 'deploy-broker':
+        await deployBroker(flags);
+        break;
+      case 'list-sessions':
+        listSessions(flags);
+        break;
+      case 'revoke-session':
+        revokeSession(flags);
+        break;
       default:
         log.error(`Unknown command: "${command}"`);
         printUsage();
