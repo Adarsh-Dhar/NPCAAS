@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import { useMemo, useState } from 'react';
 import { NexusLayout } from '@/components/nexus-layout';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useNexus } from '@/lib/nexus-context';
@@ -12,7 +13,19 @@ const statusColors: Record<string, string> = {
 };
 
 export default function TradesPage() {
-  const { trades, activePoolId, pools, agents, executeTrade, refreshState } = useNexus();
+  const {
+    trades,
+    activePoolId,
+    pools,
+    agents,
+    executeTrade,
+    refreshState,
+    paymentRequired,
+    submitXPayment,
+    dismissPaymentRequired,
+  } = useNexus();
+  const [manualToken, setManualToken] = useState('');
+  const paymentTerms = useMemo(() => paymentRequired?.accepts?.[0] ?? null, [paymentRequired]);
 
   async function handleDemoSettlement() {
     const poolId = activePoolId ?? pools[0]?.poolId;
@@ -35,6 +48,50 @@ export default function TradesPage() {
   return (
     <NexusLayout>
       <div className="flex flex-col h-full">
+        {paymentRequired && (
+          <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+            <div className="mb-2 font-semibold text-amber-200">Payment Required (HTTP 402)</div>
+            <div className="mb-3 text-amber-100/90">
+              {paymentRequired.error || 'This trade requires an x402 payment token.'}
+            </div>
+            {paymentTerms && (
+              <div className="mb-3 space-y-1 text-xs text-amber-100/80 font-mono">
+                <div>merchant: {paymentTerms.merchantName || 'Nexus OTC Clearinghouse'}</div>
+                <div>network: {String(paymentTerms.network || '')}</div>
+                <div>amount: {String(paymentTerms.maxAmountRequired || '')}</div>
+                <div>payTo: {String(paymentTerms.payTo || '')}</div>
+              </div>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                type="text"
+                value={manualToken}
+                onChange={(e) => setManualToken(e.target.value)}
+                placeholder="Paste X-Payment token"
+                className="w-full rounded-md border border-amber-300/40 bg-black/30 px-3 py-2 text-xs text-amber-100 placeholder:text-amber-100/50"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!manualToken.trim()) return;
+                  await submitXPayment(manualToken.trim());
+                  setManualToken('');
+                }}
+                className="rounded-md border border-amber-300/50 bg-amber-400/20 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-400/30"
+              >
+                Submit Token
+              </button>
+              <button
+                type="button"
+                onClick={dismissPaymentRequired}
+                className="rounded-md border border-amber-300/30 bg-transparent px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-400/10"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="border-b border-border/20 px-6 py-5 flex-shrink-0 bg-gradient-to-r from-primary/5 to-secondary/5 backdrop-blur-sm rounded-lg mb-6">
           <div className="flex items-center justify-between gap-4 flex-wrap mb-1">
             <div className="flex items-center gap-2">

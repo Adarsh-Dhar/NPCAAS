@@ -15,6 +15,7 @@ const path = require('path');
 const dotenv = require('dotenv');
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
+const { getSignedXPayment } = require('../lib/kite-payment');
 
 const { execSync } = require('child_process');
 const { runBrain, buildInitialBid, buildInitialAsk, shouldStopNegotiation } = require('./economic-engine');
@@ -30,23 +31,29 @@ const DEFAULT_KPASS_TIMEOUT_MS = Number(process.env.NEXUS_KPASS_TIMEOUT_MS || 5 
 const WAIT_KPASS_TIMEOUT_MS = Number(process.env.NEXUS_KPASS_WAIT_TIMEOUT_MS || 30 * 60 * 1000);
 
 // When true, kpass commands are simulated locally — no real binary required
-const KPASS_MOCK = process.env.NEXUS_KPASS_MOCK === 'true' || process.env.NEXUS_KPASS_MOCK === '1';
+let KPASS_MOCK = process.env.NEXUS_KPASS_MOCK === 'true' || process.env.NEXUS_KPASS_MOCK === '1';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // If KPASS_MOCK is not explicitly enabled but `kpass` binary is missing, fall back to mock
 if (!KPASS_MOCK) {
   try {
     execSync('command -v kpass', { stdio: 'ignore', shell: '/bin/bash' });
   } catch (err) {
+    if (IS_PRODUCTION) {
+      console.error('[nexus] kpass binary not found in PATH and NODE_ENV=production. Refusing to enable mock mode.');
+      process.exit(1);
+    }
     console.warn('[nexus] kpass binary not found in PATH — falling back to NEXUS_KPASS_MOCK=true for local dev.');
     process.env.NEXUS_KPASS_MOCK = 'true';
+    KPASS_MOCK = true;
   }
 }
 
 // ─── STARTUP VALIDATION ───────────────────────────────────────────────────────
 function validateEnv() {
   const missing = [];
-  if (!process.env.GITHUB_TOKEN && !process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY) {
-    missing.push('GITHUB_TOKEN or OPENAI_API_KEY');
+  if (!process.env.ANTHROPIC_API_KEY) {
+    missing.push('ANTHROPIC_API_KEY');
   }
   if (missing.length > 0) {
     console.error(`[nexus] ❌ Missing required environment variables: ${missing.join(', ')}`);
@@ -293,10 +300,38 @@ async function executeTrade(poolId, incomingMsg, context) {
     negotiation: incomingMsg,
   };
 
-  const result = await apiFetch('/api/execute-trade', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
+  // First call may return 402 with x402 payment terms.
+  let result;
+  try {
+    result = await apiFetch('/api/execute-trade', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    const message = String(err?.message || '');
+    if (!message.includes('Server 402 on /api/execute-trade')) throw err;
+
+    const probeRes = await fetch(`${SERVER_BASE_URL}/api/execute-trade`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const challenge = await probeRes.json();
+    if (probeRes.status !== 402) {
+      if (!probeRes.ok) throw new Error(`Unexpected execute-trade response: ${probeRes.status} ${JSON.stringify(challenge)}`);
+      result = challenge;
+    } else {
+      const paymentTerms = challenge.accepts?.[0];
+      if (!paymentTerms) throw new Error('No payment terms in 402 response');
+
+      const xPayment = await getSignedXPayment(paymentTerms);
+      result = await apiFetch('/api/execute-trade', {
+        method: 'POST',
+        headers: { 'X-Payment': xPayment },
+        body: JSON.stringify(payload),
+      });
+    }
+  }
 
   log.emit('TRADE_EXECUTED', {
     poolId,

@@ -5,19 +5,19 @@
 require('dotenv').config();
 
 const MAX_ROUNDS = 10; // Hard cap — prevents infinite negotiation loops
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const GITHUB_MODELS_ENDPOINT = 'https://models.inference.ai.azure.com/chat/completions';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages';
 
 /**
- * runBrain — calls GPT-4o via GitHub Models to decide the next negotiation action.
+ * runBrain — calls Anthropic Messages API to decide the next negotiation action.
  *
  * @param {object} incomingMsg  — the incoming negotiation message (JSON)
  * @param {object} agentConfig  — { hiddenFloor, hiddenCeiling, role: 'buyer'|'seller' }
  * @returns {Promise<{action: string, amount?: number}>}
  */
 async function runBrain(incomingMsg, agentConfig) {
-  if (!GITHUB_TOKEN) {
-    throw new Error('GITHUB_TOKEN not found in .env file. Please set it to use GitHub Models.');
+  if (!ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY not found in .env file.');
   }
 
   const systemPrompt = `You are an autonomous trading agent. Role: ${agentConfig.role}.
@@ -31,36 +31,43 @@ Rules:
 - Respond ONLY in JSON: {"action":"ACCEPT"|"COUNTER"|"REJECT","amount":number}
 - For ACCEPT or REJECT, "amount" can be 0.`;
 
-  const res = await fetch(GITHUB_MODELS_ENDPOINT, {
+  const res = await fetch(ANTHROPIC_MESSAGES_ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${GITHUB_TOKEN}`,
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: JSON.stringify(incomingMsg) },
-      ],
-      temperature: 1,
+      model: process.env.NEXUS_ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest',
+      system: systemPrompt,
+      messages: [{ role: 'user', content: JSON.stringify(incomingMsg) }],
+      temperature: 0.7,
       max_tokens: 100,
     }),
   });
 
   const data = await res.json();
 
-  if (!data.choices?.[0]?.message?.content) {
-    throw new Error(`GitHub Models API error: ${JSON.stringify(data.error ?? data)}`);
+  if (!res.ok) {
+    throw new Error(`Anthropic API error: ${JSON.stringify(data.error ?? data)}`);
+  }
+
+  const text = Array.isArray(data.content)
+    ? data.content.find((item) => item?.type === 'text')?.text
+    : null;
+
+  if (!text) {
+    throw new Error(`Anthropic API response missing text content: ${JSON.stringify(data)}`);
   }
 
   let decision;
   try {
     // Strip any accidental markdown code fences
-    const raw = data.choices[0].message.content.replace(/```json|```/gi, '').trim();
+    const raw = text.replace(/```json|```/gi, '').trim();
     decision = JSON.parse(raw);
   } catch {
-    throw new Error(`Brain returned non-JSON: ${data.choices[0].message.content}`);
+    throw new Error(`Brain returned non-JSON: ${text}`);
   }
 
   if (!['ACCEPT', 'COUNTER', 'REJECT'].includes(decision.action)) {

@@ -2,7 +2,15 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { getSocket } from '@/lib/socket';
-import { api, Broker, Trade, FeedActivity, GlobalState } from '@/lib/api';
+import {
+  api,
+  Broker,
+  Trade,
+  FeedActivity,
+  GlobalState,
+  PaymentRequiredBody,
+  PaymentRequiredError,
+} from '@/lib/api';
 import type { Socket } from 'socket.io-client';
 
 interface ExecuteTradePayload {
@@ -28,12 +36,15 @@ interface NexusContextValue {
   activeEnclaves: number;
   totalVolume: string;
   activePoolId: string | null;
+  paymentRequired: PaymentRequiredBody | null;
 
   // Actions
   refetch: () => void;
   refreshState: () => void;
   clearFeed: () => void;
   executeTrade: (payload: ExecuteTradePayload) => Promise<void>;
+  submitXPayment: (token: string) => Promise<void>;
+  dismissPaymentRequired: () => void;
 }
 
 const NexusContext = createContext<NexusContextValue | null>(null);
@@ -53,8 +64,10 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [feedItems, setFeedItems] = useState<FeedActivity[]>([]);
   const [pools, setPools] = useState<GlobalState['pools']>([]);
+  const [paymentRequired, setPaymentRequired] = useState<PaymentRequiredBody | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingTradeRef = useRef<ExecuteTradePayload | null>(null);
 
   // ── Derived: active pool id (first available pool) ───────────────────────
   const activePoolId = pools.length > 0 ? pools[0].poolId : null;
@@ -91,6 +104,7 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
   // ── executeTrade action ─────────────────────────────────────────────────────
   const executeTrade = useCallback(async (payload: ExecuteTradePayload) => {
     try {
+      pendingTradeRef.current = payload;
       await api.executeTrade({
         poolId: payload.poolId,
         brokerName: payload.brokerName,
@@ -98,12 +112,41 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
         price: payload.price,
         negotiation: payload.negotiation as Record<string, unknown> | undefined,
       });
+      setPaymentRequired(null);
+      pendingTradeRef.current = null;
       // Refresh state after trade so UI updates immediately
       await fetchAll();
     } catch (err) {
+      if (err instanceof PaymentRequiredError) {
+        setPaymentRequired(err.body);
+        return;
+      }
       console.error('[NexusContext] executeTrade error:', err);
+      throw err;
     }
   }, [fetchAll]);
+
+  const submitXPayment = useCallback(async (token: string) => {
+    const pending = pendingTradeRef.current;
+    if (!pending) throw new Error('No pending trade request to retry');
+
+    await api.executeTrade({
+      poolId: pending.poolId,
+      brokerName: pending.brokerName,
+      asset: pending.asset,
+      price: pending.price,
+      negotiation: pending.negotiation as Record<string, unknown> | undefined,
+      xPayment: token,
+    });
+
+    setPaymentRequired(null);
+    pendingTradeRef.current = null;
+    await fetchAll();
+  }, [fetchAll]);
+
+  const dismissPaymentRequired = useCallback(() => {
+    setPaymentRequired(null);
+  }, []);
 
   // ── Socket setup ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -246,10 +289,13 @@ export function NexusProvider({ children }: { children: React.ReactNode }) {
         activeEnclaves,
         totalVolume,
         activePoolId,
+        paymentRequired,
         refetch: fetchAll,
         refreshState,
         clearFeed,
         executeTrade,
+        submitXPayment,
+        dismissPaymentRequired,
       }}
     >
       {children}

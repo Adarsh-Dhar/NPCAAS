@@ -6,8 +6,7 @@ const path = require('path');
 const GITHUB_TOKEN           = process.env.GITHUB_TOKEN;
 const SERVER_URL             = process.env.NEXUS_SERVER_URL || 'http://localhost:5000';
 const GITHUB_MODELS_ENDPOINT = 'https://models.inference.ai.azure.com/chat/completions';
-const KITE_API_BASE          = process.env.KITE_API_BASE || 'https://api.gokite.ai';
-const KITE_API_KEY           = process.env.KITE_API_KEY;
+const { getSignedXPayment }  = require('./lib/kite-payment');
 
 const BROKER_NAME  = 'QuantBot-Alpha';
 const COUNTERPARTY = 'DataOracle_7';
@@ -202,29 +201,7 @@ async function settleTrade(asset, price) {
   const paymentTerms = paymentChallenge.accepts?.[0];
   if (!paymentTerms) throw new Error('No payment terms in 402 response');
 
-  if (!KITE_API_KEY) throw new Error('KITE_API_KEY not set');
-
-  const addrRes = await fetch(`${KITE_API_BASE}/v1/passport/wallet`, {
-    headers: { Authorization: `Bearer ${KITE_API_KEY}` },
-  });
-  if (!addrRes.ok) throw new Error(`Wallet fetch failed: ${await addrRes.text()}`);
-  const { address: payerAddr } = await addrRes.json();
-
-  const authRes = await fetch(`${KITE_API_BASE}/v1/passport/authorize`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KITE_API_KEY}` },
-    body: JSON.stringify({
-      payer_addr: payerAddr,
-      payee_addr: paymentTerms.payTo,
-      amount:     paymentTerms.maxAmountRequired,
-      token_type: 'USDC',
-      network:    paymentTerms.network,
-      resource:   paymentTerms.resource,
-    }),
-  });
-  if (!authRes.ok) throw new Error(`Authorization failed: ${await authRes.text()}`);
-  const { x_payment: xPayment } = await authRes.json();
-  if (!xPayment) throw new Error('No x_payment in authorization response');
+  const xPayment = await getSignedXPayment(paymentTerms);
 
   const settleRes = await fetch(`${SERVER_URL}/api/execute-trade`, {
     method: 'POST',
