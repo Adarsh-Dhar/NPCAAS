@@ -9,7 +9,7 @@
     "dev": "node server.js",
     "metaverse:dev": "node -r ts-node/register src/app.ts",
     "metaverse:js": "node server.js",
-    "metaverse:start": "PORT=3000 node server.js",
+    "metaverse:start": "PORT=5000 node server.js",
     "test": "jest --runInBand"
   },
   "keywords": [],

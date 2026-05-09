@@ -3,7 +3,7 @@ const { execSync } = require('child_process');
 
 // Make sure to export OPENAI_API_KEY in your terminal before running!
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY; 
-const SERVER_URL = "http://localhost:3000/api/execute-trade";
+const SERVER_URL = "http://localhost:5000/api/execute-trade";
 
 // Your exact active Agent ID!
 const AGENT_ID = "agent_019e08c4-8472-7de3-a60e-50675e79a3bc"; 

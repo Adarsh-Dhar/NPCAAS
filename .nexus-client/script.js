@@ -15,7 +15,7 @@ const { execSync } = require('child_process');
 const { runBrain, buildInitialBid, buildInitialAsk, shouldStopNegotiation } = require('./economic-engine');
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
-const SERVER_BASE_URL = process.env.NEXUS_SERVER_URL || 'http://localhost:3000';
+const SERVER_BASE_URL = process.env.NEXUS_SERVER_URL || 'http://localhost:5000';
 const DEFAULT_MAX_PER_TX = process.env.NEXUS_MAX_PER_TX || '50.00';
 const DEFAULT_MAX_TOTAL = process.env.NEXUS_MAX_TOTAL || '500.00';
 const DEFAULT_TTL = process.env.NEXUS_SESSION_TTL || '1h';
@@ -193,7 +193,7 @@ function kpassMock_register() {
 
 function kpassMock_sessionCreate(delegation) {
   const requestId = `mock-req-${_mockRequestCounter++}`;
-  const approvalUrl = `http://localhost:3000/mock-approval/${requestId}`;
+  const approvalUrl = `${SERVER_BASE_URL.replace(/\/$/, '')}/mock-approval/${requestId}`;
   log.warn(`[MOCK kpass] Simulating agent:session create → requestId: ${requestId}`);
   log.warn(`[MOCK kpass] Approval URL (mock — no actual passkey required): ${approvalUrl}`);
   return JSON.stringify({
@@ -331,7 +331,7 @@ OPTIONS (deploy-broker)
 
 ENVIRONMENT VARIABLES
   ANTHROPIC_API_KEY      Required. Your Anthropic API key.
-  NEXUS_SERVER_URL       Web server base URL       (default: http://localhost:3000)
+  NEXUS_SERVER_URL       Web server base URL       (default: http://localhost:5000)
   NEXUS_MAX_PER_TX       Max per-tx spend          (default: ${DEFAULT_MAX_PER_TX})
   NEXUS_MAX_TOTAL        Max total spend           (default: ${DEFAULT_MAX_TOTAL})
   NEXUS_SESSION_TTL      Session TTL string        (default: ${DEFAULT_TTL})

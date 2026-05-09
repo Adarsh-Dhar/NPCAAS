@@ -88,7 +88,7 @@ const io = new Server(server, {
     cors: { origin: process.env.NEXUS_CORS_ORIGIN || '*', methods: ['GET', 'POST', 'PATCH'] },
 });
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 5000);
 const API_KEY = process.env.NEXUS_API_KEY || null;
 
 function requireApiKey(req: Request, res: Response, next: NextFunction) {

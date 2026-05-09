@@ -1,6 +1,7 @@
 'use client';
 
 import { useNexus } from '@/lib/nexus-context';
+import { SERVER_URL } from '@/lib/socket';
 import { AgentCard } from '@/components/agent-card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Loader2 } from 'lucide-react';
@@ -28,7 +29,7 @@ export function AgentFleet() {
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
             <Loader2 className="w-6 h-6 animate-spin opacity-40" />
             <p className="text-xs text-center">Connecting to Nexus server…</p>
-            <p className="text-xs text-center opacity-60 font-mono">localhost:3000</p>
+            <p className="text-xs text-center opacity-60 font-mono">{SERVER_URL}</p>
           </div>
         ) : agents.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">

@@ -1,6 +1,7 @@
 'use client';
 
 import { useNexus } from '@/lib/nexus-context';
+import { SERVER_URL } from '@/lib/socket';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useEffect, useRef } from 'react';
 import { FeedActivity } from '@/lib/api';
@@ -98,8 +99,8 @@ export function LiveMatchingEngine() {
         {/* Status bar */}
         {!serverOnline && (
           <div className="mt-2 px-3 py-1.5 bg-destructive/10 border border-destructive/20 rounded text-xs text-destructive font-mono">
-            ⚠ Server offline — start nexus-server on localhost:3000
-          </div>
+              ⚠ Server offline — start nexus-server on {SERVER_URL}
+            </div>
         )}
         {serverOnline && !connected && (
           <div className="mt-2 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs text-yellow-500 font-mono">

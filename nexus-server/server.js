@@ -29,7 +29,7 @@ const io = new Server(server, {
   cors: { origin: process.env.NEXUS_CORS_ORIGIN || '*', methods: ['GET', 'POST'] },
 });
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 5000);
 
 // Serve sample datasets (secure delivery validated by token)
 const path = require('path');
