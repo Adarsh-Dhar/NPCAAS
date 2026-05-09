@@ -1,69 +1,108 @@
+'use client';
+
 import Link from 'next/link';
 import { NexusLayout } from '@/components/nexus-layout';
-import { agents } from '@/lib/mock-data';
-import { notFound } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { useNexus } from '@/lib/nexus-context';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { use } from 'react';
 
-export default function AgentDetailPage({ params }: { params: { id: string } }) {
-  const agent = agents.find((a) => a.id === params.id);
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
+}
 
-  if (!agent) {
-    notFound();
-  }
+export default function AgentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const { agents, trades, serverOnline } = useNexus();
+  const agent = agents.find(a => a.agentId === id);
+  const agentTrades = trades.filter(t => t.brokerName === agent?.brokerName || t.agents?.includes(agent?.brokerName || ''));
 
   const statusColor = {
     NEGOTIATING: 'text-secondary border-secondary/50 bg-secondary/10',
     SETTLING: 'text-primary border-primary/50 bg-primary/10',
     IDLE: 'text-muted-foreground border-border bg-muted/5',
-  }[agent.status];
+  };
+
+  if (!serverOnline) {
+    return (
+      <NexusLayout>
+        <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
+          <Loader2 className="w-8 h-8 animate-spin opacity-40" />
+          <p>Connecting to server…</p>
+        </div>
+      </NexusLayout>
+    );
+  }
+
+  if (!agent) {
+    return (
+      <NexusLayout>
+        <div className="flex flex-col h-full overflow-auto">
+          <div className="border-b border-border/20 px-6 py-5 flex-shrink-0 bg-gradient-to-r from-primary/5 to-secondary/5 backdrop-blur-sm rounded-lg mb-6">
+            <div className="flex items-center gap-3">
+              <Link href="/agents" className="hover:text-primary transition-colors text-muted-foreground">
+                <ArrowLeft className="w-4 h-4" />
+              </Link>
+              <h2 className="text-lg font-bold text-foreground uppercase tracking-wider">Agent Not Found</h2>
+            </div>
+          </div>
+          <div className="flex flex-col items-center justify-center flex-1 gap-3 text-muted-foreground">
+            <p className="text-sm">Agent ID not found in active pools</p>
+            <Link href="/agents" className="text-primary text-sm hover:underline">← Back to agents</Link>
+          </div>
+        </div>
+      </NexusLayout>
+    );
+  }
+
+  const sc = statusColor[agent.status] || statusColor.IDLE;
+  const progressPercent = agent.maxLimit > 0
+    ? Math.min(100, (agent.sessionLimit / agent.maxLimit) * 100)
+    : 0;
 
   return (
     <NexusLayout>
       <div className="flex flex-col h-full overflow-auto">
         <div className="border-b border-border/20 px-6 py-5 flex-shrink-0 bg-gradient-to-r from-primary/5 to-secondary/5 backdrop-blur-sm rounded-lg mb-6">
           <div className="flex items-center gap-3 mb-1">
-            <Link href="/agents" className="hover:text-primary transition-colors text-muted-foreground hover:text-primary/80">
+            <Link href="/agents" className="hover:text-primary transition-colors text-muted-foreground">
               <ArrowLeft className="w-4 h-4" />
             </Link>
-            <h2 className="text-lg font-bold text-foreground uppercase tracking-wider">
-              Agent Details
-            </h2>
+            <h2 className="text-lg font-bold text-foreground uppercase tracking-wider">Agent Details</h2>
           </div>
-          <p className="text-xs text-muted-foreground mt-2 ml-7">View broker configuration and performance metrics</p>
+          <p className="text-xs text-muted-foreground mt-2 ml-7">Live broker configuration and session metrics</p>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto pr-4">
-          <div className="border border-border/40 rounded-lg p-5 bg-card/50 hover:bg-card/80 transition-all backdrop-blur-sm">
+          {/* Main info */}
+          <div className="border border-border/40 rounded-lg p-5 bg-card/50 backdrop-blur-sm">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-foreground">{agent.name}</h3>
-              <span className={`text-xs px-3 py-1.5 border rounded-full font-semibold ${statusColor}`}>
+              <h3 className="text-lg font-bold text-foreground font-mono">{agent.brokerName}</h3>
+              <span className={`text-xs px-3 py-1.5 border rounded-full font-semibold ${sc}`}>
                 {agent.status}
               </span>
             </div>
 
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="bg-muted/30 rounded p-3">
-                <div className="text-muted-foreground text-xs uppercase tracking-wider mb-2 font-medium">Status</div>
-                <div className="font-bold text-foreground">{agent.status}</div>
+                <div className="text-muted-foreground text-xs uppercase tracking-wider mb-2 font-medium">Pool</div>
+                <div className="font-bold text-foreground font-mono text-sm">{agent.poolId || 'unassigned'}</div>
               </div>
-
               <div className="bg-muted/30 rounded p-3">
-                <div className="text-muted-foreground text-xs uppercase tracking-wider mb-2 font-medium">
-                  Session Limit
-                </div>
-                <div className="text-primary font-bold">{agent.sessionLimit}%</div>
+                <div className="text-muted-foreground text-xs uppercase tracking-wider mb-2 font-medium">Session Capacity</div>
+                <div className="text-primary font-bold font-mono">{agent.sessionLimit}%</div>
               </div>
-
               <div className="bg-muted/30 rounded p-3">
-                <div className="text-muted-foreground text-xs uppercase tracking-wider mb-2 font-medium">Max Limit</div>
-                <div className="text-accent font-bold">{agent.maxLimit}%</div>
+                <div className="text-muted-foreground text-xs uppercase tracking-wider mb-2 font-medium">Agent ID</div>
+                <div className="text-accent font-bold font-mono text-xs truncate">{agent.agentId || 'N/A'}</div>
               </div>
-
               <div className="bg-muted/30 rounded p-3">
-                <div className="text-muted-foreground text-xs uppercase tracking-wider mb-2 font-medium">
-                  Last Active
-                </div>
-                <div className="text-foreground font-medium">{agent.lastActive}</div>
+                <div className="text-muted-foreground text-xs uppercase tracking-wider mb-2 font-medium">Last Active</div>
+                <div className="text-foreground font-medium">{timeAgo(agent.lastActive)}</div>
               </div>
             </div>
 
@@ -73,37 +112,57 @@ export default function AgentDetailPage({ params }: { params: { id: string } }) 
               </div>
               <div className="w-full h-3 bg-muted rounded-full overflow-hidden border border-border/20">
                 <div
-                  className="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-500"
-                  style={{ width: `${(agent.sessionLimit / agent.maxLimit) * 100}%` }}
+                  className="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-700"
+                  style={{ width: `${progressPercent}%` }}
                 />
               </div>
-              <p className="text-xs text-muted-foreground mt-2">{Math.round((agent.sessionLimit / agent.maxLimit) * 100)}% capacity utilization</p>
+              <p className="text-xs text-muted-foreground mt-2 font-mono">{Math.round(progressPercent)}% capacity used</p>
             </div>
           </div>
 
+          {/* Session info */}
           <div className="border border-border/40 rounded-lg p-5 bg-card/50 backdrop-blur-sm">
-            <h4 className="text-sm font-bold text-foreground mb-4 uppercase tracking-wider">
-              Recent Activity
-            </h4>
-            <div className="space-y-3 text-xs text-muted-foreground">
-              <div className="flex items-center gap-2 p-2 bg-muted/20 rounded hover:bg-muted/40 transition-colors">
-                <div className="w-1.5 h-1.5 bg-secondary rounded-full flex-shrink-0" />
-                <p>Initiated 2 negotiations in the last hour</p>
+            <h4 className="text-sm font-bold text-foreground mb-4 uppercase tracking-wider">Session Details</h4>
+            <div className="space-y-3 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-border/20">
+                <span className="text-muted-foreground">Session ID</span>
+                <span className="font-mono text-foreground truncate max-w-48">{agent.sessionId || 'N/A'}</span>
               </div>
-              <div className="flex items-center gap-2 p-2 bg-muted/20 rounded hover:bg-muted/40 transition-colors">
-                <div className="w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0" />
-                <p>Successfully settled 1 trade today</p>
+              <div className="flex justify-between items-center py-1 border-b border-border/20">
+                <span className="text-muted-foreground">Joined Pool</span>
+                <span className="font-mono text-foreground">{new Date(agent.joinedAt).toLocaleTimeString()}</span>
               </div>
-              <div className="flex items-center gap-2 p-2 bg-muted/20 rounded hover:bg-muted/40 transition-colors">
-                <div className="w-1.5 h-1.5 bg-accent rounded-full flex-shrink-0" />
-                <p>Connected to 2 active counterparties</p>
-              </div>
-              <div className="flex items-center gap-2 p-2 bg-muted/20 rounded hover:bg-muted/40 transition-colors">
-                <div className="w-1.5 h-1.5 bg-primary/60 rounded-full flex-shrink-0" />
-                <p className="font-mono text-xs">Security checksum: 0x{Math.random().toString(16).slice(2, 10)}</p>
+              <div className="flex justify-between items-center py-1">
+                <span className="text-muted-foreground">Trades Settled</span>
+                <span className="font-mono text-primary font-bold">{agentTrades.length}</span>
               </div>
             </div>
           </div>
+
+          {/* Recent trades */}
+          {agentTrades.length > 0 && (
+            <div className="border border-border/40 rounded-lg p-5 bg-card/50 backdrop-blur-sm">
+              <h4 className="text-sm font-bold text-foreground mb-4 uppercase tracking-wider">
+                Recent Trades ({agentTrades.length})
+              </h4>
+              <div className="space-y-2">
+                {agentTrades.slice(0, 5).map(trade => (
+                  <Link key={trade.id} href={`/trades/${trade.id}`}>
+                    <div className="flex items-center justify-between p-2 bg-muted/20 rounded hover:bg-muted/40 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full" />
+                        <span className="text-xs font-mono text-foreground">{trade.asset}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="text-primary font-bold">${trade.price} USDC</span>
+                        <span className="text-muted-foreground">{trade.timestamp}</span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </NexusLayout>

@@ -1,7 +1,9 @@
+"use client";
+
 import Link from 'next/link';
 import { NexusLayout } from '@/components/nexus-layout';
-import { trades } from '@/lib/mock-data';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useNexus } from '@/lib/nexus-context';
 
 const statusColors = {
   PENDING: 'text-secondary border-secondary/50 bg-secondary/10',
@@ -10,15 +12,53 @@ const statusColors = {
 };
 
 export default function TradesPage() {
+  const { trades, activePoolId, pools, agents, executeTrade, refreshState } = useNexus();
+
+  async function handleDemoSettlement() {
+    const poolId = activePoolId ?? pools[0]?.poolId;
+    const brokerName = agents[0]?.name;
+
+    if (!poolId || !brokerName) {
+      return;
+    }
+
+    await executeTrade({
+      poolId,
+      brokerName,
+      asset: 'Crop Data',
+      price: '45.00',
+      negotiation: 'Trade ledger demo trigger',
+    });
+  }
+
   return (
     <NexusLayout>
       <div className="flex flex-col h-full">
         <div className="border-b border-border/20 px-6 py-5 flex-shrink-0 bg-gradient-to-r from-primary/5 to-secondary/5 backdrop-blur-sm rounded-lg mb-6">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-            <h2 className="text-lg font-bold text-foreground uppercase tracking-wider">
-              Trade Ledger
-            </h2>
+          <div className="flex items-center justify-between gap-4 flex-wrap mb-1">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+              <h2 className="text-lg font-bold text-foreground uppercase tracking-wider">
+                Trade Ledger
+              </h2>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleDemoSettlement}
+                className="rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
+              >
+                Trigger Settlement
+              </button>
+              <button
+                type="button"
+                onClick={refreshState}
+                className="rounded-full border border-border/40 bg-card/70 px-4 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-card"
+              >
+                Refresh Trades
+              </button>
+            </div>
           </div>
           <p className="text-xs text-muted-foreground mt-2">All negotiations, active trades, and settlements</p>
         </div>
@@ -45,7 +85,7 @@ export default function TradesPage() {
                   <div className="grid grid-cols-3 gap-4 text-xs">
                     <div>
                       <div className="text-muted-foreground uppercase tracking-wider mb-1 font-medium">Amount</div>
-                      <div className="text-primary font-bold">{trade.amount}</div>
+                      <div className="text-primary font-bold">{trade.amount || trade.price || '0'}</div>
                     </div>
                     <div>
                       <div className="text-muted-foreground uppercase tracking-wider mb-1 font-medium">Created</div>
@@ -53,7 +93,7 @@ export default function TradesPage() {
                     </div>
                     <div>
                       <div className="text-muted-foreground uppercase tracking-wider mb-1 font-medium">Details</div>
-                      <div className="text-accent truncate">{trade.details}</div>
+                      <div className="text-accent truncate">{trade.details || trade.asset || 'Live settlement'}</div>
                     </div>
                   </div>
                 </div>
