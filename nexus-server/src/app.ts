@@ -119,6 +119,8 @@ const io = new Server(server, {
   cors: { origin: process.env.NEXUS_CORS_ORIGIN || '*', methods: ['GET', 'POST', 'PATCH'] },
 });
 
+import BrainManager from './brain-manager';
+
 const PORT = Number(process.env.PORT || 5000);
 const API_KEY = process.env.NEXUS_API_KEY || null;
 
@@ -312,6 +314,9 @@ async function processPendingConfirmations() {
 
 setInterval(processPendingConfirmations, RETRY_POLL_MS).unref();
 
+// Instantiate BrainManager to handle per-agent intelligence
+const brainManager = new BrainManager(io);
+
 function cleanupExpiredDeliveryTokens() {
   const now = Date.now();
   for (const [tradeId, record] of Object.entries(deliveryTokens)) {
@@ -438,9 +443,12 @@ app.post('/api/join-pool', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'brokerName is required' });
   }
 
+  // allow optional brainConfig to be sent at join time
+  const brainConfig = (req.body || {}).brainConfig || null;
+
   const existing = darkPools[poolId].brokers.find((broker) => broker.agentId === agentId);
   if (!existing) {
-    darkPools[poolId].brokers.push({
+    const brokerObj = {
       brokerName: String(brokerName),
       agentId: String(agentId || ''),
       sessionId: String(sessionId || ''),
@@ -450,7 +458,18 @@ app.post('/api/join-pool', (req: Request, res: Response) => {
       maxLimit: 100,
       lastActive: new Date().toISOString(),
       poolId,
-    });
+      brainConfig,
+    };
+    darkPools[poolId].brokers.push(brokerObj);
+
+    // register agent with BrainManager so it can handle negotiations
+    try {
+      // brainManager is instantiated near module init
+      (brainManager as any).registerAgent(poolId, brokerObj);
+    } catch (e) {
+      // non-fatal
+      console.warn('[join-pool] brainManager registration failed', e && (e as Error).message);
+    }
   }
 
   const ts = timestamp();
@@ -591,6 +610,13 @@ app.post('/api/negotiate', (req: Request, res: Response) => {
       isBlurred: true,
       isSettlement: false,
     } satisfies FeedActivity);
+  }
+
+  // Let the BrainManager process this message for configured agents
+  try {
+    void (brainManager as any).handleIncoming(poolId, msg);
+  } catch (e) {
+    console.warn('[negotiate] brainManager handleIncoming error', e && (e as Error).message);
   }
 
   return res.json({ relayed: true });
