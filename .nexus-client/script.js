@@ -180,8 +180,18 @@ async function apiFetch(urlPath, options = {}) {
     body = await res.text().catch(() => '(empty body)');
   }
 
+  if (res.status === 402) {
+    const error = new Error(`Server 402 on ${urlPath}`);
+    error.body = body;
+    throw error;
+  }
+
   if (!res.ok) throw new Error(`Server ${res.status} on ${urlPath}: ${JSON.stringify(body)}`);
   return body;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function requireField(obj, keys, label) {
@@ -294,31 +304,48 @@ async function executeTrade(poolId, incomingMsg, context) {
 
   const payload = { poolId: tradePoolId, brokerName, buyer, seller, asset, price, negotiation: incomingMsg };
 
-  let result;
-  try {
-    result = await apiFetch('/api/execute-trade', { method: 'POST', body: JSON.stringify(payload) });
-  } catch (err) {
-    if (!String(err.message || '').includes('Server 402 on /api/execute-trade')) throw err;
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 500;
 
-    const probeRes = await fetch(`${SERVER_BASE_URL}/api/execute-trade`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const challenge = await probeRes.json();
-    if (probeRes.status !== 402) {
-      if (!probeRes.ok) throw new Error(`Unexpected execute-trade response: ${probeRes.status} ${JSON.stringify(challenge)}`);
-      result = challenge;
-    } else {
-      const paymentTerms = challenge.accepts?.[0];
-      if (!paymentTerms) throw new Error('No payment terms in 402 response');
-      const xPayment = await getSignedXPayment(paymentTerms);
-      result = await apiFetch('/api/execute-trade', { method: 'POST', headers: { 'X-Payment': xPayment }, body: JSON.stringify(payload) });
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
+    try {
+      let result;
+
+      try {
+        result = await apiFetch('/api/execute-trade', { method: 'POST', body: JSON.stringify(payload) });
+      } catch (err) {
+        if (String(err.message || '').startsWith('Server 402 on /api/execute-trade')) {
+          const paymentTerms = err.body?.accepts?.[0];
+          if (!paymentTerms) throw new Error('No payment terms in 402 response');
+          const xPayment = await getSignedXPayment(paymentTerms);
+          result = await apiFetch('/api/execute-trade', {
+            method: 'POST',
+            headers: { 'X-Payment': xPayment },
+            body: JSON.stringify(payload),
+          });
+        } else {
+          throw err;
+        }
+      }
+
+      log.emit('TRADE_EXECUTED', { poolId: tradePoolId, brokerName, buyer, seller, asset, price, success: Boolean(result?.success) });
+      return result;
+    } catch (err) {
+      const message = String(err?.message || err);
+
+      if (message.includes('Server 404 on /api/execute-trade')) {
+        throw new Error(`Pool ${tradePoolId} was not found on the server. Create a fresh pool and redeploy the brokers.`);
+      }
+
+      if (message.includes('Network error reaching') && attempt < MAX_RETRIES) {
+        log.warn(`executeTrade retry ${attempt}/${MAX_RETRIES} after network error: ${message}`);
+        await sleep(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      throw err;
     }
   }
-
-  log.emit('TRADE_EXECUTED', { poolId: tradePoolId, brokerName, buyer, seller, asset, price, success: Boolean(result?.success) });
-  return result;
 }
 
 function printUsage() {
