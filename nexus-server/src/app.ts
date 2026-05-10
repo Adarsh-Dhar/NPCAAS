@@ -448,11 +448,11 @@ app.post('/api/join-pool', (req: Request, res: Response) => {
 
   const existing = darkPools[poolId].brokers.find((broker) => broker.agentId === agentId);
   if (!existing) {
-    const brokerObj = {
+    const brokerObj: Broker & { brainConfig: unknown } = {
       brokerName: String(brokerName),
       agentId: String(agentId || ''),
       sessionId: String(sessionId || ''),
-      status: 'IDLE',
+      status: 'IDLE' as Status,
       joinedAt: new Date().toISOString(),
       sessionLimit: 0,
       maxLimit: 100,

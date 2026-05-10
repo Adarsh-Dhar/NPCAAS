@@ -27,6 +27,7 @@ const server = (0, http_1.createServer)(app);
 const io = new socket_io_1.Server(server, {
     cors: { origin: process.env.NEXUS_CORS_ORIGIN || '*', methods: ['GET', 'POST', 'PATCH'] },
 });
+const brain_manager_1 = __importDefault(require("./brain-manager"));
 const PORT = Number(process.env.PORT || 5000);
 const API_KEY = process.env.NEXUS_API_KEY || null;
 const KITE_FACILITATOR_URL = process.env.KITE_FACILITATOR_URL || 'https://facilitator.pieverse.io';
@@ -201,6 +202,8 @@ function processPendingConfirmations() {
     });
 }
 setInterval(processPendingConfirmations, RETRY_POLL_MS).unref();
+// Instantiate BrainManager to handle per-agent intelligence
+const brainManager = new brain_manager_1.default(io);
 function cleanupExpiredDeliveryTokens() {
     const now = Date.now();
     for (const [tradeId, record] of Object.entries(deliveryTokens)) {
@@ -307,9 +310,11 @@ app.post('/api/join-pool', (req, res) => {
     if (!brokerName) {
         return res.status(400).json({ error: 'brokerName is required' });
     }
+    // allow optional brainConfig to be sent at join time
+    const brainConfig = (req.body || {}).brainConfig || null;
     const existing = darkPools[poolId].brokers.find((broker) => broker.agentId === agentId);
     if (!existing) {
-        darkPools[poolId].brokers.push({
+        const brokerObj = {
             brokerName: String(brokerName),
             agentId: String(agentId || ''),
             sessionId: String(sessionId || ''),
@@ -319,7 +324,18 @@ app.post('/api/join-pool', (req, res) => {
             maxLimit: 100,
             lastActive: new Date().toISOString(),
             poolId,
-        });
+            brainConfig,
+        };
+        darkPools[poolId].brokers.push(brokerObj);
+        // register agent with BrainManager so it can handle negotiations
+        try {
+            // brainManager is instantiated near module init
+            brainManager.registerAgent(poolId, brokerObj);
+        }
+        catch (e) {
+            // non-fatal
+            console.warn('[join-pool] brainManager registration failed', e && e.message);
+        }
     }
     const ts = timestamp();
     io.to(poolId).emit('pool:broker-joined', { poolId, brokerName, agentId, timestamp: ts });
@@ -445,6 +461,13 @@ app.post('/api/negotiate', (req, res) => {
             isBlurred: true,
             isSettlement: false,
         });
+    }
+    // Let the BrainManager process this message for configured agents
+    try {
+        void brainManager.handleIncoming(poolId, msg);
+    }
+    catch (e) {
+        console.warn('[negotiate] brainManager handleIncoming error', e && e.message);
     }
     return res.json({ relayed: true });
 });

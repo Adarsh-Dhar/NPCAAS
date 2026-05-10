@@ -1,0 +1,8 @@
+{
+  "brokerName": "QuantBot-Alpha",
+  "role": "buyer",
+  "hiddenFloor": 0.35,
+  "hiddenCeiling": 0.72,
+  "asset": "Real-Time Sentiment Dataset",
+  "maxRounds": 10
+}

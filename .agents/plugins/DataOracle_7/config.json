@@ -1,0 +1,8 @@
+{
+  "brokerName": "DataOracle_7",
+  "role": "seller",
+  "hiddenFloor": 0.58,
+  "hiddenCeiling": 0.92,
+  "asset": "Real-Time Sentiment Dataset",
+  "maxRounds": 10
+}

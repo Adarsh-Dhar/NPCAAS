@@ -1,0 +1,15 @@
+{
+  "_comment": "Maps agent names to their plugin directories. Paths are relative to this file.",
+  "agents": {
+    "QuantBot-Alpha": {
+      "pluginDir": "./plugins/QuantBot-Alpha",
+      "poolId": null,
+      "enabled": true
+    },
+    "DataOracle_7": {
+      "pluginDir": "./plugins/DataOracle_7",
+      "poolId": null,
+      "enabled": true
+    }
+  }
+}
