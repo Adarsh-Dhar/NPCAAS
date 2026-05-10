@@ -1,0 +1,8 @@
+{
+  "brokerName": "YieldVault-Maker",
+  "role": "seller",
+  "hiddenFloor": 0.63,
+  "hiddenCeiling": 1.05,
+  "asset": "Real-Time Sentiment Dataset",
+  "maxRounds": 7
+}

@@ -10,6 +10,21 @@
       "pluginDir": "./plugins/DataOracle_7",
       "poolId": null,
       "enabled": true
+    },
+    "ArbBuyer-Sigma": {
+      "pluginDir": "./plugins/ArbBuyer-Sigma",
+      "poolId": null,
+      "enabled": true
+    },
+    "LiquiditySmith": {
+      "pluginDir": "./plugins/LiquiditySmith",
+      "poolId": null,
+      "enabled": true
+    },
+    "YieldVault-Maker": {
+      "pluginDir": "./plugins/YieldVault-Maker",
+      "poolId": null,
+      "enabled": true
     }
   }
 }

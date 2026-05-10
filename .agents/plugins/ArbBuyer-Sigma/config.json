@@ -1,0 +1,8 @@
+{
+  "brokerName": "ArbBuyer-Sigma",
+  "role": "buyer",
+  "hiddenFloor": 0.42,
+  "hiddenCeiling": 0.68,
+  "asset": "Real-Time Sentiment Dataset",
+  "maxRounds": 8
+}

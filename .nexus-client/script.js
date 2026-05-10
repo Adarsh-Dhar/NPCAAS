@@ -3,6 +3,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { execSync } = require('child_process');
 
 function loadEnvFile(filePath, override = false) {
@@ -213,9 +214,10 @@ function shell(cmd, { timeoutMs = DEFAULT_KPASS_TIMEOUT_MS } = {}) {
 let _mockAgentCounter = 1000;
 let _mockSessionCounter = 2000;
 let _mockRequestCounter = 3000;
+const MOCK_RUN_ID = `${process.pid}-${crypto.randomBytes(3).toString('hex')}`;
 
 function kpassMock_register() {
-  return JSON.stringify({ agent_id: `mock-agent-${_mockAgentCounter++}` });
+  return JSON.stringify({ agent_id: `mock-agent-${MOCK_RUN_ID}-${_mockAgentCounter++}` });
 }
 
 function kpassMock_sessionCreate() {
@@ -224,7 +226,7 @@ function kpassMock_sessionCreate() {
 }
 
 function kpassMock_sessionStatus() {
-  return JSON.stringify({ session_id: `mock-session-${_mockSessionCounter++}`, status: 'approved' });
+  return JSON.stringify({ session_id: `mock-session-${MOCK_RUN_ID}-${_mockSessionCounter++}`, status: 'approved' });
 }
 
 function kpassMock_sessionList() {
@@ -262,6 +264,13 @@ function kpass_sessionRevoke(sessionId) {
 }
 
 async function getSignedXPayment(paymentTerms) {
+  if (KPASS_MOCK) {
+    return Buffer.from(JSON.stringify({
+      authorization: { mock: true, terms: paymentTerms },
+      signature: 'mock-signature',
+    })).toString('base64');
+  }
+
   try {
     const { getSignedXPayment: sign } = require('../lib/kite-payment');
     return sign(paymentTerms);
@@ -271,6 +280,9 @@ async function getSignedXPayment(paymentTerms) {
 }
 
 async function executeTrade(poolId, incomingMsg, context) {
+  const tradePoolId = poolId || context.poolId || incomingMsg?.poolId;
+  if (!tradePoolId) throw new Error('Cannot execute trade without poolId');
+
   const { brokerName, agentConfig } = context;
   const asset = incomingMsg?.asset || incomingMsg?.instrument || agentConfig.asset || 'Real-Time Sentiment Dataset';
   const rawPrice = incomingMsg?.amount ?? incomingMsg?.price ?? agentConfig.hiddenCeiling;
@@ -280,7 +292,7 @@ async function executeTrade(poolId, incomingMsg, context) {
   const buyer = role === 'seller' ? counterparty : brokerName;
   const seller = role === 'seller' ? brokerName : counterparty;
 
-  const payload = { poolId, brokerName, buyer, seller, asset, price, negotiation: incomingMsg };
+  const payload = { poolId: tradePoolId, brokerName, buyer, seller, asset, price, negotiation: incomingMsg };
 
   let result;
   try {
@@ -305,7 +317,7 @@ async function executeTrade(poolId, incomingMsg, context) {
     }
   }
 
-  log.emit('TRADE_EXECUTED', { poolId, brokerName, buyer, seller, asset, price, success: Boolean(result?.success) });
+  log.emit('TRADE_EXECUTED', { poolId: tradePoolId, brokerName, buyer, seller, asset, price, success: Boolean(result?.success) });
   return result;
 }
 
@@ -399,16 +411,22 @@ async function deployBroker(flags) {
   socket.on('connect', () => {
     socket.emit('join-pool', poolId);
     const opening = brain.buildOpeningMove({ ...agentConfig, brokerName });
-    socket.emit('negotiate', { poolId, msg: { ...opening, from: brokerName } });
+    socket.emit('negotiate', { poolId, msg: { ...opening, from: brokerName, role: agentConfig.role } });
   });
 
   socket.on('connect_error', (err) => log.warn(`Socket error: ${err.message}`));
 
   socket.on('negotiate', async (msg) => {
     if (msg.from === brokerName) return;
+    if (!['BID', 'ASK', 'COUNTER'].includes(String(msg.action || ''))) return;
+    if (msg.role && String(msg.role).toLowerCase() === String(agentConfig.role).toLowerCase()) return;
+
     negotiationRound += 1;
     if (negotiationRound >= maxRounds) {
-      socket.emit('negotiate', { poolId, msg: { action: 'REJECT', amount: 0, from: brokerName, reason: 'max_rounds_exceeded' } });
+      socket.emit('negotiate', {
+        poolId,
+        msg: { action: 'REJECT', amount: 0, from: brokerName, role: agentConfig.role, reason: 'max_rounds_exceeded' },
+      });
       negotiationRound = 0;
       return;
     }
@@ -419,19 +437,32 @@ async function deployBroker(flags) {
 
       if (decision?.action === 'ACCEPT') {
         negotiationRound = 0;
-        await executeTrade(poolId, { ...msg, amount: decisionAmount || msg.amount }, { brokerName, agentConfig });
+        await executeTrade(poolId, { ...msg, amount: decisionAmount || msg.amount }, { poolId, brokerName, agentConfig });
       } else if (decision?.action === 'REJECT') {
         negotiationRound = 0;
-        socket.emit('negotiate', { poolId, msg: { action: 'REJECT', amount: 0, from: brokerName, reason: decision.reason || 'rejected' } });
+        socket.emit('negotiate', {
+          poolId,
+          msg: { action: 'REJECT', amount: 0, from: brokerName, role: agentConfig.role, reason: decision.reason || 'rejected' },
+        });
       } else {
         socket.emit('negotiate', {
           poolId,
-          msg: { action: 'COUNTER', amount: decisionAmount, asset: msg.asset || agentConfig.asset, from: brokerName, reason: decision?.reason },
+          msg: {
+            action: 'COUNTER',
+            amount: decisionAmount,
+            asset: msg.asset || agentConfig.asset,
+            from: brokerName,
+            role: agentConfig.role,
+            reason: decision?.reason,
+          },
         });
       }
     } catch (err) {
       log.error(`Negotiation loop error: ${err.message}`);
-      socket.emit('negotiate', { poolId, msg: { action: 'REJECT', amount: 0, from: brokerName, reason: 'internal_error' } });
+      socket.emit('negotiate', {
+        poolId,
+        msg: { action: 'REJECT', amount: 0, from: brokerName, role: agentConfig.role, reason: 'internal_error' },
+      });
       negotiationRound = 0;
     }
   });

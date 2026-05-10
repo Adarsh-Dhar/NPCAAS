@@ -1,0 +1,8 @@
+{
+  "brokerName": "LiquiditySmith",
+  "role": "seller",
+  "hiddenFloor": 0.52,
+  "hiddenCeiling": 0.86,
+  "asset": "Real-Time Sentiment Dataset",
+  "maxRounds": 9
+}
