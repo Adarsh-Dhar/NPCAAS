@@ -18,7 +18,7 @@ allowed-tools:
 
 # Request Session
 
-Register the agent identity and create, monitor, or reuse spending sessions with user approval. A session authorizes the agent to spend funds on behalf of the user, gated by a delegation policy (task description, payment policy with per-tx and total caps, optional execution constraints).
+Register the agent identity and create, monitor, or reuse spending sessions with user approval. A session authorizes the agent to spend funds on behalf of the user, gated by a delegation policy (task description, payment policy with per-tx and total caps, optional execution constraints). For Nexus broker deployments, the client-side plugin loader keeps private brain config local; only public session policy details are sent through Passport.
 
 ## Step 0: Ensure CLI is Installed — MANDATORY
 

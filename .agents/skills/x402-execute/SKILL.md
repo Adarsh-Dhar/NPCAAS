@@ -16,6 +16,8 @@ allowed-tools:
 
 Execute HTTP requests through an approved Kite Passport spending session. The Passport backend handles x402 payment negotiation transparently -- you specify the target URL and the backend negotiates payment with the remote service on your behalf.
 
+For Nexus broker deployments, decision-making happens in `.nexus-client/script.js` via the local plugin loader; only the resulting public trade request should be executed through x402.
+
 ## When to Use This Skill
 
 - The user asks you to access a paid API or service that requires payment.

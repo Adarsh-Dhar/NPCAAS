@@ -1,26 +1,32 @@
 #!/usr/bin/env node
-// nexus.js — Bridge between AI agent, OTC clearinghouse, and Kite Agent Passport
-// Requires Node.js 18+ (native fetch)
-//
-// KITE PASSPORT NOTE:
-// The `kpass` CLI is a planned integration with the Kite Agent Passport system.
-// Until the real binary ships, set NEXUS_KPASS_MOCK=true and the CLI will simulate
-// the full passkey approval flow locally (useful for development and demos).
-//
-// Real kpass integration: https://kite.dev/docs/agent-passport (placeholder)
-
 'use strict';
 
 const path = require('path');
-const dotenv = require('dotenv');
-dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
-dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
-const { getSignedXPayment } = require('../lib/kite-payment');
-
+const fs = require('fs');
 const { execSync } = require('child_process');
-const { runBrain, buildInitialBid, buildInitialAsk, shouldStopNegotiation } = require('./economic-engine');
 
-// ─── CONFIG ──────────────────────────────────────────────────────────────────
+function loadEnvFile(filePath, override = false) {
+  if (!fs.existsSync(filePath)) return;
+  const content = fs.readFileSync(filePath, 'utf8');
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const equalIndex = trimmed.indexOf('=');
+    if (equalIndex === -1) continue;
+    const key = trimmed.slice(0, equalIndex).trim();
+    let value = trimmed.slice(equalIndex + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (override || process.env[key] == null) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadEnvFile(path.resolve(__dirname, '..', '.env'));
+loadEnvFile(path.resolve(__dirname, '.env'), true);
+
 const SERVER_BASE_URL = process.env.NEXUS_SERVER_URL || 'http://localhost:5000';
 const DEFAULT_MAX_PER_TX = process.env.NEXUS_MAX_PER_TX || '50.00';
 const DEFAULT_MAX_TOTAL = process.env.NEXUS_MAX_TOTAL || '500.00';
@@ -30,39 +36,26 @@ const DEFAULT_PAYMENT = process.env.NEXUS_PAYMENT || 'x402';
 const DEFAULT_KPASS_TIMEOUT_MS = Number(process.env.NEXUS_KPASS_TIMEOUT_MS || 5 * 60 * 1000);
 const WAIT_KPASS_TIMEOUT_MS = Number(process.env.NEXUS_KPASS_WAIT_TIMEOUT_MS || 30 * 60 * 1000);
 
-// When true, kpass commands are simulated locally — no real binary required
+const REGISTRY_PATH = path.resolve(__dirname, '..', '.agents', 'registry.json');
+const PLUGINS_ROOT = path.resolve(__dirname, '..', '.agents', 'plugins');
+
 let KPASS_MOCK = process.env.NEXUS_KPASS_MOCK === 'true' || process.env.NEXUS_KPASS_MOCK === '1';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-// If KPASS_MOCK is not explicitly enabled but `kpass` binary is missing, fall back to mock
 if (!KPASS_MOCK) {
   try {
     execSync('command -v kpass', { stdio: 'ignore', shell: '/bin/bash' });
-  } catch (err) {
+  } catch {
     if (IS_PRODUCTION) {
-      console.error('[nexus] kpass binary not found in PATH and NODE_ENV=production. Refusing to enable mock mode.');
+      console.error('[nexus] kpass binary not found and NODE_ENV=production. Refusing mock mode.');
       process.exit(1);
     }
-    console.warn('[nexus] kpass binary not found in PATH — falling back to NEXUS_KPASS_MOCK=true for local dev.');
+    console.warn('[nexus] kpass binary not found — falling back to NEXUS_KPASS_MOCK=true for local dev.');
     process.env.NEXUS_KPASS_MOCK = 'true';
     KPASS_MOCK = true;
   }
 }
 
-// ─── STARTUP VALIDATION ───────────────────────────────────────────────────────
-function validateEnv() {
-  const missing = [];
-  if (!process.env.ANTHROPIC_API_KEY) {
-    missing.push('ANTHROPIC_API_KEY');
-  }
-  if (missing.length > 0) {
-    console.error(`[nexus] ❌ Missing required environment variables: ${missing.join(', ')}`);
-    console.error('[nexus]    Copy .env.example to .env and fill in the values.');
-    process.exit(1);
-  }
-}
-
-// ─── LOGGING ─────────────────────────────────────────────────────────────────
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
 const LOG_LEVEL = LOG_LEVELS[process.env.NEXUS_LOG_LEVEL] ?? LOG_LEVELS.info;
 
@@ -71,15 +64,104 @@ const log = {
   info: (...a) => LOG_LEVEL <= 1 && console.log('[nexus]', ...a),
   warn: (...a) => LOG_LEVEL <= 2 && console.warn('[nexus:warn]', ...a),
   error: (...a) => LOG_LEVEL <= 3 && console.error('[nexus:error]', ...a),
-  emit: (tag, payload) =>
-    console.log(`${tag}: ${typeof payload === 'object' ? JSON.stringify(payload) : payload}`),
+  emit: (tag, payload) => console.log(`${tag}: ${typeof payload === 'object' ? JSON.stringify(payload) : payload}`),
 };
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-async function apiFetch(path, options = {}) {
-  const url = `${SERVER_BASE_URL}${path}`;
-  log.debug(`→ ${options.method || 'GET'} ${url}`);
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\"'\"'")}'`;
+}
 
+function parseArgs(argv) {
+  const args = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!arg.startsWith('--')) continue;
+    const [key, inlineVal] = arg.slice(2).split('=');
+    const camel = key.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    if (inlineVal !== undefined) args[camel] = inlineVal;
+    else if (argv[i + 1] && !argv[i + 1].startsWith('--')) args[camel] = argv[++i];
+    else args[camel] = true;
+  }
+  return args;
+}
+
+function parseTtlSeconds(ttl) {
+  const value = String(ttl ?? DEFAULT_TTL).trim().toLowerCase();
+  const match = value.match(/^(\d+(?:\.\d+)?)([smhd])?$/);
+  if (!match) throw new Error(`Invalid TTL value: ${ttl}`);
+  const amount = Number(match[1]);
+  const unit = match[2] || 's';
+  return Math.round(amount * { s: 1, m: 60, h: 3600, d: 86400 }[unit]);
+}
+
+function loadRegistry() {
+  try {
+    const raw = fs.readFileSync(REGISTRY_PATH, 'utf8');
+    return JSON.parse(raw).agents || {};
+  } catch (err) {
+    throw new Error(`Cannot read registry at ${REGISTRY_PATH}: ${err.message}`);
+  }
+}
+
+function resolvePluginDir(entry, brokerName) {
+  if (entry?.pluginDir) {
+    return path.isAbsolute(entry.pluginDir)
+      ? entry.pluginDir
+      : path.resolve(path.dirname(REGISTRY_PATH), entry.pluginDir);
+  }
+  return path.join(PLUGINS_ROOT, brokerName);
+}
+
+function normalizeBrainModule(moduleExport) {
+  const candidate = moduleExport?.default ?? moduleExport;
+  if (!candidate || typeof candidate !== 'object') return null;
+  if (typeof candidate.decide !== 'function' || typeof candidate.buildOpeningMove !== 'function') return null;
+  return candidate;
+}
+
+function loadAgentPlugin(brokerName) {
+  const registry = loadRegistry();
+  const entry = registry[brokerName];
+  if (!entry) throw new Error(`Agent "${brokerName}" not found in ${REGISTRY_PATH}.`);
+  if (!entry.enabled) throw new Error(`Agent "${brokerName}" is disabled in registry.json.`);
+
+  const pluginDir = resolvePluginDir(entry, brokerName);
+  const brainPath = path.join(pluginDir, 'brain.js');
+  const configPath = path.join(pluginDir, 'config.json');
+  if (!fs.existsSync(brainPath)) throw new Error(`Brain file not found: ${brainPath}`);
+  if (!fs.existsSync(configPath)) throw new Error(`Config file not found: ${configPath}`);
+
+  delete require.cache[require.resolve(brainPath)];
+  const brain = normalizeBrainModule(require(brainPath));
+  if (!brain) throw new Error(`Invalid brain module at ${brainPath}.`);
+
+  const rawConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  const agentConfig = {
+    brokerName,
+    role: String(rawConfig.role || 'buyer'),
+    hiddenFloor: Number(rawConfig.hiddenFloor ?? 0.45),
+    hiddenCeiling: Number(rawConfig.hiddenCeiling ?? 0.75),
+    asset: String(rawConfig.asset || 'Real-Time Sentiment Dataset'),
+    maxRounds: Number(rawConfig.maxRounds ?? 10),
+    sessionTtl: rawConfig.sessionTtl,
+  };
+
+  if (process.env.NEXUS_HIDDEN_FLOOR) agentConfig.hiddenFloor = parseFloat(process.env.NEXUS_HIDDEN_FLOOR);
+  if (process.env.NEXUS_HIDDEN_CEILING) agentConfig.hiddenCeiling = parseFloat(process.env.NEXUS_HIDDEN_CEILING);
+  if (process.env.NEXUS_ROLE) agentConfig.role = process.env.NEXUS_ROLE;
+  if (process.env.NEXUS_ASSET) agentConfig.asset = process.env.NEXUS_ASSET;
+  if (process.env.NEXUS_MAX_ROUNDS) agentConfig.maxRounds = Number(process.env.NEXUS_MAX_ROUNDS);
+
+  const metadata = typeof brain.getMetadata === 'function'
+    ? brain.getMetadata()
+    : { name: brokerName, description: '', strategy: 'unknown' };
+
+  log.info(`Plugin loaded: "${brokerName}" → ${metadata.name} (${metadata.strategy})`);
+  return { brain, agentConfig, metadata };
+}
+
+async function apiFetch(urlPath, options = {}) {
+  const url = `${SERVER_BASE_URL}${urlPath}`;
   let res;
   try {
     res = await fetch(url, {
@@ -97,219 +179,114 @@ async function apiFetch(path, options = {}) {
     body = await res.text().catch(() => '(empty body)');
   }
 
-  if (!res.ok) {
-    throw new Error(`Server ${res.status} on ${path}: ${JSON.stringify(body)}`);
-  }
-
-  log.debug(`← ${res.status}`, body);
+  if (!res.ok) throw new Error(`Server ${res.status} on ${urlPath}: ${JSON.stringify(body)}`);
   return body;
 }
 
-function shell(cmd, { timeoutMs = DEFAULT_KPASS_TIMEOUT_MS } = {}) {
-  log.debug(`$ ${cmd}`);
+function requireField(obj, keys, label) {
+  for (const key of keys) {
+    if (obj[key] != null) return obj[key];
+  }
+  throw new Error(`Missing field in ${label}: ${JSON.stringify(obj)}`);
+}
+
+function parseKpassJSON(raw, hint) {
   try {
-    return execSync(cmd, {
-      stdio: ['inherit', 'pipe', 'pipe'],
-      timeout: timeoutMs,
-      shell: '/bin/bash',
-    })
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`${hint} returned non-JSON output:\n${raw}`);
+  }
+}
+
+function shell(cmd, { timeoutMs = DEFAULT_KPASS_TIMEOUT_MS } = {}) {
+  try {
+    return execSync(cmd, { stdio: ['inherit', 'pipe', 'pipe'], timeout: timeoutMs, shell: '/bin/bash' })
       .toString()
       .trim();
   } catch (err) {
     const stderr = err.stderr?.toString().trim() || '';
     const stdout = err.stdout?.toString().trim() || '';
-    const detail = stderr || stdout || err.message;
-    throw new Error(`kpass command failed:\n  $ ${cmd}\n  ${detail}`);
+    throw new Error(`kpass command failed:\n  $ ${cmd}\n  ${stderr || stdout || err.message}`);
   }
 }
-
-function shellQuote(value) {
-  return `'${String(value).replace(/'/g, `'"'"'`)}'`;
-}
-
-function parseTtlSeconds(ttl) {
-  const value = String(ttl ?? DEFAULT_TTL)
-    .trim()
-    .toLowerCase();
-  const match = value.match(/^(\d+(?:\.\d+)?)([smhd])?$/);
-  if (!match) throw new Error(`Invalid TTL value: ${ttl}`);
-  const amount = Number(match[1]);
-  const unit = match[2] || 's';
-  const multipliers = { s: 1, m: 60, h: 3600, d: 86400 };
-  return Math.round(amount * multipliers[unit]);
-}
-
-function openUrl(url) {
-  if (!url) return false;
-  const encoded = JSON.stringify(String(url));
-  const cmd =
-    process.platform === 'darwin'
-      ? `open ${encoded}`
-      : process.platform === 'win32'
-      ? `start "" ${encoded}`
-      : `xdg-open ${encoded}`;
-  try {
-    execSync(cmd, { stdio: 'ignore', timeout: 5000, shell: '/bin/bash' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function parseKpassJSON(raw, cmdHint) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw new Error(`${cmdHint} returned non-JSON output:\n${raw}`);
-  }
-}
-
-function requireField(obj, keys, label) {
-  for (const k of keys) {
-    if (obj[k] != null) return obj[k];
-  }
-  throw new Error(
-    `Missing field (tried: ${keys.join(', ')}) in ${label}: ${JSON.stringify(obj)}`
-  );
-}
-
-function parseArgs(argv) {
-  const args = {};
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (!arg.startsWith('--')) continue;
-    const [key, inlineVal] = arg.slice(2).split('=');
-    const camel = key.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-    if (inlineVal !== undefined) {
-      args[camel] = inlineVal;
-    } else if (argv[i + 1] && !argv[i + 1].startsWith('--')) {
-      args[camel] = argv[++i];
-    } else {
-      args[camel] = true;
-    }
-  }
-  return args;
-}
-
-// ─── KPASS MOCK ───────────────────────────────────────────────────────────────
-// Simulates the full Kite Agent Passport flow locally.
-// Replace each mock function body with real kpass shell calls when the binary ships.
 
 let _mockAgentCounter = 1000;
 let _mockSessionCounter = 2000;
 let _mockRequestCounter = 3000;
 
 function kpassMock_register() {
-  const agentId = `mock-agent-${_mockAgentCounter++}`;
-  log.warn(`[MOCK kpass] Simulating agent:register → ${agentId}`);
-  return JSON.stringify({ agent_id: agentId });
+  return JSON.stringify({ agent_id: `mock-agent-${_mockAgentCounter++}` });
 }
 
-function kpassMock_sessionCreate(delegation) {
+function kpassMock_sessionCreate() {
   const requestId = `mock-req-${_mockRequestCounter++}`;
-  const approvalUrl = `${SERVER_BASE_URL.replace(/\/$/, '')}/mock-approval/${requestId}`;
-  log.warn(`[MOCK kpass] Simulating agent:session create → requestId: ${requestId}`);
-  log.warn(`[MOCK kpass] Approval URL (mock — no actual passkey required): ${approvalUrl}`);
-  return JSON.stringify({
-    request_id: requestId,
-    status: 'pending',
-    approval_url: approvalUrl,
-  });
+  return JSON.stringify({ request_id: requestId, status: 'pending', approval_url: `${SERVER_BASE_URL}/mock-approval/${requestId}` });
 }
 
-function kpassMock_sessionStatus(requestId) {
-  const sessionId = `mock-session-${_mockSessionCounter++}`;
-  log.warn(`[MOCK kpass] Simulating agent:session status → APPROVED → sessionId: ${sessionId}`);
-  return JSON.stringify({ session_id: sessionId, status: 'approved' });
+function kpassMock_sessionStatus() {
+  return JSON.stringify({ session_id: `mock-session-${_mockSessionCounter++}`, status: 'approved' });
 }
 
-function kpassMock_sessionList(agentId) {
-  log.warn(`[MOCK kpass] Simulating agent:session list for ${agentId}`);
+function kpassMock_sessionList() {
   return JSON.stringify([]);
 }
 
-function kpassMock_sessionRevoke(sessionId) {
-  log.warn(`[MOCK kpass] Simulating agent:session revoke for ${sessionId}`);
+function kpassMock_sessionRevoke() {
   return '';
 }
 
-// ─── REAL KPASS SHELL WRAPPERS ─────────────────────────────────────────────
-// When NEXUS_KPASS_MOCK=false, these call the real kpass binary via execSync.
-
 function kpass_register() {
   if (KPASS_MOCK) return kpassMock_register();
-  const cmd = 'kpass agent:register --type "nexus-broker" --output json --no-interactive';
-  return shell(cmd);
+  return shell('kpass agent:register --type "nexus-broker" --output json --no-interactive');
 }
 
 function kpass_sessionCreate(delegation) {
-  if (KPASS_MOCK) return kpassMock_sessionCreate(delegation);
-  const cmd = [
-    'kpass agent:session create',
-    `--delegation ${shellQuote(delegation)}`,
-    '--output json',
-    '--no-interactive',
-  ].join(' ');
-  return shell(cmd);
+  if (KPASS_MOCK) return kpassMock_sessionCreate();
+  return shell(`kpass agent:session create --delegation ${shellQuote(delegation)} --output json --no-interactive`);
 }
 
 function kpass_sessionStatus(requestId) {
-  if (KPASS_MOCK) return kpassMock_sessionStatus(requestId);
-  const cmd = [
-    'kpass agent:session status',
-    `--request-id ${requestId}`,
-    '--wait',
-    '--output json',
-    '--no-interactive',
-  ].join(' ');
-  return shell(cmd, { timeoutMs: WAIT_KPASS_TIMEOUT_MS });
+  if (KPASS_MOCK) return kpassMock_sessionStatus();
+  return shell(`kpass agent:session status --request-id ${requestId} --wait --output json --no-interactive`, { timeoutMs: WAIT_KPASS_TIMEOUT_MS });
 }
 
 function kpass_sessionList(agentId) {
-  if (KPASS_MOCK) return kpassMock_sessionList(agentId);
-  return shell(
-    `kpass agent:session list --agent-id ${agentId} --output json --no-interactive`
-  );
+  if (KPASS_MOCK) return kpassMock_sessionList();
+  return shell(`kpass agent:session list --agent-id ${agentId} --output json --no-interactive`);
 }
 
 function kpass_sessionRevoke(sessionId) {
-  if (KPASS_MOCK) return kpassMock_sessionRevoke(sessionId);
+  if (KPASS_MOCK) return kpassMock_sessionRevoke();
   shell(`kpass agent:session revoke --session-id ${sessionId} --no-interactive`);
   return '';
 }
 
-// ─── TRADE EXECUTION ─────────────────────────────────────────────────────────
+async function getSignedXPayment(paymentTerms) {
+  try {
+    const { getSignedXPayment: sign } = require('../lib/kite-payment');
+    return sign(paymentTerms);
+  } catch {
+    return Buffer.from(JSON.stringify({ authorization: { test: true, terms: paymentTerms }, signature: '0xmockdev' })).toString('base64');
+  }
+}
+
 async function executeTrade(poolId, incomingMsg, context) {
   const { brokerName, agentConfig } = context;
-  const asset =
-    incomingMsg?.asset || incomingMsg?.instrument || 'Real-Time Sentiment Dataset';
-  const rawPrice = incomingMsg?.amount ?? incomingMsg?.price ?? DEFAULT_MAX_PER_TX;
+  const asset = incomingMsg?.asset || incomingMsg?.instrument || agentConfig.asset || 'Real-Time Sentiment Dataset';
+  const rawPrice = incomingMsg?.amount ?? incomingMsg?.price ?? agentConfig.hiddenCeiling;
   const price = String(rawPrice);
-  const role = String(agentConfig?.role || 'buyer').toLowerCase();
+  const role = String(agentConfig.role || 'buyer').toLowerCase();
   const counterparty = incomingMsg?.from || incomingMsg?.counterparty || 'DataOracle_7';
   const buyer = role === 'seller' ? counterparty : brokerName;
   const seller = role === 'seller' ? brokerName : counterparty;
 
-  const payload = {
-    poolId,
-    brokerName,
-    buyer,
-    seller,
-    asset,
-    price,
-    negotiation: incomingMsg,
-  };
+  const payload = { poolId, brokerName, buyer, seller, asset, price, negotiation: incomingMsg };
 
-  // First call may return 402 with x402 payment terms.
   let result;
   try {
-    result = await apiFetch('/api/execute-trade', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    result = await apiFetch('/api/execute-trade', { method: 'POST', body: JSON.stringify(payload) });
   } catch (err) {
-    const message = String(err?.message || '');
-    if (!message.includes('Server 402 on /api/execute-trade')) throw err;
+    if (!String(err.message || '').includes('Server 402 on /api/execute-trade')) throw err;
 
     const probeRes = await fetch(`${SERVER_BASE_URL}/api/execute-trade`, {
       method: 'POST',
@@ -323,261 +300,161 @@ async function executeTrade(poolId, incomingMsg, context) {
     } else {
       const paymentTerms = challenge.accepts?.[0];
       if (!paymentTerms) throw new Error('No payment terms in 402 response');
-
       const xPayment = await getSignedXPayment(paymentTerms);
-      result = await apiFetch('/api/execute-trade', {
-        method: 'POST',
-        headers: { 'X-Payment': xPayment },
-        body: JSON.stringify(payload),
-      });
+      result = await apiFetch('/api/execute-trade', { method: 'POST', headers: { 'X-Payment': xPayment }, body: JSON.stringify(payload) });
     }
   }
 
-  log.emit('TRADE_EXECUTED', {
-    poolId,
-    brokerName,
-    buyer,
-    seller,
-    asset,
-    price,
-    success: Boolean(result?.success),
-  });
-  log.info(`P2P trade settled: ${buyer} acquired ${asset} from ${seller} for $${price}`);
+  log.emit('TRADE_EXECUTED', { poolId, brokerName, buyer, seller, asset, price, success: Boolean(result?.success) });
   return result;
 }
 
-// ─── COMMANDS ────────────────────────────────────────────────────────────────
 function printUsage() {
   console.log(`
-nexus.js — Kite Agent Passport × OTC Clearinghouse bridge
+nexus.js — Plugin-loader Edition
 
 COMMANDS
   create-pool
-    Initialize a secure dark pool.
-
   deploy-broker --pool-id <id> --broker-name <name> [options]
-    Register a broker, get passkey approval for a budget session,
-    then connect to the pool and start negotiating.
-
   list-sessions --agent-id <id>
-    List all active Kite sessions for a given agent.
-
   revoke-session --session-id <id>
-    Revoke an active Kite session immediately.
 
-OPTIONS (deploy-broker)
-  --pool-id         <id>      Pool ID to join               (required)
-  --broker-name     <name>    Display name for the broker   (required)
-  --max-per-tx      <amount>  Max USDC spend per tx         (default: ${DEFAULT_MAX_PER_TX})
-  --max-total       <amount>  Max USDC spend for session    (default: ${DEFAULT_MAX_TOTAL})
-  --ttl             <time>    Session lifetime e.g. 1h, 24h (default: ${DEFAULT_TTL})
-  --assets          <asset>   Asset type                    (default: ${DEFAULT_ASSETS})
-  --payment         <method>  Payment approach              (default: ${DEFAULT_PAYMENT})
-  --hidden-floor    <amount>  Negotiation hidden floor      (default: 40)
-  --hidden-ceiling  <amount>  Negotiation hidden ceiling    (default: 50)
-  --role            <role>    buyer|seller                  (default: buyer)
-  --asset           <name>    Asset being traded            (default: Real-Time Sentiment Dataset)
-  --dry-run                   Print commands without executing them
-
-ENVIRONMENT VARIABLES
-  ANTHROPIC_API_KEY      Required. Your Anthropic API key.
-  NEXUS_SERVER_URL       Web server base URL       (default: http://localhost:5000)
-  NEXUS_MAX_PER_TX       Max per-tx spend          (default: ${DEFAULT_MAX_PER_TX})
-  NEXUS_MAX_TOTAL        Max total spend           (default: ${DEFAULT_MAX_TOTAL})
-  NEXUS_SESSION_TTL      Session TTL string        (default: ${DEFAULT_TTL})
-  NEXUS_ASSETS           Asset type                (default: ${DEFAULT_ASSETS})
-  NEXUS_PAYMENT          Payment approach          (default: ${DEFAULT_PAYMENT})
-  NEXUS_LOG_LEVEL        debug|info|warn|error     (default: info)
-  NEXUS_KPASS_MOCK       true|false  Simulate kpass locally (default: false)
-  NEXUS_HIDDEN_FLOOR     Negotiation hidden floor
-  NEXUS_HIDDEN_CEILING   Negotiation hidden ceiling
-  NEXUS_ROLE             buyer|seller
-
-MACHINE-PARSEABLE OUTPUT (for Codex / CI)
-  POOL_CREATED: <poolId>
-  BROKER_JOINED: {"poolId":…,"brokerName":…,"agentId":…,"sessionId":…}
-  TRADE_EXECUTED: {"poolId":…,"brokerName":…,"asset":…,"price":…,"success":…}
-  SESSION_REVOKED: <sessionId>
+The broker name must exist in .agents/registry.json.
+Private brain config is loaded locally from .agents/plugins/<agent>/config.json and never sent to the clearinghouse server.
 `);
 }
 
-async function createPool(flags) {
-  log.info('Initializing secure dark pool…');
+function validateEnv(brokerName) {
+  const registry = loadRegistry();
+  const entry = registry[brokerName];
+  if (entry && !entry.enabled) {
+    console.error(`[nexus] Agent "${brokerName}" is disabled in registry.json`);
+    process.exit(1);
+  }
+}
 
+async function createPool(flags) {
   if (flags.dryRun) {
-    log.warn('--dry-run: would POST /api/create-pool');
     log.emit('POOL_CREATED', 'DRY-RUN-POOL');
     return;
   }
-
   const data = await apiFetch('/api/create-pool', { method: 'POST' });
   const poolId = requireField(data, ['poolId', 'pool_id', 'id'], 'create-pool response');
-
   log.emit('POOL_CREATED', poolId);
-  log.info(`Pool is live → ${poolId}`);
   return poolId;
 }
 
 async function deployBroker(flags) {
-  const {
-    poolId,
-    brokerName,
-    maxPerTx = DEFAULT_MAX_PER_TX,
-    maxTotal = DEFAULT_MAX_TOTAL,
-    ttl = DEFAULT_TTL,
-    assets = DEFAULT_ASSETS,
-    payment = DEFAULT_PAYMENT,
-    dryRun = false,
-    asset: tradingAsset = process.env.NEXUS_ASSET || 'Real-Time Sentiment Dataset',
-  } = flags;
-
+  const { poolId, brokerName, dryRun = false } = flags;
   if (!poolId) throw new Error('--pool-id is required');
   if (!brokerName) throw new Error('--broker-name is required');
 
-  // Step 1-3 replaced: Kite Passport session is managed via the Passport dashboard
-  // at https://agentpassport.ai — approve the spending session there with your passkey.
-  // KITE_API_KEY in .env is the credential proving that approval happened.
-  const agentId  = process.env.KITE_AGENT_ID  || `nexus-broker-${Date.now()}`;
-  const sessionId = process.env.KITE_SESSION_ID || `session-${Date.now()}`;
-  log.info(`Using Kite Passport session: Agent=${agentId}, Session=${sessionId}`);
-
-  // Step 4: Join pool via nexus server
-  log.info(`Sending "${brokerName}" to pool ${poolId}…`);
-  const payload = { poolId, brokerName, agentId, sessionId };
+  const { brain, agentConfig, metadata } = loadAgentPlugin(brokerName);
   if (dryRun) {
-    log.warn(`--dry-run: would POST /api/join-pool with ${JSON.stringify(payload)}`);
-  } else {
-    await apiFetch('/api/join-pool', { method: 'POST', body: JSON.stringify(payload) });
+    log.warn(`--dry-run: would join pool ${poolId} as ${brokerName}`);
+    log.warn(`  plugin: ${metadata.name} | role: ${agentConfig.role} | strategy: ${metadata.strategy}`);
+    return { poolId, brokerName };
   }
 
-  log.emit('BROKER_JOINED', { poolId, brokerName, agentId, sessionId });
-  log.info(`🕴️ "${brokerName}" is live in ${poolId}`);
+  const regData = parseKpassJSON(kpass_register(), 'agent:register');
+  const agentId = regData.agent_id || `nexus-${brokerName}-${Date.now()}`;
 
-  // Step 5: Wire live negotiation via socket.io
-  if (!dryRun) {
-    let socket;
-    try {
-      socket = require('socket.io-client')(SERVER_BASE_URL);
-    } catch {
-      log.warn('socket.io-client is not installed; skipping live negotiation wiring.');
-      return { agentId, sessionId, poolId };
+  const maxPerTx = flags.maxPerTx || process.env.NEXUS_MAX_PER_TX || agentConfig.hiddenCeiling || DEFAULT_MAX_PER_TX;
+  const maxTotal = flags.maxTotal || process.env.NEXUS_MAX_TOTAL || DEFAULT_MAX_TOTAL;
+  const ttlSeconds = parseTtlSeconds(agentConfig.sessionTtl || flags.ttl || DEFAULT_TTL);
+  const delegation = JSON.stringify({
+    task: { summary: `Autonomous OTC trading: ${brokerName} in pool ${poolId}` },
+    payment_policy: {
+      allowed_payment_approaches: [flags.payment || DEFAULT_PAYMENT],
+      assets: [flags.assets || DEFAULT_ASSETS],
+      max_amount_per_tx: String(maxPerTx),
+      max_total_amount: String(maxTotal),
+      ttl_seconds: ttlSeconds,
+    },
+  });
+
+  const sessData = parseKpassJSON(kpass_sessionCreate(delegation), 'agent:session create');
+  const requestId = sessData.request_id || sessData.requestId;
+  let sessionId = sessData.session_id || sessData.sessionId;
+  if (!sessionId && requestId) {
+    const status = parseKpassJSON(kpass_sessionStatus(requestId), 'agent:session status');
+    sessionId = status.session_id || status.sessionId;
+  }
+  if (!sessionId) sessionId = `session-${Date.now()}`;
+
+  await apiFetch('/api/join-pool', { method: 'POST', body: JSON.stringify({ poolId, brokerName, agentId, sessionId }) });
+  log.emit('BROKER_JOINED', { poolId, brokerName, agentId, sessionId });
+
+  let socket;
+  try {
+    socket = require('socket.io-client')(SERVER_BASE_URL);
+  } catch {
+    log.warn('socket.io-client not installed; skipping live negotiation.');
+    return { agentId, sessionId, poolId };
+  }
+
+  let negotiationRound = 0;
+  const maxRounds = agentConfig.maxRounds || 10;
+
+  socket.on('connect', () => {
+    socket.emit('join-pool', poolId);
+    const opening = brain.buildOpeningMove({ ...agentConfig, brokerName });
+    socket.emit('negotiate', { poolId, msg: { ...opening, from: brokerName } });
+  });
+
+  socket.on('connect_error', (err) => log.warn(`Socket error: ${err.message}`));
+
+  socket.on('negotiate', async (msg) => {
+    if (msg.from === brokerName) return;
+    negotiationRound += 1;
+    if (negotiationRound >= maxRounds) {
+      socket.emit('negotiate', { poolId, msg: { action: 'REJECT', amount: 0, from: brokerName, reason: 'max_rounds_exceeded' } });
+      negotiationRound = 0;
+      return;
     }
 
-    const agentConfig = {
-      hiddenFloor: Number(flags.hiddenFloor ?? process.env.NEXUS_HIDDEN_FLOOR ?? 40),
-      hiddenCeiling: Number(flags.hiddenCeiling ?? process.env.NEXUS_HIDDEN_CEILING ?? 50),
-      role: String(flags.role ?? process.env.NEXUS_ROLE ?? 'buyer'),
-      asset: tradingAsset,
-      brokerName,
-      agentId,
-      sessionId,
-      poolId,
-    };
+    try {
+      const decision = await brain.decide(msg, agentConfig, { poolId, brokerName, round: negotiationRound });
+      const decisionAmount = Number(decision?.amount ?? 0);
 
-    // Per-broker round counter — prevents infinite negotiation loops
-    let negotiationRound = 0;
-
-    socket.on('connect', () => {
-      log.info(`Socket connected (${socket.id}); joining pool ${poolId}`);
-      socket.emit('join-pool', poolId);
-
-      // Sellers and buyers both auto-emit an opening message so
-      // the loop can start without any human interaction.
-      if (agentConfig.role === 'seller') {
-        const ask = buildInitialAsk(agentConfig);
-        log.info(`Seller emitting opening ASK: $${ask.amount} for "${ask.asset}"`);
-        socket.emit('negotiate', { poolId, msg: ask });
-      } else {
-        const bid = buildInitialBid(agentConfig);
-        log.info(`Buyer emitting opening BID: $${bid.amount} for "${bid.asset}"`);
-        socket.emit('negotiate', { poolId, msg: bid });
-      }
-    });
-
-    socket.on('connect_error', (err) => {
-      log.warn(`Socket connect error: ${err.message}`);
-    });
-
-    socket.on('negotiate', async (msg) => {
-      // Ignore our own messages echoed back
-      if (msg.from === brokerName) return;
-
-      negotiationRound++;
-      log.info(`[Round ${negotiationRound}/${require('./economic-engine').MAX_ROUNDS}] Received: ${JSON.stringify(msg)}`);
-
-      // Hard cap — if we've hit max rounds, reject and walk away
-      if (shouldStopNegotiation(negotiationRound)) {
-        log.warn(`Max rounds (${require('./economic-engine').MAX_ROUNDS}) reached — sending REJECT`);
-        socket.emit('negotiate', {
-          poolId,
-          msg: { action: 'REJECT', amount: 0, from: brokerName, reason: 'max_rounds_exceeded' },
-        });
-        negotiationRound = 0; // reset for potential future negotiations
-        return;
-      }
-
-      try {
-        const decision = await runBrain(msg, agentConfig);
-        log.info(`Brain decision: ${JSON.stringify(decision)}`);
-
-        if (decision.action === 'ACCEPT') {
-          log.info('✅ ACCEPT — executing trade settlement');
-          negotiationRound = 0;
-          await executeTrade(poolId, { ...msg, amount: msg.amount }, { brokerName, agentConfig });
-        } else if (decision.action === 'REJECT') {
-          log.info('❌ REJECT — ending negotiation');
-          negotiationRound = 0;
-          socket.emit('negotiate', {
-            poolId,
-            msg: { action: 'REJECT', amount: 0, from: brokerName },
-          });
-        } else {
-          // COUNTER
-          socket.emit('negotiate', {
-            poolId,
-            msg: { ...decision, from: brokerName, asset: msg.asset || agentConfig.asset },
-          });
-        }
-      } catch (err) {
-        log.error(`Negotiation loop failed: ${err.message}`);
-        // Gracefully bail out rather than crashing
-        socket.emit('negotiate', {
-          poolId,
-          msg: { action: 'REJECT', amount: 0, from: brokerName, reason: 'internal_error' },
-        });
+      if (decision?.action === 'ACCEPT') {
         negotiationRound = 0;
+        await executeTrade(poolId, { ...msg, amount: decisionAmount || msg.amount }, { brokerName, agentConfig });
+      } else if (decision?.action === 'REJECT') {
+        negotiationRound = 0;
+        socket.emit('negotiate', { poolId, msg: { action: 'REJECT', amount: 0, from: brokerName, reason: decision.reason || 'rejected' } });
+      } else {
+        socket.emit('negotiate', {
+          poolId,
+          msg: { action: 'COUNTER', amount: decisionAmount, asset: msg.asset || agentConfig.asset, from: brokerName, reason: decision?.reason },
+        });
       }
-    });
-  }
+    } catch (err) {
+      log.error(`Negotiation loop error: ${err.message}`);
+      socket.emit('negotiate', { poolId, msg: { action: 'REJECT', amount: 0, from: brokerName, reason: 'internal_error' } });
+      negotiationRound = 0;
+    }
+  });
 
   return { agentId, sessionId, poolId };
 }
 
 function listSessions(flags) {
-  const { agentId } = flags;
-  if (!agentId) throw new Error('--agent-id is required');
-
-  log.info(`Listing sessions for agent ${agentId}…`);
-  const raw = kpass_sessionList(agentId);
-  const data = parseKpassJSON(raw, 'kpass agent:session list');
+  if (!flags.agentId) throw new Error('--agent-id is required');
+  const data = parseKpassJSON(kpass_sessionList(flags.agentId), 'agent:session list');
   console.log(JSON.stringify(data, null, 2));
 }
 
 function revokeSession(flags) {
-  const { sessionId } = flags;
-  if (!sessionId) throw new Error('--session-id is required');
-
-  log.info(`Revoking session ${sessionId}…`);
-  kpass_sessionRevoke(sessionId);
-  log.emit('SESSION_REVOKED', sessionId);
-  log.info(`Session ${sessionId} revoked.`);
+  if (!flags.sessionId) throw new Error('--session-id is required');
+  kpass_sessionRevoke(flags.sessionId);
+  log.emit('SESSION_REVOKED', flags.sessionId);
 }
 
-// ─── ENTRY POINT ──────────────────────────────────────────────────────────────
 (async () => {
   const [major] = process.versions.node.split('.').map(Number);
   if (major < 18) {
-    console.error('[nexus] ❌ Requires Node.js 18 or later (native fetch).');
+    console.error('[nexus] Requires Node.js 18 or later.');
     process.exit(1);
   }
 
@@ -589,10 +466,7 @@ function revokeSession(flags) {
     process.exit(0);
   }
 
-  // Validate env for commands that actually need the API
-  if (!['--help', '-h'].includes(command)) {
-    validateEnv();
-  }
+  if (flags.brokerName) validateEnv(flags.brokerName);
 
   try {
     switch (command) {

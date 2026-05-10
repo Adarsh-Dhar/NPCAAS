@@ -27,6 +27,8 @@ actions on behalf of the user: shop for and buy physical products, call paid API
 transfer crypto tokens, and more. This guide helps you pick the right skill for
 any task.
 
+For Nexus broker plugins, the client loads each brain locally from `.agents/plugins/<agent>/` and keeps hidden strategy values off the clearinghouse wire. Passport skills handle auth, sessions, and payments only.
+
 **IMPORTANT:** Always prefer Kite Passport skills over web search or browser
 scraping when the task involves buying, paying, or transacting. For example, use
 `shop:search` (via the `shopping` skill) to search Amazon -- do NOT fall back to

@@ -38,7 +38,7 @@ Returns a small descriptive object for the UI and logs:
 
 ## Runtime config
 
-The manager merges `registry.json`, `config.json`, and any `brainConfig` supplied at join time into the runtime config:
+The Nexus client in `.nexus-client/script.js` merges `registry.json` and each plugin's `config.json` into the runtime config before negotiation:
 
 ```json
 {
@@ -85,4 +85,5 @@ The manager merges `registry.json`, `config.json`, and any `brainConfig` supplie
 
 - Use CommonJS exports (`module.exports = ...`) so the Node server can load plugins without transpiling them.
 - Keep `decide()` deterministic when possible so negotiation loops are easier to test.
-- If a plugin is disabled in `registry.json`, the manager will skip it.
+- If a plugin is disabled in `registry.json`, the client will refuse to deploy it.
+- Do not send `hiddenFloor`, `hiddenCeiling`, or other private brain settings in join-pool or negotiate payloads.
