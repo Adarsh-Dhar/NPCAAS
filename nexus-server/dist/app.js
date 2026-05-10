@@ -34,6 +34,10 @@ const KITE_PAYEE_ADDRESS = process.env.KITE_PAYEE_ADDRESS || '0x4A50DCA63d541372
 const KITE_ASSET_ADDRESS = process.env.KITE_ASSET_ADDRESS || '0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63';
 const KITE_NETWORK = process.env.KITE_NETWORK || 'kite-testnet';
 const KITE_EXPLORER_API = process.env.KITE_EXPLORER_API || 'https://testnet.kitescan.ai/api';
+const MOCK_SETTLEMENT = process.env.NEXUS_MOCK_SETTLEMENT === 'true' ||
+    process.env.NEXUS_MOCK_SETTLEMENT === '1' ||
+    process.env.NEXUS_KPASS_MOCK === 'true' ||
+    process.env.NEXUS_KPASS_MOCK === '1';
 const DELIVERY_TOKEN_TTL_MS = Number(process.env.DELIVERY_TOKEN_TTL_MS || 60 * 60 * 1000);
 const DELIVERY_TOKEN_CLEANUP_MS = Number(process.env.DELIVERY_TOKEN_CLEANUP_MS || 60 * 1000);
 const CONFIRM_MAX_ATTEMPTS = Number(process.env.NEXUS_CONFIRM_MAX_ATTEMPTS || 10);
@@ -96,6 +100,9 @@ function settleX402Payment(xPaymentHeader) {
         catch (e) {
             throw new Error(`Invalid X-Payment header: ${e.message}`);
         }
+        if (MOCK_SETTLEMENT) {
+            return { txHash: `0xmock${crypto_1.default.randomBytes(16).toString('hex')}` };
+        }
         const settleRes = yield fetchAny(`${KITE_FACILITATOR_URL}/v2/settle`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -118,6 +125,8 @@ function settleX402Payment(xPaymentHeader) {
 function confirmTxOnChain(txHash_1) {
     return __awaiter(this, arguments, void 0, function* (txHash, maxAttempts = CONFIRM_MAX_ATTEMPTS, delayMs = CONFIRM_DELAY_MS) {
         var _a;
+        if (MOCK_SETTLEMENT && txHash.startsWith('0xmock'))
+            return true;
         for (let i = 0; i < maxAttempts; i++) {
             try {
                 const res = yield fetchAny(`${KITE_EXPLORER_API}?module=transaction&action=gettxreceiptstatus&txhash=${txHash}`);
