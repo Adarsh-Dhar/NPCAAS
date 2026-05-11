@@ -110,6 +110,7 @@ type PendingConfirmation = {
 const fetchAny = (...args: any[]) => (globalThis as any).fetch(...args);
 
 const app = express();
+app.set('trust proxy', true);
 app.use(cors({ origin: process.env.NEXUS_CORS_ORIGIN || '*' }));
 app.use(express.json());
 app.use('/data', express.static(path.join(__dirname, '..', 'data')));
@@ -118,6 +119,15 @@ const server = createServer(app);
 const io = new Server(server, {
   cors: { origin: process.env.NEXUS_CORS_ORIGIN || '*', methods: ['GET', 'POST', 'PATCH'] },
 });
+
+const PUBLIC_SERVER_URL = (process.env.NEXUS_PUBLIC_URL || process.env.NEXUS_SERVER_URL || '').replace(/\/+$/, '');
+
+function getPublicMerchantUrl(req: Request): string {
+  if (PUBLIC_SERVER_URL) return PUBLIC_SERVER_URL;
+  const proto = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('x-forwarded-host') || req.get('host');
+  return `${proto}://${host}`.replace(/\/+$/, '');
+}
 
 import BrainManager from './brain-manager';
 
@@ -129,11 +139,7 @@ const KITE_PAYEE_ADDRESS = process.env.KITE_PAYEE_ADDRESS || '0x4A50DCA63d541372
 const KITE_ASSET_ADDRESS = process.env.KITE_ASSET_ADDRESS || '0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63';
 const KITE_NETWORK = process.env.KITE_NETWORK || 'kite-testnet';
 const KITE_EXPLORER_API = process.env.KITE_EXPLORER_API || 'https://testnet.kitescan.ai/api';
-const MOCK_SETTLEMENT =
-  process.env.NEXUS_MOCK_SETTLEMENT === 'true' ||
-  process.env.NEXUS_MOCK_SETTLEMENT === '1' ||
-  process.env.NEXUS_KPASS_MOCK === 'true' ||
-  process.env.NEXUS_KPASS_MOCK === '1';
+// Production mode only: real settlement through Kite Facilitator
 
 const DELIVERY_TOKEN_TTL_MS = Number(process.env.DELIVERY_TOKEN_TTL_MS || 60 * 60 * 1000);
 const DELIVERY_TOKEN_CLEANUP_MS = Number(process.env.DELIVERY_TOKEN_CLEANUP_MS || 60 * 1000);
@@ -204,10 +210,6 @@ async function settleX402Payment(xPaymentHeader: string): Promise<{ txHash: stri
     throw new Error(`Invalid X-Payment header: ${e.message}`);
   }
 
-  if (MOCK_SETTLEMENT) {
-    return { txHash: `0xmock${crypto.randomBytes(16).toString('hex')}` };
-  }
-
   const settleRes = await fetchAny(`${KITE_FACILITATOR_URL}/v2/settle`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -229,8 +231,6 @@ async function settleX402Payment(xPaymentHeader: string): Promise<{ txHash: stri
 }
 
 async function confirmTxOnChain(txHash: string, maxAttempts = CONFIRM_MAX_ATTEMPTS, delayMs = CONFIRM_DELAY_MS): Promise<boolean> {
-  if (MOCK_SETTLEMENT && txHash.startsWith('0xmock')) return true;
-
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const res = await fetchAny(
@@ -506,6 +506,7 @@ app.post('/api/execute-trade', async (req: Request, res: Response) => {
   const xPayment = req.headers['x-payment'];
   if (!xPayment || typeof xPayment !== 'string') {
     const amountWei = String(Math.round(numericPrice * 1e18));
+    const merchantUrl = getPublicMerchantUrl(req);
     return res.status(402).json({
       error: 'X-PAYMENT header is required',
       accepts: [
@@ -513,7 +514,7 @@ app.post('/api/execute-trade', async (req: Request, res: Response) => {
           scheme: 'gokite-aa',
           network: KITE_NETWORK,
           maxAmountRequired: amountWei,
-          resource: `${req.protocol}://${req.get('host')}/api/execute-trade`,
+          resource: `${merchantUrl}/api/execute-trade`,
           description: `Nexus OTC block trade: ${buyerName} acquires ${asset || 'dataset'} from ${sellerName}`,
           mimeType: 'application/json',
           outputSchema: {
@@ -712,21 +713,6 @@ app.patch('/api/agents/:agentId/status', (req: Request, res: Response) => {
 
   if (!found) return res.status(404).json({ error: 'Agent not found' });
   return res.json(found);
-});
-
-app.get('/mock-approval/:requestId', (req: Request, res: Response) => {
-  const { requestId } = req.params as { requestId: string };
-  res.send(`
-    <html>
-      <head><title>Kite Mock Approval</title></head>
-      <body style="font-family:monospace;background:#0a0a0a;color:#22c55e;padding:2rem;">
-        <h1>Kite Agent Passport - Mock Approval</h1>
-        <p>Request ID: <strong>${requestId}</strong></p>
-        <p>In production, this is a real passkey confirmation flow.</p>
-        <p>In mock mode (NEXUS_KPASS_MOCK=true), this is auto-approved.</p>
-      </body>
-    </html>
-  `);
 });
 
 server.listen(PORT, () => {

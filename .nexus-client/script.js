@@ -28,7 +28,7 @@ function loadEnvFile(filePath, override = false) {
 loadEnvFile(path.resolve(__dirname, '..', '.env'));
 loadEnvFile(path.resolve(__dirname, '.env'), true);
 
-const SERVER_BASE_URL = process.env.NEXUS_SERVER_URL || 'http://localhost:5000';
+const SERVER_BASE_URL = (process.env.NEXUS_PUBLIC_URL || process.env.NEXUS_SERVER_URL || 'http://localhost:5000').replace(/\/+$/, '');
 const DEFAULT_MAX_PER_TX = process.env.NEXUS_MAX_PER_TX || '50.00';
 const DEFAULT_MAX_TOTAL = process.env.NEXUS_MAX_TOTAL || '500.00';
 const DEFAULT_TTL = process.env.NEXUS_SESSION_TTL || '1h';
@@ -40,21 +40,12 @@ const WAIT_KPASS_TIMEOUT_MS = Number(process.env.NEXUS_KPASS_WAIT_TIMEOUT_MS || 
 const REGISTRY_PATH = path.resolve(__dirname, '..', '.agents', 'registry.json');
 const PLUGINS_ROOT = path.resolve(__dirname, '..', '.agents', 'plugins');
 
-let KPASS_MOCK = process.env.NEXUS_KPASS_MOCK === 'true' || process.env.NEXUS_KPASS_MOCK === '1';
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
-
-if (!KPASS_MOCK) {
-  try {
-    execSync('command -v kpass', { stdio: 'ignore', shell: '/bin/bash' });
-  } catch {
-    if (IS_PRODUCTION) {
-      console.error('[nexus] kpass binary not found and NODE_ENV=production. Refusing mock mode.');
-      process.exit(1);
-    }
-    console.warn('[nexus] kpass binary not found — falling back to NEXUS_KPASS_MOCK=true for local dev.');
-    process.env.NEXUS_KPASS_MOCK = 'true';
-    KPASS_MOCK = true;
-  }
+// Production mode: kpass integration is REQUIRED, no mock fallback
+try {
+  execSync('command -v kpass', { stdio: 'ignore', shell: '/bin/bash' });
+} catch {
+  console.error('[nexus] FATAL: kpass binary not found. Install kpass or set KPASS_BIN. Production mode requires real authentication.');
+  process.exit(1);
 }
 
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
@@ -221,79 +212,46 @@ function shell(cmd, { timeoutMs = DEFAULT_KPASS_TIMEOUT_MS } = {}) {
   }
 }
 
-let _mockAgentCounter = 1000;
-let _mockSessionCounter = 2000;
-let _mockRequestCounter = 3000;
-const MOCK_RUN_ID = `${process.pid}-${crypto.randomBytes(3).toString('hex')}`;
-
-function kpassMock_register() {
-  return JSON.stringify({ agent_id: `mock-agent-${MOCK_RUN_ID}-${_mockAgentCounter++}` });
-}
-
-function kpassMock_sessionCreate() {
-  const requestId = `mock-req-${_mockRequestCounter++}`;
-  return JSON.stringify({ request_id: requestId, status: 'pending', approval_url: `${SERVER_BASE_URL}/mock-approval/${requestId}` });
-}
-
-function kpassMock_sessionStatus() {
-  return JSON.stringify({ session_id: `mock-session-${MOCK_RUN_ID}-${_mockSessionCounter++}`, status: 'approved' });
-}
-
-function kpassMock_sessionList() {
-  return JSON.stringify([]);
-}
-
-function kpassMock_sessionRevoke() {
-  return '';
-}
 
 function kpass_register() {
-  if (KPASS_MOCK) return kpassMock_register();
   return shell('kpass agent:register --type "nexus-broker" --output json --no-interactive');
 }
 
 function kpass_sessionCreate(delegation) {
-  if (KPASS_MOCK) return kpassMock_sessionCreate();
   return shell(`kpass agent:session create --delegation ${shellQuote(delegation)} --output json --no-interactive`);
 }
 
 function kpass_sessionStatus(requestId) {
-  if (KPASS_MOCK) return kpassMock_sessionStatus();
   return shell(`kpass agent:session status --request-id ${requestId} --wait --output json --no-interactive`, { timeoutMs: WAIT_KPASS_TIMEOUT_MS });
 }
 
 function kpass_sessionList(agentId) {
-  if (KPASS_MOCK) return kpassMock_sessionList();
   return shell(`kpass agent:session list --agent-id ${agentId} --output json --no-interactive`);
 }
 
 function kpass_sessionRevoke(sessionId) {
-  if (KPASS_MOCK) return kpassMock_sessionRevoke();
   shell(`kpass agent:session revoke --session-id ${sessionId} --no-interactive`);
   return '';
 }
 
-async function getSignedXPayment(paymentTerms) {
-  if (KPASS_MOCK) {
-    return Buffer.from(JSON.stringify({
-      authorization: { mock: true, terms: paymentTerms },
-      signature: 'mock-signature',
-    })).toString('base64');
+async function getSignedXPayment(paymentTerms, sessionData) {
+  const { getSignedXPayment: sign } = require('../lib/x402-payment');
+  if (!sessionData) {
+    throw new Error(
+      'Session data required for x402 payment. ' +
+      'Ensure kpass agent:session create was called and approved by user.'
+    );
   }
-
-  try {
-    const { getSignedXPayment: sign } = require('../lib/kite-payment');
-    return sign(paymentTerms);
-  } catch {
-    return Buffer.from(JSON.stringify({ authorization: { test: true, terms: paymentTerms }, signature: '0xmockdev' })).toString('base64');
-  }
+  const result = await sign(paymentTerms, sessionData);
+  if (!result) throw new Error('x402 payment failed to generate X-Payment header');
+  return result;
 }
 
 async function executeTrade(poolId, incomingMsg, context) {
   const tradePoolId = poolId || context.poolId || incomingMsg?.poolId;
   if (!tradePoolId) throw new Error('Cannot execute trade without poolId');
 
-  const { brokerName, agentConfig } = context;
+  const { brokerName, agentConfig, sessionData } = context;
   const asset = incomingMsg?.asset || incomingMsg?.instrument || agentConfig.asset || 'Real-Time Sentiment Dataset';
   const rawPrice = incomingMsg?.amount ?? incomingMsg?.price ?? agentConfig.hiddenCeiling;
   const price = String(rawPrice);
@@ -317,7 +275,7 @@ async function executeTrade(poolId, incomingMsg, context) {
         if (String(err.message || '').startsWith('Server 402 on /api/execute-trade')) {
           const paymentTerms = err.body?.accepts?.[0];
           if (!paymentTerms) throw new Error('No payment terms in 402 response');
-          const xPayment = await getSignedXPayment(paymentTerms);
+          const xPayment = await getSignedXPayment(paymentTerms, sessionData);
           result = await apiFetch('/api/execute-trade', {
             method: 'POST',
             headers: { 'X-Payment': xPayment },
@@ -415,9 +373,13 @@ async function deployBroker(flags) {
   const sessData = parseKpassJSON(kpass_sessionCreate(delegation), 'agent:session create');
   const requestId = sessData.request_id || sessData.requestId;
   let sessionId = sessData.session_id || sessData.sessionId;
+  let sessionAuthData = null;
   if (!sessionId && requestId) {
     const status = parseKpassJSON(kpass_sessionStatus(requestId), 'agent:session status');
     sessionId = status.session_id || status.sessionId;
+    sessionAuthData = status; // Full session data from status response
+  } else {
+    sessionAuthData = sessData; // Authorization data from create response
   }
   if (!sessionId) sessionId = `session-${Date.now()}`;
 
@@ -464,7 +426,7 @@ async function deployBroker(flags) {
 
       if (decision?.action === 'ACCEPT') {
         negotiationRound = 0;
-        await executeTrade(poolId, { ...msg, amount: decisionAmount || msg.amount }, { poolId, brokerName, agentConfig });
+        await executeTrade(poolId, { ...msg, amount: decisionAmount || msg.amount }, { poolId, brokerName, agentConfig, sessionData: sessionAuthData });
       } else if (decision?.action === 'REJECT') {
         negotiationRound = 0;
         socket.emit('negotiate', {

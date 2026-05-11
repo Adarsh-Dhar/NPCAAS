@@ -14,8 +14,8 @@ Quick start (development)
    npm install
    npm run metaverse:js
 
-3. In another terminal, run a broker (in mock mode):
-   ANTHROPIC_API_KEY=sk-xxx NEXUS_KPASS_MOCK=true node .nexus-client/script.js deploy-broker --pool-id POOL-1234 --broker-name DemoBot
+3. In another terminal, run a broker (requires real kpass installation):
+   ANTHROPIC_API_KEY=sk-xxx node .nexus-client/script.js deploy-broker --pool-id POOL-1234 --broker-name DemoBot
 
 4. Start the frontend (Next.js):
    cd frontend
@@ -23,7 +23,7 @@ Quick start (development)
    npm run dev
 
 Notes
-- The Kite Agent Passport (`kpass`) integration is mocked by default (`NEXUS_KPASS_MOCK=true`).
+- The Kite Agent Passport (`kpass`) integration is **required** in production mode. Install kpass and ensure it's in your PATH.
 - Settlement `txHash` values are placeholders until on-chain Kite integration is implemented.
 - The server now includes a simple dataset delivery endpoint for settled trades.
 

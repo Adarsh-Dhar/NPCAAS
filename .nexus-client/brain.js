@@ -6,10 +6,9 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env'), override: true
 const fs = require('fs');
 
 const GITHUB_TOKEN           = process.env.GITHUB_TOKEN;
-const SERVER_URL             = process.env.NEXUS_SERVER_URL || 'http://localhost:5000';
+const SERVER_URL             = (process.env.NEXUS_PUBLIC_URL || process.env.NEXUS_SERVER_URL || 'http://localhost:5000').replace(/\/+$/, '');
 const GITHUB_MODELS_ENDPOINT = 'https://models.inference.ai.azure.com/chat/completions';
 const KITE_API_BASE          = process.env.KITE_API_BASE || 'https://api.gokite.ai';
-const KITE_API_KEY           = process.env.KITE_API_KEY;
 
 const AGENT_ID = 'agent_019e08c4-8472-7de3-a60e-50675e79a3bc';
 const BROKER_NAME = 'QuantBot-Alpha';

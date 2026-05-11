@@ -20,6 +20,7 @@ const http_1 = require("http");
 const socket_io_1 = require("socket.io");
 const fetchAny = (...args) => globalThis.fetch(...args);
 const app = (0, express_1.default)();
+app.set('trust proxy', true);
 app.use((0, cors_1.default)({ origin: process.env.NEXUS_CORS_ORIGIN || '*' }));
 app.use(express_1.default.json());
 app.use('/data', express_1.default.static(path_1.default.join(__dirname, '..', 'data')));
@@ -27,6 +28,14 @@ const server = (0, http_1.createServer)(app);
 const io = new socket_io_1.Server(server, {
     cors: { origin: process.env.NEXUS_CORS_ORIGIN || '*', methods: ['GET', 'POST', 'PATCH'] },
 });
+const PUBLIC_SERVER_URL = (process.env.NEXUS_PUBLIC_URL || process.env.NEXUS_SERVER_URL || '').replace(/\/+$/, '');
+function getPublicMerchantUrl(req) {
+    if (PUBLIC_SERVER_URL)
+        return PUBLIC_SERVER_URL;
+    const proto = req.get('x-forwarded-proto') || req.protocol;
+    const host = req.get('x-forwarded-host') || req.get('host');
+    return `${proto}://${host}`.replace(/\/+$/, '');
+}
 const brain_manager_1 = __importDefault(require("./brain-manager"));
 const PORT = Number(process.env.PORT || 5000);
 const API_KEY = process.env.NEXUS_API_KEY || null;
@@ -35,10 +44,7 @@ const KITE_PAYEE_ADDRESS = process.env.KITE_PAYEE_ADDRESS || '0x4A50DCA63d541372
 const KITE_ASSET_ADDRESS = process.env.KITE_ASSET_ADDRESS || '0x0fF5393387ad2f9f691FD6Fd28e07E3969e27e63';
 const KITE_NETWORK = process.env.KITE_NETWORK || 'kite-testnet';
 const KITE_EXPLORER_API = process.env.KITE_EXPLORER_API || 'https://testnet.kitescan.ai/api';
-const MOCK_SETTLEMENT = process.env.NEXUS_MOCK_SETTLEMENT === 'true' ||
-    process.env.NEXUS_MOCK_SETTLEMENT === '1' ||
-    process.env.NEXUS_KPASS_MOCK === 'true' ||
-    process.env.NEXUS_KPASS_MOCK === '1';
+// Production mode only: real settlement through Kite Facilitator
 const DELIVERY_TOKEN_TTL_MS = Number(process.env.DELIVERY_TOKEN_TTL_MS || 60 * 60 * 1000);
 const DELIVERY_TOKEN_CLEANUP_MS = Number(process.env.DELIVERY_TOKEN_CLEANUP_MS || 60 * 1000);
 const CONFIRM_MAX_ATTEMPTS = Number(process.env.NEXUS_CONFIRM_MAX_ATTEMPTS || 10);
@@ -101,9 +107,6 @@ function settleX402Payment(xPaymentHeader) {
         catch (e) {
             throw new Error(`Invalid X-Payment header: ${e.message}`);
         }
-        if (MOCK_SETTLEMENT) {
-            return { txHash: `0xmock${crypto_1.default.randomBytes(16).toString('hex')}` };
-        }
         const settleRes = yield fetchAny(`${KITE_FACILITATOR_URL}/v2/settle`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -126,8 +129,6 @@ function settleX402Payment(xPaymentHeader) {
 function confirmTxOnChain(txHash_1) {
     return __awaiter(this, arguments, void 0, function* (txHash, maxAttempts = CONFIRM_MAX_ATTEMPTS, delayMs = CONFIRM_DELAY_MS) {
         var _a;
-        if (MOCK_SETTLEMENT && txHash.startsWith('0xmock'))
-            return true;
         for (let i = 0; i < maxAttempts; i++) {
             try {
                 const res = yield fetchAny(`${KITE_EXPLORER_API}?module=transaction&action=gettxreceiptstatus&txhash=${txHash}`);
@@ -364,6 +365,7 @@ app.post('/api/execute-trade', (req, res) => __awaiter(void 0, void 0, void 0, f
     const xPayment = req.headers['x-payment'];
     if (!xPayment || typeof xPayment !== 'string') {
         const amountWei = String(Math.round(numericPrice * 1e18));
+        const merchantUrl = getPublicMerchantUrl(req);
         return res.status(402).json({
             error: 'X-PAYMENT header is required',
             accepts: [
@@ -371,7 +373,7 @@ app.post('/api/execute-trade', (req, res) => __awaiter(void 0, void 0, void 0, f
                     scheme: 'gokite-aa',
                     network: KITE_NETWORK,
                     maxAmountRequired: amountWei,
-                    resource: `${req.protocol}://${req.get('host')}/api/execute-trade`,
+                    resource: `${merchantUrl}/api/execute-trade`,
                     description: `Nexus OTC block trade: ${buyerName} acquires ${asset || 'dataset'} from ${sellerName}`,
                     mimeType: 'application/json',
                     outputSchema: {
@@ -552,20 +554,6 @@ app.patch('/api/agents/:agentId/status', (req, res) => {
     if (!found)
         return res.status(404).json({ error: 'Agent not found' });
     return res.json(found);
-});
-app.get('/mock-approval/:requestId', (req, res) => {
-    const { requestId } = req.params;
-    res.send(`
-    <html>
-      <head><title>Kite Mock Approval</title></head>
-      <body style="font-family:monospace;background:#0a0a0a;color:#22c55e;padding:2rem;">
-        <h1>Kite Agent Passport - Mock Approval</h1>
-        <p>Request ID: <strong>${requestId}</strong></p>
-        <p>In production, this is a real passkey confirmation flow.</p>
-        <p>In mock mode (NEXUS_KPASS_MOCK=true), this is auto-approved.</p>
-      </body>
-    </html>
-  `);
 });
 server.listen(PORT, () => {
     const authMode = API_KEY ? 'API key auth ENABLED' : 'auth DISABLED (dev mode)';
