@@ -28,6 +28,10 @@ function loadEnvFile(filePath, override = false) {
 loadEnvFile(path.resolve(__dirname, '..', '.env'));
 loadEnvFile(path.resolve(__dirname, '.env'), true);
 
+if (process.env.NEXUS_ALLOW_KPASS_BASE_URL_OVERRIDE !== '1') {
+  delete process.env.KITE_PASSPORT_BASE_URL;
+}
+
 const SERVER_BASE_URL = (process.env.NEXUS_PUBLIC_URL || process.env.NEXUS_SERVER_URL || 'http://localhost:5000').replace(/\/+$/, '');
 const DEFAULT_MAX_PER_TX = process.env.NEXUS_MAX_PER_TX || '50.00';
 const DEFAULT_MAX_TOTAL = process.env.NEXUS_MAX_TOTAL || '500.00';
@@ -77,6 +81,22 @@ function parseArgs(argv) {
   return args;
 }
 
+function applyExplicitAgentOverrides(agentConfig, flags = {}) {
+  if (flags.role) agentConfig.role = String(flags.role);
+  if (flags.hiddenFloor) agentConfig.hiddenFloor = parseFloat(flags.hiddenFloor);
+  if (flags.hiddenCeiling) agentConfig.hiddenCeiling = parseFloat(flags.hiddenCeiling);
+  if (flags.asset) agentConfig.asset = String(flags.asset);
+  if (flags.maxRounds) agentConfig.maxRounds = Number(flags.maxRounds);
+
+  if (process.env.NEXUS_ALLOW_ENV_AGENT_OVERRIDES !== '1') return;
+
+  if (process.env.NEXUS_ROLE) agentConfig.role = process.env.NEXUS_ROLE;
+  if (process.env.NEXUS_HIDDEN_FLOOR) agentConfig.hiddenFloor = parseFloat(process.env.NEXUS_HIDDEN_FLOOR);
+  if (process.env.NEXUS_HIDDEN_CEILING) agentConfig.hiddenCeiling = parseFloat(process.env.NEXUS_HIDDEN_CEILING);
+  if (process.env.NEXUS_ASSET) agentConfig.asset = process.env.NEXUS_ASSET;
+  if (process.env.NEXUS_MAX_ROUNDS) agentConfig.maxRounds = Number(process.env.NEXUS_MAX_ROUNDS);
+}
+
 function parseTtlSeconds(ttl) {
   const value = String(ttl ?? DEFAULT_TTL).trim().toLowerCase();
   const match = value.match(/^(\d+(?:\.\d+)?)([smhd])?$/);
@@ -111,7 +131,7 @@ function normalizeBrainModule(moduleExport) {
   return candidate;
 }
 
-function loadAgentPlugin(brokerName) {
+function loadAgentPlugin(brokerName, flags = {}) {
   const registry = loadRegistry();
   const entry = registry[brokerName];
   if (!entry) throw new Error(`Agent "${brokerName}" not found in ${REGISTRY_PATH}.`);
@@ -138,11 +158,7 @@ function loadAgentPlugin(brokerName) {
     sessionTtl: rawConfig.sessionTtl,
   };
 
-  if (process.env.NEXUS_HIDDEN_FLOOR) agentConfig.hiddenFloor = parseFloat(process.env.NEXUS_HIDDEN_FLOOR);
-  if (process.env.NEXUS_HIDDEN_CEILING) agentConfig.hiddenCeiling = parseFloat(process.env.NEXUS_HIDDEN_CEILING);
-  if (process.env.NEXUS_ROLE) agentConfig.role = process.env.NEXUS_ROLE;
-  if (process.env.NEXUS_ASSET) agentConfig.asset = process.env.NEXUS_ASSET;
-  if (process.env.NEXUS_MAX_ROUNDS) agentConfig.maxRounds = Number(process.env.NEXUS_MAX_ROUNDS);
+  applyExplicitAgentOverrides(agentConfig, flags);
 
   const metadata = typeof brain.getMetadata === 'function'
     ? brain.getMetadata()
@@ -214,15 +230,15 @@ function shell(cmd, { timeoutMs = DEFAULT_KPASS_TIMEOUT_MS } = {}) {
 
 
 function kpass_register() {
-  return shell('kpass agent:register --type "nexus-broker" --output json --no-interactive');
+  return shell('kpass agent:register --type "nexus-broker" --output json');
 }
 
 function kpass_sessionCreate(delegation) {
-  return shell(`kpass agent:session create --delegation ${shellQuote(delegation)} --output json --no-interactive`);
+  return shell(`kpass agent:session create --delegation ${shellQuote(delegation)} --output json`);
 }
 
 function kpass_sessionStatus(requestId) {
-  return shell(`kpass agent:session status --request-id ${requestId} --wait --output json --no-interactive`, { timeoutMs: WAIT_KPASS_TIMEOUT_MS });
+  return shell(`kpass agent:session status --request-id ${requestId} --wait --output json`, { timeoutMs: WAIT_KPASS_TIMEOUT_MS });
 }
 
 function kpass_sessionList(agentId) {
@@ -234,24 +250,24 @@ function kpass_sessionRevoke(sessionId) {
   return '';
 }
 
-async function getSignedXPayment(paymentTerms, sessionData) {
-  const { getSignedXPayment: sign } = require('../lib/x402-payment');
-  if (!sessionData) {
-    throw new Error(
-      'Session data required for x402 payment. ' +
-      'Ensure kpass agent:session create was called and approved by user.'
-    );
-  }
-  const result = await sign(paymentTerms, sessionData);
-  if (!result) throw new Error('x402 payment failed to generate X-Payment header');
-  return result;
+function kpass_sessionExecute({ url, method = 'POST', headers = {}, body, sessionId }) {
+  const parts = [
+    'kpass agent:session execute',
+    `--url ${shellQuote(url)}`,
+    `--method ${shellQuote(method)}`,
+    `--headers ${shellQuote(JSON.stringify(headers))}`,
+    `--body ${shellQuote(JSON.stringify(body))}`,
+  ];
+  if (sessionId) parts.push(`--session-id ${shellQuote(sessionId)}`);
+  parts.push('--output json');
+  return shell(parts.join(' '), { timeoutMs: WAIT_KPASS_TIMEOUT_MS });
 }
 
 async function executeTrade(poolId, incomingMsg, context) {
   const tradePoolId = poolId || context.poolId || incomingMsg?.poolId;
   if (!tradePoolId) throw new Error('Cannot execute trade without poolId');
 
-  const { brokerName, agentConfig, sessionData } = context;
+  const { brokerName, agentConfig, sessionId } = context;
   const asset = incomingMsg?.asset || incomingMsg?.instrument || agentConfig.asset || 'Real-Time Sentiment Dataset';
   const rawPrice = incomingMsg?.amount ?? incomingMsg?.price ?? agentConfig.hiddenCeiling;
   const price = String(rawPrice);
@@ -267,24 +283,15 @@ async function executeTrade(poolId, incomingMsg, context) {
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
     try {
-      let result;
-
-      try {
-        result = await apiFetch('/api/execute-trade', { method: 'POST', body: JSON.stringify(payload) });
-      } catch (err) {
-        if (String(err.message || '').startsWith('Server 402 on /api/execute-trade')) {
-          const paymentTerms = err.body?.accepts?.[0];
-          if (!paymentTerms) throw new Error('No payment terms in 402 response');
-          const xPayment = await getSignedXPayment(paymentTerms, sessionData);
-          result = await apiFetch('/api/execute-trade', {
-            method: 'POST',
-            headers: { 'X-Payment': xPayment },
-            body: JSON.stringify(payload),
-          });
-        } else {
-          throw err;
-        }
-      }
+      const executeRaw = kpass_sessionExecute({
+        url: `${SERVER_BASE_URL}/api/execute-trade`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        sessionId,
+      });
+      const executeResult = parseKpassJSON(executeRaw, 'agent:session execute');
+      const result = executeResult.x402?.parsed_response_body || executeResult;
 
       log.emit('TRADE_EXECUTED', { poolId: tradePoolId, brokerName, buyer, seller, asset, price, success: Boolean(result?.success) });
       return result;
@@ -346,7 +353,7 @@ async function deployBroker(flags) {
   if (!poolId) throw new Error('--pool-id is required');
   if (!brokerName) throw new Error('--broker-name is required');
 
-  const { brain, agentConfig, metadata } = loadAgentPlugin(brokerName);
+  const { brain, agentConfig, metadata } = loadAgentPlugin(brokerName, flags);
   if (dryRun) {
     log.warn(`--dry-run: would join pool ${poolId} as ${brokerName}`);
     log.warn(`  plugin: ${metadata.name} | role: ${agentConfig.role} | strategy: ${metadata.strategy}`);
@@ -354,7 +361,8 @@ async function deployBroker(flags) {
   }
 
   const regData = parseKpassJSON(kpass_register(), 'agent:register');
-  const agentId = regData.agent_id || `nexus-${brokerName}-${Date.now()}`;
+  const registeredAgentId = regData.agent_id || 'agent';
+  const agentId = `${registeredAgentId}-${brokerName.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 
   const maxPerTx = flags.maxPerTx || process.env.NEXUS_MAX_PER_TX || agentConfig.hiddenCeiling || DEFAULT_MAX_PER_TX;
   const maxTotal = flags.maxTotal || process.env.NEXUS_MAX_TOTAL || DEFAULT_MAX_TOTAL;
@@ -370,16 +378,23 @@ async function deployBroker(flags) {
     },
   });
 
-  const sessData = parseKpassJSON(kpass_sessionCreate(delegation), 'agent:session create');
-  const requestId = sessData.request_id || sessData.requestId;
-  let sessionId = sessData.session_id || sessData.sessionId;
-  let sessionAuthData = null;
-  if (!sessionId && requestId) {
-    const status = parseKpassJSON(kpass_sessionStatus(requestId), 'agent:session status');
-    sessionId = status.session_id || status.sessionId;
-    sessionAuthData = status; // Full session data from status response
-  } else {
-    sessionAuthData = sessData; // Authorization data from create response
+  let sessionId = flags.sessionId;
+  if (!sessionId) {
+    const sessData = parseKpassJSON(kpass_sessionCreate(delegation), 'agent:session create');
+    if (sessData.approval_url) {
+      log.emit('SESSION_APPROVAL_REQUIRED', {
+        brokerName,
+        approvalUrl: sessData.approval_url,
+        requestId: sessData.request_id || sessData.requestId,
+        expiresAt: sessData.expires_at,
+      });
+    }
+    const requestId = sessData.request_id || sessData.requestId;
+    sessionId = sessData.session_id || sessData.sessionId;
+    if (!sessionId && requestId) {
+      const status = parseKpassJSON(kpass_sessionStatus(requestId), 'agent:session status');
+      sessionId = status.session_id || status.sessionId;
+    }
   }
   if (!sessionId) sessionId = `session-${Date.now()}`;
 
@@ -426,7 +441,7 @@ async function deployBroker(flags) {
 
       if (decision?.action === 'ACCEPT') {
         negotiationRound = 0;
-        await executeTrade(poolId, { ...msg, amount: decisionAmount || msg.amount }, { poolId, brokerName, agentConfig, sessionData: sessionAuthData });
+        await executeTrade(poolId, { ...msg, amount: decisionAmount || msg.amount }, { poolId, brokerName, agentConfig, sessionId });
       } else if (decision?.action === 'REJECT') {
         negotiationRound = 0;
         socket.emit('negotiate', {

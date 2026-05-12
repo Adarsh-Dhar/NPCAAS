@@ -203,6 +203,14 @@ function broadcastPoolState(poolId: string) {
 }
 
 async function settleX402Payment(xPaymentHeader: string): Promise<{ txHash: string }> {
+  // TEMP: Pieverse /v2/settle is broken (confirmed 5/11/26, Kite Discord)
+  // Remove this bypass once Pieverse is fixed
+  if (process.env.NEXUS_BYPASS_SETTLEMENT === '1') {
+    const fakeTxHash = '0x' + crypto.randomBytes(32).toString('hex');
+    console.warn('[x402] BYPASS MODE: returning synthetic txHash', fakeTxHash);
+    return { txHash: fakeTxHash };
+  }
+
   let decoded: { authorization?: unknown; signature?: unknown };
   try {
     decoded = JSON.parse(Buffer.from(xPaymentHeader, 'base64').toString('utf8'));
@@ -231,6 +239,8 @@ async function settleX402Payment(xPaymentHeader: string): Promise<{ txHash: stri
 }
 
 async function confirmTxOnChain(txHash: string, maxAttempts = CONFIRM_MAX_ATTEMPTS, delayMs = CONFIRM_DELAY_MS): Promise<boolean> {
+  if (process.env.NEXUS_BYPASS_SETTLEMENT === '1') return true;
+
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const res = await fetchAny(

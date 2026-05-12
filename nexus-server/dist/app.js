@@ -103,6 +103,13 @@ function broadcastPoolState(poolId) {
 }
 function settleX402Payment(xPaymentHeader) {
     return __awaiter(this, void 0, void 0, function* () {
+        // TEMP: Pieverse /v2/settle is broken (confirmed 5/11/26, Kite Discord)
+        // Remove this bypass once Pieverse is fixed
+        if (process.env.NEXUS_BYPASS_SETTLEMENT === '1') {
+            const fakeTxHash = '0x' + crypto_1.default.randomBytes(32).toString('hex');
+            console.warn('[x402] BYPASS MODE: returning synthetic txHash', fakeTxHash);
+            return { txHash: fakeTxHash };
+        }
         let decoded;
         try {
             decoded = JSON.parse(Buffer.from(xPaymentHeader, 'base64').toString('utf8'));
@@ -132,6 +139,8 @@ function settleX402Payment(xPaymentHeader) {
 function confirmTxOnChain(txHash_1) {
     return __awaiter(this, arguments, void 0, function* (txHash, maxAttempts = CONFIRM_MAX_ATTEMPTS, delayMs = CONFIRM_DELAY_MS) {
         var _a;
+        if (process.env.NEXUS_BYPASS_SETTLEMENT === '1')
+            return true;
         for (let i = 0; i < maxAttempts; i++) {
             try {
                 const res = yield fetchAny(`${KITE_EXPLORER_API}?module=transaction&action=gettxreceiptstatus&txhash=${txHash}`);
