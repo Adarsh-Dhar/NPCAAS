@@ -715,9 +715,31 @@ app.patch('/api/agents/:agentId/status', (req: Request, res: Response) => {
   return res.json(found);
 });
 
+app.get('/.well-known/kite-payment.json', (req: Request, res: Response) => {
+  const merchantUrl = getPublicMerchantUrl(req);
+  res.json({
+    name: 'Nexus OTC Clearinghouse',
+    payTo: KITE_PAYEE_ADDRESS,
+    asset: KITE_ASSET_ADDRESS,
+    network: KITE_NETWORK,
+    endpoints: [
+      {
+        path: '/api/execute-trade',
+        method: 'POST',
+        scheme: 'gokite-aa',
+        description: 'OTC block trade settlement',
+      },
+    ],
+    merchantUrl,
+    version: '1',
+  });
+});
+
 server.listen(PORT, () => {
   const authMode = API_KEY ? 'API key auth ENABLED' : 'auth DISABLED (dev mode)';
   console.log(`Nexus OTC Clearinghouse running on http://localhost:${PORT}`);
   console.log(`Socket.io ready`);
   console.log(authMode);
 });
+
+export { app, server };

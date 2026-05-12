@@ -36,7 +36,7 @@ global.fetch = jest.fn(async (url) => {
 });
 
 // eslint-disable-next-line global-require
-require('../server.js');
+const { server } = require('../server.js');
 
 async function waitFor(condition, timeoutMs = 2000) {
   const start = Date.now();
@@ -52,12 +52,33 @@ async function waitFor(condition, timeoutMs = 2000) {
 
 afterAll(() => {
   global.fetch = originalFetch;
+  server.close();
 });
 
 test('GET /api/health returns ok', async () => {
   const res = await request('http://localhost:34567').get('/api/health');
   expect(res.status).toBe(200);
   expect(res.body).toHaveProperty('status', 'ok');
+});
+
+test('GET /.well-known/kite-payment.json returns Kite discovery metadata', async () => {
+  const res = await request('http://localhost:34567').get('/.well-known/kite-payment.json');
+
+  expect(res.status).toBe(200);
+  expect(res.body).toMatchObject({
+    name: 'Nexus OTC Clearinghouse',
+    network: 'kite-testnet',
+    endpoints: [
+      {
+        path: '/api/execute-trade',
+        method: 'POST',
+        scheme: 'gokite-aa',
+      },
+    ],
+    version: '1',
+  });
+  expect(res.body).toHaveProperty('payTo');
+  expect(res.body).toHaveProperty('asset');
 });
 
 test('POST /api/execute-trade without X-Payment returns 402 with payment terms', async () => {

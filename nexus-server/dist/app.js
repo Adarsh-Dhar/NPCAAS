@@ -12,6 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.server = exports.app = void 0;
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const path_1 = __importDefault(require("path"));
@@ -20,11 +21,13 @@ const http_1 = require("http");
 const socket_io_1 = require("socket.io");
 const fetchAny = (...args) => globalThis.fetch(...args);
 const app = (0, express_1.default)();
+exports.app = app;
 app.set('trust proxy', true);
 app.use((0, cors_1.default)({ origin: process.env.NEXUS_CORS_ORIGIN || '*' }));
 app.use(express_1.default.json());
 app.use('/data', express_1.default.static(path_1.default.join(__dirname, '..', 'data')));
 const server = (0, http_1.createServer)(app);
+exports.server = server;
 const io = new socket_io_1.Server(server, {
     cors: { origin: process.env.NEXUS_CORS_ORIGIN || '*', methods: ['GET', 'POST', 'PATCH'] },
 });
@@ -554,6 +557,25 @@ app.patch('/api/agents/:agentId/status', (req, res) => {
     if (!found)
         return res.status(404).json({ error: 'Agent not found' });
     return res.json(found);
+});
+app.get('/.well-known/kite-payment.json', (req, res) => {
+    const merchantUrl = getPublicMerchantUrl(req);
+    res.json({
+        name: 'Nexus OTC Clearinghouse',
+        payTo: KITE_PAYEE_ADDRESS,
+        asset: KITE_ASSET_ADDRESS,
+        network: KITE_NETWORK,
+        endpoints: [
+            {
+                path: '/api/execute-trade',
+                method: 'POST',
+                scheme: 'gokite-aa',
+                description: 'OTC block trade settlement',
+            },
+        ],
+        merchantUrl,
+        version: '1',
+    });
 });
 server.listen(PORT, () => {
     const authMode = API_KEY ? 'API key auth ENABLED' : 'auth DISABLED (dev mode)';

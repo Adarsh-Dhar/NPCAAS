@@ -5,7 +5,8 @@
   "main": "script.js",
   "scripts": {
     "broker": "node script.js",
-    "brain": "node economic-engine.js"
+    "brain": "node economic-engine.js",
+    "register-merchant": "node register-merchant.js"
   },
   "type": "commonjs",
   "dependencies": {

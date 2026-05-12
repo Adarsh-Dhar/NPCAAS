@@ -7,11 +7,11 @@ const distEntry = path.join(__dirname, 'dist', 'app.js');
 const tsEntry = path.join(__dirname, 'src', 'app.ts');
 
 if (fs.existsSync(distEntry)) {
-  require(distEntry);
+  module.exports = require(distEntry);
 } else {
   try {
     require('ts-node/register');
-    require(tsEntry);
+    module.exports = require(tsEntry);
   } catch (err) {
     console.error('[nexus-server] Failed to start TypeScript app.');
     console.error('[nexus-server] Run "npm run build" or install dev dependencies.');
